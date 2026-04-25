@@ -60,7 +60,7 @@ const templates = {
         </div>
         <div style="background:#f1f5f9;padding:16px;text-align:center;font-size:12px;color:#64748b">
           CTS BPO | South Africa | admin@ctsbpo.com<br>
-          <a href="https://ctsbpo.com/unsubscribe?email=${encodeURIComponent(prospect.email)}" style="color:#64748b">Unsubscribe</a>
+          <a href="https://ctsbpo.com/unsubscribe" style="color:#64748b">Unsubscribe</a>
         </div>
       </div>
     `,
@@ -84,6 +84,8 @@ const templates = {
   }),
 };
 
+const VALID_TEMPLATES = ['initialOutreach', 'followUp'];
+
 /**
  * Send an outreach email to a prospect.
  * @param {object} prospect - { name, email, company }
@@ -95,12 +97,12 @@ async function sendOutreachEmail(prospect, templateName = 'initialOutreach') {
     throw new Error('prospect.email is required');
   }
 
-  const template = templates[templateName];
-  if (!template) {
+  if (!VALID_TEMPLATES.includes(templateName)) {
     throw new Error(`Unknown email template: ${templateName}`);
   }
 
-  const { subject, html } = template(prospect);
+  const templateFn = templateName === 'initialOutreach' ? templates.initialOutreach : templates.followUp;
+  const { subject, html } = templateFn(prospect);
 
   if (transporter) {
     const info = await transporter.sendMail({

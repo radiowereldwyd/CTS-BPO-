@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 
 const negotiation = require('./modules/negotiation');
 const contractManager = require('./modules/contract-manager');
@@ -23,6 +24,25 @@ app.use((req, res, next) => {
   next();
 });
 
+// Rate limiters
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts, please try again later.' },
+});
+
+app.use(globalLimiter);
+
 const PORT = process.env.PORT || 3000;
 
 // ─── Public routes ────────────────────────────────────────────────────────────
@@ -38,7 +58,7 @@ app.get('/health', (req, res) => {
 });
 
 // Auth routes (login, me)
-app.use('/api/auth', authRouter);
+app.use('/api/auth', authLimiter, authRouter);
 
 // ─── Protected routes (require JWT) ──────────────────────────────────────────
 
