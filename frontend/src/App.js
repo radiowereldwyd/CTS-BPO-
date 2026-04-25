@@ -1,11 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import Dashboard from './components/Dashboard';
 import StatusPanel from './components/StatusPanel';
 import FailedContracts from './components/FailedContracts';
 import PricingTable from './components/PricingTable';
+import GlobalMarkets from './components/GlobalMarkets';
+import ProfitProjection from './components/ProfitProjection';
+import DeploymentGuide from './components/DeploymentGuide';
 import LoginPage from './components/LoginPage';
 import './App.css';
+
+function NavLink({ to, children }) {
+  const location = useLocation();
+  const isActive = location.pathname === to;
+  return (
+    <Link to={to} className={isActive ? 'active' : ''}>
+      {children}
+    </Link>
+  );
+}
 
 function App() {
   const [user, setUser] = useState(null);
@@ -58,10 +71,13 @@ function App() {
             <span className="header-tagline">AI Platform</span>
           </div>
           <nav className="header-nav">
-            <Link to="/">Dashboard</Link>
-            <Link to="/status">Status</Link>
-            <Link to="/failed-contracts">Failed Contracts</Link>
-            <Link to="/pricing">Pricing</Link>
+            <NavLink to="/">Dashboard</NavLink>
+            <NavLink to="/status">Status</NavLink>
+            <NavLink to="/failed-contracts">Failed Contracts</NavLink>
+            <NavLink to="/pricing">Pricing</NavLink>
+            <NavLink to="/global-markets">Global Markets</NavLink>
+            <NavLink to="/profit-projection">Profit Projection</NavLink>
+            <NavLink to="/deployment-guide">Deployment Guide</NavLink>
           </nav>
           <div className="header-user">
             <span className="user-name">{user.name}</span>
@@ -76,6 +92,9 @@ function App() {
             <Route path="/status" element={<StatusPanel token={token} />} />
             <Route path="/failed-contracts" element={<FailedContracts token={token} />} />
             <Route path="/pricing" element={<PricingTable />} />
+            <Route path="/global-markets" element={<GlobalMarkets />} />
+            <Route path="/profit-projection" element={<ProfitProjection />} />
+            <Route path="/deployment-guide" element={<DeploymentGuide />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
