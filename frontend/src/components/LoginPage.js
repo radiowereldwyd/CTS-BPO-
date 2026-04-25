@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import CTSLogo from './CTSLogo';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
@@ -30,8 +31,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <div className="login-card">
         <div className="login-logo">
-          <h1>CTS BPO</h1>
-          <p>AI-Driven Business Process Outsourcing</p>
+          <CTSLogo size="lg" />
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
