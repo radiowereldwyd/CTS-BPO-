@@ -79,10 +79,7 @@ body {
   flex-shrink: 0;
 }
 .header-brand-link:hover { transform: scale(1.03); }
-
-/* Default: show md logo, hide sm logo */
-.header-brand-logo    { display: block; }
-.header-brand-logo-sm { display: none; }
+.header-brand-link img { height: 52px; width: auto; display: block; }
 
 .header-nav { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; }
 .header-nav a {
@@ -542,8 +539,7 @@ body {
 
 .login-logo {
   background: linear-gradient(135deg, #0d2063, #1e40af);
-  padding: 28px 32px 20px;
-  text-align: center;
+  padding: 32px 32px 24px;
   display: flex; align-items: center; justify-content: center;
   border-bottom: 1px solid rgba(0,200,255,0.15);
 }
@@ -866,6 +862,5 @@ body {
   .pp-summary   { grid-template-columns: 1fr 1fr; }
 
   /* Shrink logo on mobile */
-  .header-brand-logo    { display: none; }
-  .header-brand-logo-sm { display: block; }
+  .header-brand-link img { height: 36px; }
 }
