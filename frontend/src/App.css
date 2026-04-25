@@ -72,6 +72,18 @@ body {
   color: var(--blue-glow); text-transform: uppercase; letter-spacing: 1.5px;
 }
 
+/* Logo link — used to replace the old text brand */
+.header-brand-link {
+  display: flex; align-items: center; text-decoration: none;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.header-brand-link:hover { transform: scale(1.03); }
+
+/* Default: show md logo, hide sm logo */
+.header-brand-logo    { display: block; }
+.header-brand-logo-sm { display: none; }
+
 .header-nav { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; }
 .header-nav a {
   color: var(--text-muted); text-decoration: none;
@@ -530,12 +542,11 @@ body {
 
 .login-logo {
   background: linear-gradient(135deg, #0d2063, #1e40af);
-  padding: 32px 32px 24px;
+  padding: 28px 32px 20px;
   text-align: center;
+  display: flex; align-items: center; justify-content: center;
   border-bottom: 1px solid rgba(0,200,255,0.15);
 }
-.login-logo h1 { color: #fff; font-size: 26px; font-weight: 800; letter-spacing: 2px; }
-.login-logo p  { color: #93c5fd; font-size: 12px; margin-top: 6px; letter-spacing: 1px; }
 
 .login-form { padding: 32px; }
 .login-form h2 { font-size: 18px; font-weight: 700; margin-bottom: 20px; color: #fff; }
@@ -853,4 +864,8 @@ body {
   .pricing-cards{ grid-template-columns: 1fr; }
   .gm-explainer-grid { grid-template-columns: 1fr; }
   .pp-summary   { grid-template-columns: 1fr 1fr; }
+
+  /* Shrink logo on mobile */
+  .header-brand-logo    { display: none; }
+  .header-brand-logo-sm { display: block; }
 }

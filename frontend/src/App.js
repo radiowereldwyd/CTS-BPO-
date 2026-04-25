@@ -8,6 +8,7 @@ import GlobalMarkets from './components/GlobalMarkets';
 import ProfitProjection from './components/ProfitProjection';
 import DeploymentGuide from './components/DeploymentGuide';
 import LoginPage from './components/LoginPage';
+import CTSLogo from './components/CTSLogo';
 import './App.css';
 
 function NavLink({ to, children }) {
@@ -66,10 +67,10 @@ function App() {
     <Router>
       <div className="app">
         <header className="app-header">
-          <div className="header-brand">
-            <span className="header-logo">CTS BPO</span>
-            <span className="header-tagline">AI Platform</span>
-          </div>
+          <Link to="/" className="header-brand-link">
+            <CTSLogo size="md" className="header-brand-logo" />
+            <CTSLogo size="sm" className="header-brand-logo-sm" />
+          </Link>
           <nav className="header-nav">
             <NavLink to="/">Dashboard</NavLink>
             <NavLink to="/status">Status</NavLink>
