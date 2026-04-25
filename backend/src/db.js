@@ -1,44 +1,56 @@
-/**
- * PostgreSQL connection pool.
- * Falls back to null when DB env vars are not configured (dev/test mode).
- */
-
+// CTS BPO - Database Connection (Supabase / PostgreSQL)
 const { Pool } = require('pg');
+require('dotenv').config();
 
-let pool = null;
+// Use the full connection string from Supabase if provided,
+// otherwise fall back to individual env vars (for local dev).
+const connectionString = process.env.DATABASE_URL;
 
-if (process.env.DB_HOST && process.env.DB_NAME && process.env.DB_USER && process.env.DB_PASSWORD) {
-  pool = new Pool({
-    host: process.env.DB_HOST,
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
-  });
+const pool = connectionString
+  ? new Pool({
+      connectionString,
+      ssl: { rejectUnauthorized: false }, // Supabase requires SSL
+    })
+  : new Pool({
+      host: process.env.DB_HOST || 'localhost',
+      port: process.env.DB_PORT || 5432,
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || 'postgres',
+      database: process.env.DB_NAME || 'cts_bpo',
+    });
 
-  pool.on('error', (err) => {
-    console.error('PostgreSQL pool error:', err.message);
-  });
+pool.on('connect', () => {
+  console.log('✅ Connected to Supabase PostgreSQL database');
+});
+
+pool.on('error', (err) => {
+  console.error('❌ Unexpected database error:', err.message);
+});
+
+// Helper to run a query
+async function query(text, params) {
+  const start = Date.now();
+  try {
+    const res = await pool.query(text, params);
+    const duration = Date.now() - start;
+    console.log('📊 Query executed', { text: text.substring(0, 60), duration, rows: res.rowCount });
+    return res;
+  } catch (err) {
+    console.error('❌ Query error:', err.message);
+    throw err;
+  }
 }
 
-/**
- * Execute a parameterised query. Returns null result when no pool is configured.
- * @param {string} text
- * @param {Array} params
- */
-async function query(text, params = []) {
-  if (!pool) return null;
-  return pool.query(text, params);
+// Test connection on startup
+async function testConnection() {
+  try {
+    const res = await pool.query('SELECT NOW() as time');
+    console.log('🟢 Database test OK. Server time:', res.rows[0].time);
+    return true;
+  } catch (err) {
+    console.error('🔴 Database test FAILED:', err.message);
+    return false;
+  }
 }
 
-/**
- * Check whether the DB pool is active.
- */
-function isConnected() {
-  return pool !== null;
-}
-
-module.exports = { query, isConnected, pool };
+module.exports = { pool, query, testConnection };
