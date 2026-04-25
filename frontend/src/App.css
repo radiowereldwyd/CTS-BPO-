@@ -547,8 +547,6 @@ body {
   display: flex; align-items: center; justify-content: center;
   border-bottom: 1px solid rgba(0,200,255,0.15);
 }
-.login-logo h1 { color: #fff; font-size: 26px; font-weight: 800; letter-spacing: 2px; }
-.login-logo p  { color: #93c5fd; font-size: 12px; margin-top: 6px; letter-spacing: 1px; }
 
 .login-form { padding: 32px; }
 .login-form h2 { font-size: 18px; font-weight: 700; margin-bottom: 20px; color: #fff; }
