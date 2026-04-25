@@ -26,62 +26,84 @@ if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
 }
 
 /**
- * Email templates.
+ * Escape HTML entities to prevent XSS in email templates.
+ * @param {string} str
+ * @returns {string}
+ */
+function escapeHtml(str) {
+  if (typeof str !== 'string') return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Email templates. All user-provided values are HTML-escaped before embedding.
  */
 const templates = {
-  initialOutreach: (prospect) => ({
-    subject: `Transform Your Business Processes with AI – CTS BPO`,
-    html: `
-      <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto;color:#1e293b">
-        <div style="background:#1e40af;padding:24px;text-align:center">
-          <h1 style="color:#fff;margin:0;font-size:24px">CTS BPO</h1>
-          <p style="color:#93c5fd;margin:8px 0 0">AI-Driven Business Process Outsourcing</p>
-        </div>
-        <div style="padding:32px">
-          <p>Hi ${prospect.name || 'there'},</p>
-          <p>I'm reaching out because we help businesses like <strong>${prospect.company || 'yours'}</strong>
-             reduce operational costs by up to 60% using our AI-powered BPO platform.</p>
-          <h3 style="color:#1e40af">What we offer:</h3>
-          <ul>
-            <li>✅ AI-driven contract management &amp; negotiation</li>
-            <li>✅ Automated subcontractor assignment</li>
-            <li>✅ Integrated Ozow payment processing</li>
-            <li>✅ Full audit trail &amp; POPIA compliance</li>
-          </ul>
-          <p><strong>Starter plans from R5,000/month.</strong></p>
-          <div style="text-align:center;margin:32px 0">
-            <a href="https://ctsbpo.com/pricing"
-               style="background:#1e40af;color:#fff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:700">
-              View Pricing
-            </a>
+  initialOutreach: (prospect) => {
+    const name = escapeHtml(prospect.name) || 'there';
+    const company = escapeHtml(prospect.company) || 'yours';
+    return {
+      subject: 'Transform Your Business Processes with AI – CTS BPO',
+      html: `
+        <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto;color:#1e293b">
+          <div style="background:#1e40af;padding:24px;text-align:center">
+            <h1 style="color:#fff;margin:0;font-size:24px">CTS BPO</h1>
+            <p style="color:#93c5fd;margin:8px 0 0">AI-Driven Business Process Outsourcing</p>
           </div>
-          <p>Would you be open to a 15-minute call this week?</p>
-          <p>Best regards,<br><strong>The CTS BPO Team</strong></p>
+          <div style="padding:32px">
+            <p>Hi ${name},</p>
+            <p>I'm reaching out because we help businesses like <strong>${company}</strong>
+               reduce operational costs by up to 60% using our AI-powered BPO platform.</p>
+            <h3 style="color:#1e40af">What we offer:</h3>
+            <ul>
+              <li>&#10003; AI-driven contract management &amp; negotiation</li>
+              <li>&#10003; Automated subcontractor assignment</li>
+              <li>&#10003; Integrated Ozow payment processing</li>
+              <li>&#10003; Full audit trail &amp; POPIA compliance</li>
+            </ul>
+            <p><strong>Starter plans from R5,000/month.</strong></p>
+            <div style="text-align:center;margin:32px 0">
+              <a href="https://ctsbpo.com/pricing"
+                 style="background:#1e40af;color:#fff;padding:14px 28px;border-radius:6px;text-decoration:none;font-weight:700">
+                View Pricing
+              </a>
+            </div>
+            <p>Would you be open to a 15-minute call this week?</p>
+            <p>Best regards,<br><strong>The CTS BPO Team</strong></p>
+          </div>
+          <div style="background:#f1f5f9;padding:16px;text-align:center;font-size:12px;color:#64748b">
+            CTS BPO | South Africa | admin@ctsbpo.com<br>
+            <a href="https://ctsbpo.com/unsubscribe" style="color:#64748b">Unsubscribe</a>
+          </div>
         </div>
-        <div style="background:#f1f5f9;padding:16px;text-align:center;font-size:12px;color:#64748b">
-          CTS BPO | South Africa | admin@ctsbpo.com<br>
-          <a href="https://ctsbpo.com/unsubscribe" style="color:#64748b">Unsubscribe</a>
-        </div>
-      </div>
-    `,
-  }),
+      `,
+    };
+  },
 
-  followUp: (prospect) => ({
-    subject: `Following up – CTS BPO AI Platform`,
-    html: `
-      <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto;color:#1e293b">
-        <div style="background:#1e40af;padding:24px;text-align:center">
-          <h1 style="color:#fff;margin:0;font-size:24px">CTS BPO</h1>
+  followUp: (prospect) => {
+    const name = escapeHtml(prospect.name) || 'there';
+    return {
+      subject: 'Following up – CTS BPO AI Platform',
+      html: `
+        <div style="font-family:Inter,sans-serif;max-width:600px;margin:0 auto;color:#1e293b">
+          <div style="background:#1e40af;padding:24px;text-align:center">
+            <h1 style="color:#fff;margin:0;font-size:24px">CTS BPO</h1>
+          </div>
+          <div style="padding:32px">
+            <p>Hi ${name},</p>
+            <p>I wanted to follow up on my previous email about how CTS BPO can help streamline your operations.</p>
+            <p>Many of our clients see ROI within the first 90 days. I'd love to show you a quick demo.</p>
+            <p>Best regards,<br><strong>The CTS BPO Team</strong></p>
+          </div>
         </div>
-        <div style="padding:32px">
-          <p>Hi ${prospect.name || 'there'},</p>
-          <p>I wanted to follow up on my previous email about how CTS BPO can help streamline your operations.</p>
-          <p>Many of our clients see ROI within the first 90 days. I'd love to show you a quick demo.</p>
-          <p>Best regards,<br><strong>The CTS BPO Team</strong></p>
-        </div>
-      </div>
-    `,
-  }),
+      `,
+    };
+  },
 };
 
 const VALID_TEMPLATES = ['initialOutreach', 'followUp'];
@@ -101,8 +123,7 @@ async function sendOutreachEmail(prospect, templateName = 'initialOutreach') {
     throw new Error(`Unknown email template: ${templateName}`);
   }
 
-  const templateFn = templateName === 'initialOutreach' ? templates.initialOutreach : templates.followUp;
-  const { subject, html } = templateFn(prospect);
+  const { subject, html } = templates[templateName](prospect);
 
   if (transporter) {
     const info = await transporter.sendMail({
@@ -123,7 +144,7 @@ async function sendOutreachEmail(prospect, templateName = 'initialOutreach') {
   }
 
   // Console stub when SMTP not configured
-  console.log(`[EMAIL STUB] To: ${prospect.email} | Subject: ${subject}`);
+  console.log('[EMAIL STUB] To:', prospect.email, '| Subject:', subject);
   await auditLogger.log(
     'outreach.simulated',
     'prospect',
@@ -151,7 +172,7 @@ async function runCampaign(prospects, templateName = 'initialOutreach') {
       else if (result.simulated) results.simulated++;
     } catch (err) {
       results.failed++;
-      console.error(`Outreach failed for ${prospect.email}:`, err.message);
+      console.error('Outreach failed for prospect:', err.message);
     }
   }
 
@@ -168,3 +189,4 @@ async function runCampaign(prospects, templateName = 'initialOutreach') {
 }
 
 module.exports = { sendOutreachEmail, runCampaign, templates };
+
