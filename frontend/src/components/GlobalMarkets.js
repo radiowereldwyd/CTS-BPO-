@@ -1,163 +1,216 @@
-import React from 'react';
+import React, { useState } from 'react';
+import {
+  ComposableMap,
+  Geographies,
+  Geography,
+  Marker,
+} from 'react-simple-maps';
 
-const regions = [
+/* ── Region colour palette ────────────────────────────────────────────────── */
+const COLORS = {
+  NA: '#3b82f6', // North America – blue  (High Opportunity)
+  EU: '#22c55e', // Europe        – green (Key Market)
+  AS: '#f59e0b', // Asia          – orange(Growth Potential)
+  AF: '#eab308', // Africa        – gold  (Emerging Clients)
+  OC: '#14b8a6', // Oceania       – teal  (Strategic Region)
+};
+
+/*
+  Country-name → region lookup.
+  Names must match the `properties.name` field in countries-110m.json exactly.
+  Easy to extend: just add more names to any array below.
+*/
+const NAME_TO_REGION = {};
+[
+  // North America
+  'United States of America', 'Canada', 'Mexico', 'Cuba', 'Jamaica',
+  'Dominican Rep.', 'Haiti', 'Puerto Rico', 'Bahamas', 'Belize',
+  'Costa Rica', 'El Salvador', 'Guatemala', 'Honduras', 'Nicaragua', 'Panama',
+  'Trinidad and Tobago', 'Greenland',
+].forEach(n => { NAME_TO_REGION[n] = 'NA'; });
+[
+  // Europe
+  'Albania', 'Andorra', 'Austria', 'Belarus', 'Belgium',
+  'Bosnia and Herz.', 'Bulgaria', 'Croatia', 'Cyprus', 'Czechia',
+  'Denmark', 'Estonia', 'Finland', 'France', 'Germany', 'Greece',
+  'Hungary', 'Iceland', 'Ireland', 'Italy', 'Kosovo', 'Latvia',
+  'Lithuania', 'Luxembourg', 'Macedonia', 'Malta', 'Moldova',
+  'Montenegro', 'Netherlands', 'Norway', 'Poland', 'Portugal',
+  'Romania', 'Russia', 'Serbia', 'Slovakia', 'Slovenia', 'Spain',
+  'Sweden', 'Switzerland', 'Ukraine', 'United Kingdom', 'N. Cyprus',
+].forEach(n => { NAME_TO_REGION[n] = 'EU'; });
+[
+  // Asia (including Middle East & Central Asia)
+  'Afghanistan', 'Armenia', 'Azerbaijan', 'Bahrain', 'Bangladesh',
+  'Bhutan', 'Brunei', 'Cambodia', 'China', 'Georgia', 'India',
+  'Indonesia', 'Iran', 'Iraq', 'Israel', 'Japan', 'Jordan',
+  'Kazakhstan', 'Kuwait', 'Kyrgyzstan', 'Laos', 'Lebanon',
+  'Malaysia', 'Mongolia', 'Myanmar', 'Nepal', 'North Korea',
+  'Oman', 'Pakistan', 'Palestine', 'Philippines', 'Qatar',
+  'Saudi Arabia', 'Singapore', 'South Korea', 'Sri Lanka', 'Syria',
+  'Taiwan', 'Tajikistan', 'Thailand', 'Timor-Leste', 'Turkey',
+  'Turkmenistan', 'United Arab Emirates', 'Uzbekistan', 'Vietnam',
+  'Yemen',
+].forEach(n => { NAME_TO_REGION[n] = 'AS'; });
+[
+  // Africa
+  'Algeria', 'Angola', 'Benin', 'Botswana', 'Burkina Faso', 'Burundi',
+  'Cameroon', 'Central African Rep.', 'Chad', 'Congo', 'Dem. Rep. Congo',
+  'Djibouti', 'Egypt', 'Eq. Guinea', 'Eritrea', 'Ethiopia', 'Gabon',
+  'Gambia', 'Ghana', 'Guinea', 'Guinea-Bissau', 'Kenya',
+  "Côte d'Ivoire", 'Lesotho', 'Liberia', 'Libya', 'Madagascar',
+  'Malawi', 'Mali', 'Mauritania', 'Morocco', 'Mozambique', 'Namibia',
+  'Niger', 'Nigeria', 'Rwanda', 'S. Sudan', 'Senegal', 'Sierra Leone',
+  'Somalia', 'Somaliland', 'South Africa', 'Sudan', 'Tanzania',
+  'Togo', 'Tunisia', 'Uganda', 'W. Sahara', 'Zambia', 'Zimbabwe',
+  'eSwatini',
+].forEach(n => { NAME_TO_REGION[n] = 'AF'; });
+[
+  // Oceania
+  'Australia', 'Fiji', 'New Caledonia', 'New Zealand', 'Papua New Guinea',
+  'Solomon Is.', 'Vanuatu',
+].forEach(n => { NAME_TO_REGION[n] = 'OC'; });
+
+/* ── Marker data (lat/long as [lng, lat]) ─────────────────────────────────── */
+const MARKERS = [
   {
     name: 'North America',
+    region: 'NA',
+    coords: [-100, 40],
+    clients: 78,
     label: 'High Opportunity',
-    color: '#3b82f6',
-    bg: 'rgba(59,130,246,0.15)',
-    border: 'rgba(59,130,246,0.4)',
-    emoji: '🌎',
+    emoji: '🇺🇸',
+    headline: 'Our biggest customer base 🚀',
+    description:
+      'We have 78 paying clients here. People in this region pay in US Dollars, which means each contract earns us more money than other regions. This is where most of our revenue comes from today.',
   },
   {
     name: 'Europe',
+    region: 'EU',
+    coords: [15, 50],
+    clients: 62,
     label: 'Key Market',
-    color: '#22c55e',
-    bg: 'rgba(34,197,94,0.15)',
-    border: 'rgba(34,197,94,0.4)',
-    emoji: '🌍',
+    emoji: '🇪🇺',
+    headline: 'Our most loyal clients 💚',
+    description:
+      '62 European clients trust us long-term. They renew contracts often and rarely cancel. Europe is where we build our reputation as a serious, professional BPO platform.',
   },
   {
     name: 'Asia',
+    region: 'AS',
+    coords: [100, 35],
+    clients: 41,
     label: 'Growth Potential',
-    color: '#f59e0b',
-    bg: 'rgba(245,158,11,0.15)',
-    border: 'rgba(245,158,11,0.4)',
     emoji: '🌏',
+    headline: 'Where we\'ll grow fastest 📈',
+    description:
+      'We only have 41 clients here today, but the population is huge. Even small growth means big new revenue. Our AI is targeting Asian small businesses next quarter.',
   },
   {
     name: 'Africa',
+    region: 'AF',
+    coords: [20, 0],
+    clients: 24,
     label: 'Emerging Clients',
-    color: '#fbbf24',
-    bg: 'rgba(251,191,36,0.15)',
-    border: 'rgba(251,191,36,0.4)',
     emoji: '🌍',
+    headline: 'Our home market 🏡',
+    description:
+      '24 clients across Africa, including South Africa where CTS BPO is based. These clients pay in ZAR and help us understand what local businesses need. Strong roots = strong growth.',
   },
   {
-    name: 'Australia',
+    name: 'Australia / Oceania',
+    region: 'OC',
+    coords: [135, -25],
+    clients: 10,
     label: 'Strategic Region',
-    color: '#14b8a6',
-    bg: 'rgba(20,184,166,0.15)',
-    border: 'rgba(20,184,166,0.4)',
-    emoji: '🌏',
+    emoji: '🇦🇺',
+    headline: 'Small but valuable ⭐',
+    description:
+      'Only 10 clients, but they pay premium prices and rarely complain. Australia is a "quality over quantity" region — we keep them happy and they refer big enterprise contracts.',
   },
 ];
 
 const legend = [
-  { label: 'High Opportunity',  color: '#3b82f6' },
-  { label: 'Key Market',        color: '#22c55e' },
-  { label: 'Growth Potential',  color: '#f59e0b' },
-  { label: 'Emerging Clients',  color: '#fbbf24' },
-  { label: 'Strategic Region',  color: '#14b8a6' },
+  { label: 'High Opportunity',  color: COLORS.NA },
+  { label: 'Key Market',        color: COLORS.EU },
+  { label: 'Growth Potential',  color: COLORS.AS },
+  { label: 'Emerging Clients',  color: COLORS.AF },
+  { label: 'Strategic Region',  color: COLORS.OC },
 ];
 
-/*
-  Simplified illustrative SVG world map.
-  Continents are represented as stylised rounded shapes coloured by region.
-*/
-function WorldMapSVG() {
+/* ── World Map with react-simple-maps ─────────────────────────────────────── */
+function WorldMap() {
+  const [tooltip, setTooltip] = useState(null);
+
   return (
-    <svg
-      viewBox="0 0 900 440"
-      className="gm-svg"
-      aria-label="Stylised world map showing CTS BPO global regions"
-    >
-      {/* Ocean background */}
-      <rect width="900" height="440" fill="rgba(0,200,255,0.04)" rx="12" />
+    <div style={{ position: 'relative' }}>
+      <ComposableMap
+        projection="geoNaturalEarth1"
+        projectionConfig={{ scale: 153 }}
+        style={{ width: '100%', height: 'auto' }}
+      >
+        <Geographies geography="/world-110m.json">
+          {({ geographies }) =>
+            geographies.map(geo => {
+              const region = NAME_TO_REGION[geo.properties.name];
+              const fill = region ? COLORS[region] : '#1e3a5f';
+              return (
+                <Geography
+                  key={geo.rsmKey}
+                  geography={geo}
+                  fill={fill}
+                  stroke="#0a1530"
+                  strokeWidth={0.5}
+                  style={{
+                    default: { outline: 'none', opacity: region ? 0.85 : 0.6 },
+                    hover:   { outline: 'none', opacity: 1, filter: region ? 'brightness(1.2)' : 'none' },
+                    pressed: { outline: 'none' },
+                  }}
+                />
+              );
+            })
+          }
+        </Geographies>
 
-      {/* Grid lines */}
-      {[110, 220, 330].map(y => (
-        <line key={y} x1="0" y1={y} x2="900" y2={y} stroke="rgba(0,200,255,0.06)" strokeWidth="1" />
-      ))}
-      {[180, 360, 540, 720].map(x => (
-        <line key={x} x1={x} y1="0" x2={x} y2="440" stroke="rgba(0,200,255,0.06)" strokeWidth="1" />
-      ))}
+        {MARKERS.map(m => (
+          <Marker
+            key={m.region}
+            coordinates={m.coords}
+            onMouseEnter={() => setTooltip(m)}
+            onMouseLeave={() => setTooltip(null)}
+          >
+            <circle
+              r={14}
+              fill={COLORS[m.region]}
+              stroke="#fff"
+              strokeWidth={2}
+              style={{ filter: `drop-shadow(0 0 6px ${COLORS[m.region]})`, cursor: 'pointer' }}
+            />
+            <text
+              textAnchor="middle"
+              dominantBaseline="central"
+              fill="#fff"
+              fontSize={10}
+              fontWeight="700"
+              style={{ pointerEvents: 'none' }}
+            >
+              {m.clients}
+            </text>
+          </Marker>
+        ))}
+      </ComposableMap>
 
-      {/* North America */}
-      <path
-        d="M 80 60 L 220 50 L 240 80 L 230 160 L 200 190 L 160 200 L 120 180 L 80 140 Z"
-        fill="#1e3a8a"
-        stroke="#3b82f6"
-        strokeWidth="2"
-        opacity="0.85"
-      />
-      <text x="155" y="130" textAnchor="middle" fill="#93c5fd" fontSize="11" fontWeight="700">N. AMERICA</text>
-
-      {/* South America */}
-      <path
-        d="M 160 215 L 210 210 L 225 260 L 220 330 L 195 360 L 165 350 L 145 300 L 148 250 Z"
-        fill="#1a2e4a"
-        stroke="#3b82f6"
-        strokeWidth="1.5"
-        opacity="0.7"
-      />
-      <text x="185" y="290" textAnchor="middle" fill="#93c5fd" fontSize="10">S. America</text>
-
-      {/* Europe */}
-      <path
-        d="M 390 50 L 500 45 L 510 90 L 490 130 L 440 140 L 390 120 L 375 90 Z"
-        fill="#14532d"
-        stroke="#22c55e"
-        strokeWidth="2"
-        opacity="0.85"
-      />
-      <text x="442" y="95" textAnchor="middle" fill="#86efac" fontSize="11" fontWeight="700">EUROPE</text>
-
-      {/* Africa */}
-      <path
-        d="M 400 155 L 490 150 L 510 200 L 510 300 L 470 370 L 430 380 L 390 340 L 375 270 L 380 200 Z"
-        fill="#3a2a00"
-        stroke="#fbbf24"
-        strokeWidth="2"
-        opacity="0.85"
-      />
-      <text x="443" y="270" textAnchor="middle" fill="#fcd34d" fontSize="11" fontWeight="700">AFRICA</text>
-
-      {/* Asia */}
-      <path
-        d="M 520 40 L 750 35 L 760 100 L 730 160 L 660 180 L 580 170 L 530 140 L 510 90 Z"
-        fill="#3a1f00"
-        stroke="#f59e0b"
-        strokeWidth="2"
-        opacity="0.85"
-      />
-      <text x="635" y="108" textAnchor="middle" fill="#fcd34d" fontSize="11" fontWeight="700">ASIA</text>
-
-      {/* Middle East (part of Asia cluster) */}
-      <path
-        d="M 520 145 L 580 140 L 590 200 L 560 230 L 510 215 L 505 175 Z"
-        fill="#2a1500"
-        stroke="#f59e0b"
-        strokeWidth="1"
-        opacity="0.65"
-      />
-
-      {/* Australia */}
-      <path
-        d="M 720 250 L 820 240 L 840 290 L 830 340 L 780 360 L 730 350 L 705 310 L 710 268 Z"
-        fill="#063535"
-        stroke="#14b8a6"
-        strokeWidth="2"
-        opacity="0.85"
-      />
-      <text x="773" y="305" textAnchor="middle" fill="#5eead4" fontSize="11" fontWeight="700">AUSTRALIA</text>
-
-      {/* Decorative dots for client hotspots */}
-      {[
-        [155, 120, '#3b82f6'],
-        [445, 90, '#22c55e'],
-        [635, 100, '#f59e0b'],
-        [443, 265, '#fbbf24'],
-        [773, 298, '#14b8a6'],
-      ].map(([x, y, c], i) => (
-        <circle key={i} cx={x} cy={y} r="5" fill={c} opacity="0.9">
-          <animate attributeName="opacity" values="0.9;0.3;0.9" dur="2s" repeatCount="indefinite" begin={`${i * 0.4}s`} />
-        </circle>
-      ))}
-    </svg>
+      {tooltip && (
+        <div className="gm-tooltip">
+          <strong>{tooltip.emoji} {tooltip.name}</strong>
+          <span>{tooltip.clients} clients</span>
+        </div>
+      )}
+    </div>
   );
 }
 
+/* ── Main component ───────────────────────────────────────────────────────── */
 function GlobalMarkets() {
   return (
     <div className="gm-page">
@@ -167,28 +220,37 @@ function GlobalMarkets() {
       </div>
 
       <div className="gm-map-container">
-        <WorldMapSVG />
+        <WorldMap />
       </div>
 
-      <div className="gm-regions">
-        {regions.map((r, i) => (
-          <div key={i} className="gm-region-card">
-            <div className="gm-region-name">{r.emoji} {r.name}</div>
-            <span
-              className="gm-badge"
-              style={{ background: r.bg, color: r.color, border: `1px solid ${r.border}` }}
-            >
-              {r.label}
-            </span>
-          </div>
-        ))}
-      </div>
-
+      {/* Slim legend */}
       <div className="gm-legend">
         {legend.map((l, i) => (
           <div key={i} className="gm-legend-item">
             <span className="gm-legend-dot" style={{ background: l.color }} />
             {l.label}
+          </div>
+        ))}
+      </div>
+
+      {/* Plain-English explainer cards */}
+      <div className="gm-explainer-grid">
+        {MARKERS.map((m, i) => (
+          <div
+            key={i}
+            className="gm-explainer-card"
+            style={{ borderLeftColor: COLORS[m.region], boxShadow: `0 0 18px ${COLORS[m.region]}22` }}
+          >
+            <div className="gm-ec-header">
+              <span className="gm-ec-dot" style={{ background: COLORS[m.region] }} />
+              <span className="gm-ec-name">{m.emoji} {m.name}</span>
+              <span className="gm-ec-badge" style={{ color: COLORS[m.region] }}>{m.label}</span>
+            </div>
+            <div className="gm-ec-count" style={{ color: COLORS[m.region] }}>{m.clients}</div>
+            <div className="gm-ec-count-label">active clients</div>
+            <div className="gm-ec-headline">{m.headline}</div>
+            <div className="gm-ec-subtitle">💡 What this means for the business</div>
+            <p className="gm-ec-text">{m.description}</p>
           </div>
         ))}
       </div>
