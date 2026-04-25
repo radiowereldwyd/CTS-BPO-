@@ -27,8 +27,8 @@ describe('initiatePayment', () => {
       amount: 500000,
       clientEmail: 'test@example.com',
     });
-    const initiated = auditLogger.getLogs({ eventType: 'payment.initiated' });
-    const succeeded = auditLogger.getLogs({ eventType: 'payment.succeeded' });
+    const initiated = await auditLogger.getLogs({ eventType: 'payment.initiated' });
+    const succeeded = await auditLogger.getLogs({ eventType: 'payment.succeeded' });
     expect(initiated.length).toBeGreaterThanOrEqual(1);
     expect(succeeded.length).toBeGreaterThanOrEqual(1);
   });

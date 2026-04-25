@@ -26,18 +26,21 @@ const PLACEHOLDER_FAILURES = [
   },
 ];
 
-function FailedContracts() {
+function FailedContracts({ token }) {
   const [failures, setFailures] = useState(PLACEHOLDER_FAILURES);
+
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
   useEffect(() => {
     fetchFailures();
     const interval = setInterval(fetchFailures, 30000);
     return () => clearInterval(interval);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   async function fetchFailures() {
     try {
-      const res = await axios.get(`${API_BASE}/api/contracts/failed`);
+      const res = await axios.get(`${API_BASE}/api/contracts/failed`, { headers: authHeaders });
       setFailures(res.data);
     } catch {
       setFailures(PLACEHOLDER_FAILURES);
@@ -45,42 +48,52 @@ function FailedContracts() {
   }
 
   function statusBadge(status) {
+    const map = { failed: 'badge-error', in_recovery: 'badge-idle', resolved: 'badge-running' };
     const labels = { failed: '🔴 Failed', in_recovery: '🟡 In Recovery', resolved: '🟢 Resolved' };
-    return <span>{labels[status] || status}</span>;
+    return <span className={`status-badge ${map[status] || ''}`}>{labels[status] || status}</span>;
   }
 
   return (
     <div className="failed-contracts">
-      <h2>Failed Contracts</h2>
+      <div className="page-header">
+        <h2>Failed Contracts</h2>
+        <p className="page-subtitle">Contracts requiring attention or recovery action</p>
+      </div>
+
       {failures.length === 0 ? (
-        <p>No failed contracts. All systems operating normally.</p>
+        <div className="empty-state">
+          <span className="empty-icon">✅</span>
+          <p>No failed contracts. All systems operating normally.</p>
+        </div>
       ) : (
-        <table className="failures-table">
-          <thead>
-            <tr>
-              <th>Contract ID</th>
-              <th>Client</th>
-              <th>Failure Reason</th>
-              <th>Assigned To</th>
-              <th>Failed At</th>
-              <th>Recovery Action</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {failures.map((f) => (
-              <tr key={f.id}>
-                <td>{f.contractId}</td>
-                <td>{f.clientName}</td>
-                <td>{f.failureReason}</td>
-                <td>{f.assignedTo}</td>
-                <td>{new Date(f.failedAt).toLocaleString()}</td>
-                <td>{f.recoveryAction}</td>
-                <td>{statusBadge(f.status)}</td>
+        <div className="table-wrapper">
+          <table className="failures-table">
+            <thead>
+              <tr>
+                <th>Contract ID</th>
+                <th>Client</th>
+                <th>Failure Reason</th>
+                <th>Assigned To</th>
+                <th>Failed At</th>
+                <th>Recovery Action</th>
+                <th>Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {failures.map((f) => (
+                <tr key={f.id}>
+                  <td className="contract-id">{f.contractId}</td>
+                  <td>{f.clientName}</td>
+                  <td>{f.failureReason}</td>
+                  <td>{f.assignedTo}</td>
+                  <td className="timestamp">{new Date(f.failedAt).toLocaleString()}</td>
+                  <td>{f.recoveryAction}</td>
+                  <td>{statusBadge(f.status)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

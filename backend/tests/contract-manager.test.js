@@ -37,9 +37,9 @@ describe('analyzeContract', () => {
 });
 
 describe('markFailed', () => {
-  test('logs a contract.failed event', () => {
-    markFailed(42, 'Missed deadline');
-    const failed = auditLogger.getLogs({ eventType: 'contract.failed' });
+  test('logs a contract.failed event', async () => {
+    await markFailed(42, 'Missed deadline');
+    const failed = await auditLogger.getLogs({ eventType: 'contract.failed' });
     expect(failed.length).toBe(1);
     expect(failed[0].entityId).toBe(42);
     expect(failed[0].status).toBe('error');
@@ -47,11 +47,12 @@ describe('markFailed', () => {
 });
 
 describe('markCompleted', () => {
-  test('logs a contract.completed event', () => {
-    markCompleted(7);
-    const completed = auditLogger.getLogs({ eventType: 'contract.completed' });
+  test('logs a contract.completed event', async () => {
+    await markCompleted(7);
+    const completed = await auditLogger.getLogs({ eventType: 'contract.completed' });
     expect(completed.length).toBe(1);
     expect(completed[0].entityId).toBe(7);
     expect(completed[0].status).toBe('info');
   });
 });
+

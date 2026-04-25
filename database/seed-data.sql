@@ -41,6 +41,12 @@ INSERT INTO ai_metrics (date, accuracy, optimization_score, negotiation_win_rate
 (CURRENT_DATE - 1, 0.9100, 0.9000, 0.9200, 'South Africa', 13, 115000.00),
 (CURRENT_DATE, 0.9150, 0.9100, 0.9100, 'South Africa', 5, 45000.00);
 
+-- Admin user (password: Admin1234!)
+-- bcrypt hash of "Admin1234!" with 10 rounds
+INSERT INTO users (name, email, password_hash, role) VALUES
+('CTS Admin', 'admin@ctsbpo.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin')
+ON CONFLICT (email) DO NOTHING;
+
 -- Sample Audit Trails
 INSERT INTO audit_trails (event_type, entity_type, entity_id, description, status) VALUES
 ('contract.created', 'contract', 1, 'New contract received from Acme Corp', 'info'),

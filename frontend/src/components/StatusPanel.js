@@ -12,18 +12,21 @@ const PLACEHOLDER_STATUSES = [
   { module: 'AI Audit Trail Logger', status: 'running', lastAction: 'Logged 47 events', updatedAt: new Date().toISOString() },
 ];
 
-function StatusPanel() {
+function StatusPanel({ token }) {
   const [statuses, setStatuses] = useState(PLACEHOLDER_STATUSES);
+
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
   useEffect(() => {
     fetchStatuses();
     const interval = setInterval(fetchStatuses, 15000);
     return () => clearInterval(interval);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   async function fetchStatuses() {
     try {
-      const res = await axios.get(`${API_BASE}/api/status`);
+      const res = await axios.get(`${API_BASE}/api/status`, { headers: authHeaders });
       setStatuses(res.data);
     } catch {
       setStatuses(PLACEHOLDER_STATUSES);
@@ -31,18 +34,9 @@ function StatusPanel() {
   }
 
   function statusBadge(status) {
-    const colors = { running: '#22c55e', idle: '#f59e0b', error: '#ef4444' };
+    const map = { running: 'badge-running', idle: 'badge-idle', error: 'badge-error' };
     return (
-      <span
-        style={{
-          background: colors[status] || '#6b7280',
-          color: '#fff',
-          borderRadius: 4,
-          padding: '2px 8px',
-          fontSize: 12,
-          fontWeight: 700,
-        }}
-      >
+      <span className={`status-badge ${map[status] || 'badge-idle'}`}>
         {status.toUpperCase()}
       </span>
     );
@@ -50,27 +44,32 @@ function StatusPanel() {
 
   return (
     <div className="status-panel">
-      <h2>Live Status Panel</h2>
-      <table className="status-table">
-        <thead>
-          <tr>
-            <th>AI Module</th>
-            <th>Status</th>
-            <th>Last Action</th>
-            <th>Updated</th>
-          </tr>
-        </thead>
-        <tbody>
-          {statuses.map((s) => (
-            <tr key={s.module}>
-              <td>{s.module}</td>
-              <td>{statusBadge(s.status)}</td>
-              <td>{s.lastAction}</td>
-              <td>{new Date(s.updatedAt).toLocaleTimeString()}</td>
+      <div className="page-header">
+        <h2>Live Status Panel</h2>
+        <p className="page-subtitle">Real-time status of all AI modules</p>
+      </div>
+      <div className="table-wrapper">
+        <table className="status-table">
+          <thead>
+            <tr>
+              <th>AI Module</th>
+              <th>Status</th>
+              <th>Last Action</th>
+              <th>Updated</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {statuses.map((s) => (
+              <tr key={s.module}>
+                <td className="module-name">{s.module}</td>
+                <td>{statusBadge(s.status)}</td>
+                <td>{s.lastAction}</td>
+                <td className="timestamp">{new Date(s.updatedAt).toLocaleTimeString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -94,6 +94,19 @@ CREATE TABLE IF NOT EXISTS system_logs (
     timestamp       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Users table (for authentication)
+CREATE TABLE IF NOT EXISTS users (
+    id             SERIAL PRIMARY KEY,
+    name           VARCHAR(255) NOT NULL,
+    email          VARCHAR(255) UNIQUE NOT NULL,
+    password_hash  VARCHAR(255) NOT NULL,
+    role           VARCHAR(20) DEFAULT 'client',  -- admin, client
+    client_id      INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+    is_active      BOOLEAN DEFAULT TRUE,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_contracts_client_id ON contracts(client_id);
 CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);

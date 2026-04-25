@@ -1,9 +1,11 @@
 /**
  * AI Contract Manager
  * Receives, analyzes, and routes contracts to internal handling or subcontractors.
+ * Persists contracts to PostgreSQL when DB is configured.
  */
 
 const auditLogger = require('./audit-logger');
+const db = require('../db');
 
 const INTERNAL_CAPACITY_THRESHOLD = 5; // Max concurrent contracts handled internally
 
@@ -22,7 +24,7 @@ let activeInternalContracts = 0;
 async function analyzeAndRoute(contract) {
   const { id, clientName, type, complexity, value } = contract;
 
-  auditLogger.log('contract.created', 'contract', id, `New contract received from ${clientName}`, null, 'info');
+  await auditLogger.log('contract.created', 'contract', id, `New contract received from ${clientName}`, null, 'info');
 
   const analysis = analyzeContract(contract);
 
@@ -30,13 +32,13 @@ async function analyzeAndRoute(contract) {
   if (analysis.riskScore < 5 && activeInternalContracts < INTERNAL_CAPACITY_THRESHOLD) {
     routing = 'internal';
     activeInternalContracts++;
-    auditLogger.log('contract.analyzed', 'contract', id, 'Routed to internal handling', null, 'info');
+    await auditLogger.log('contract.analyzed', 'contract', id, 'Routed to internal handling', null, 'info');
   } else {
     routing = 'subcontractor';
-    auditLogger.log('contract.analyzed', 'contract', id, 'Routed to subcontractor', null, 'info');
+    await auditLogger.log('contract.analyzed', 'contract', id, 'Routed to subcontractor', null, 'info');
   }
 
-  return {
+  const result = {
     contractId: id,
     clientName,
     type,
@@ -48,6 +50,22 @@ async function analyzeAndRoute(contract) {
     status: 'pending',
     analyzedAt: new Date().toISOString(),
   };
+
+  // Persist to DB when available
+  if (db.isConnected()) {
+    try {
+      await db.query(
+        `INSERT INTO contracts (type, complexity, value, end_date, status, routing, start_date)
+         VALUES ($1, $2, $3, $4, 'pending', $5, CURRENT_DATE)
+         ON CONFLICT DO NOTHING`,
+        [type, complexity, value, analysis.estimatedDelivery, routing]
+      );
+    } catch (err) {
+      console.error('Contract DB insert error:', err.message);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -73,18 +91,41 @@ function analyzeContract(contract) {
  * @param {string|number} contractId
  * @param {string} reason
  */
-function markFailed(contractId, reason) {
-  auditLogger.log('contract.failed', 'contract', contractId, `Contract failed: ${reason}`, null, 'error');
+async function markFailed(contractId, reason) {
+  await auditLogger.log('contract.failed', 'contract', contractId, `Contract failed: ${reason}`, null, 'error');
   if (activeInternalContracts > 0) activeInternalContracts--;
+
+  if (db.isConnected()) {
+    try {
+      await db.query(
+        `UPDATE contracts SET status = 'failed', updated_at = NOW() WHERE id = $1`,
+        [contractId]
+      );
+    } catch (err) {
+      console.error('Contract markFailed DB error:', err.message);
+    }
+  }
 }
 
 /**
  * Mark a contract as completed.
  * @param {string|number} contractId
  */
-function markCompleted(contractId) {
-  auditLogger.log('contract.completed', 'contract', contractId, 'Contract completed successfully', null, 'info');
+async function markCompleted(contractId) {
+  await auditLogger.log('contract.completed', 'contract', contractId, 'Contract completed successfully', null, 'info');
   if (activeInternalContracts > 0) activeInternalContracts--;
+
+  if (db.isConnected()) {
+    try {
+      await db.query(
+        `UPDATE contracts SET status = 'completed', updated_at = NOW() WHERE id = $1`,
+        [contractId]
+      );
+    } catch (err) {
+      console.error('Contract markCompleted DB error:', err.message);
+    }
+  }
 }
 
 module.exports = { analyzeAndRoute, analyzeContract, markFailed, markCompleted };
+
