@@ -7,6 +7,7 @@ import PricingTable from './components/PricingTable';
 import GlobalMarkets from './components/GlobalMarkets';
 import ProfitProjection from './components/ProfitProjection';
 import DeploymentGuide from './components/DeploymentGuide';
+import EmailTemplates from './components/EmailTemplates';
 import LoginPage from './components/LoginPage';
 import CTSLogo from './components/CTSLogo';
 import './App.css';
@@ -79,6 +80,7 @@ function App() {
             <NavLink to="/global-markets">Global Markets</NavLink>
             <NavLink to="/profit-projection">Profit Projection</NavLink>
             <NavLink to="/deployment-guide">Deployment Guide</NavLink>
+	    <NavLink to="/email-templates">Email Templates</NavLink>
           </nav>
           <div className="header-user">
             <span className="user-name">{user.name}</span>
@@ -96,6 +98,7 @@ function App() {
             <Route path="/global-markets" element={<GlobalMarkets />} />
             <Route path="/profit-projection" element={<ProfitProjection />} />
             <Route path="/deployment-guide" element={<DeploymentGuide />} />
+            <Route path="/email-templates" element={<EmailTemplates />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
