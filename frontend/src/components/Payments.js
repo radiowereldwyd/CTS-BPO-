@@ -7,7 +7,6 @@ function Payments() {
     invoiceNumber: '',
     amount: '',
     description: '',
-    currency: 'USD' // ALWAYS USD for PayPal
   });
 
   const [paymentHistory, setPaymentHistory] = useState([
@@ -16,7 +15,6 @@ function Payments() {
       clientName: 'Demo Client',
       invoiceNumber: 'INV-001',
       amount: 150,
-      currency: 'USD',
       status: 'completed',
       date: '2026-04-25',
       transactionId: 'TEST-TXN-001'
@@ -26,7 +24,6 @@ function Payments() {
       clientName: 'Test Client',
       invoiceNumber: 'INV-002',
       amount: 250,
-      currency: 'USD',
       status: 'completed',
       date: '2026-04-26',
       transactionId: 'TEST-TXN-002'
@@ -42,82 +39,94 @@ function Payments() {
 
   // Load PayPal SDK
   useEffect(() => {
-    // Remove any existing PayPal script
-    const existingScript = document.querySelector('script[src*="paypal"]');
-    if (existingScript) {
-      existingScript.remove();
+    // Only load if not already loaded
+    if (window.paypal) {
+      setSdkLoaded(true);
+      return;
     }
 
     const script = document.createElement('script');
     script.src = `https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD`;
     script.async = true;
+
     script.onload = () => {
-      console.log('PayPal SDK loaded successfully');
+      console.log('✅ PayPal SDK loaded successfully');
       setSdkLoaded(true);
     };
+
     script.onerror = () => {
-      console.error('Failed to load PayPal SDK');
+      console.error('❌ Failed to load PayPal SDK');
+      setSdkLoaded(false);
     };
+
     document.body.appendChild(script);
 
     return () => {
-      // Cleanup
+      // Don't remove script, keep it loaded
     };
   }, []);
 
-  // Initialize PayPal buttons when SDK loads and amount is set
+  // Render PayPal buttons when conditions are met
   useEffect(() => {
-    if (
-      sdkLoaded &&
-      window.paypal &&
-      paymentData.amount &&
-      paymentData.clientName &&
-      paymentData.invoiceNumber
-    ) {
-      // Clear any existing buttons
-      const container = document.getElementById('paypal-button-container');
-      if (container) {
-        container.innerHTML = '';
-      }
+    if (!sdkLoaded || !window.paypal) {
+      return;
+    }
 
+    // Only render if all required fields are filled
+    if (!paymentData.amount || !paymentData.clientName || !paymentData.invoiceNumber) {
+      return;
+    }
+
+    // Clear previous buttons
+    const container = document.getElementById('paypal-button-container');
+    if (container) {
+      container.innerHTML = '';
+    }
+
+    try {
       window.paypal
         .Buttons({
           createOrder: (data, actions) => {
-            console.log('Creating order for:', paymentData.amount);
+            const amount = parseFloat(paymentData.amount).toFixed(2);
+            console.log('Creating order for amount:', amount);
+
             return actions.order.create({
               purchase_units: [
                 {
                   amount: {
-                    value: parseFloat(paymentData.amount).toFixed(2),
+                    value: amount,
                   },
                   description:
-                    paymentData.description ||
-                    `Invoice ${paymentData.invoiceNumber}`,
+                    paymentData.description || `Invoice ${paymentData.invoiceNumber}`,
                 },
               ],
             });
           },
+
           onApprove: (data, actions) => {
             console.log('Payment approved:', data);
+
             return actions.order.capture().then((orderData) => {
-              // Payment successful!
+              console.log('Order captured:', orderData);
+
+              // Add to payment history
               const newPayment = {
                 id: paymentHistory.length + 1,
                 clientName: paymentData.clientName,
                 invoiceNumber: paymentData.invoiceNumber,
                 amount: parseFloat(paymentData.amount),
-                currency: 'USD',
                 status: 'completed',
                 date: new Date().toISOString().split('T')[0],
                 transactionId: orderData.id,
               };
 
               setPaymentHistory([newPayment, ...paymentHistory]);
+
+              // Show success message
               setPaymentStatus({
                 type: 'success',
-                message: `✅ Payment Received! Transaction ID: ${orderData.id}`,
+                message: `✅ Payment Successful! Amount: $${paymentData.amount}`,
                 transactionId: orderData.id,
-                amount: paymentData.amount,
               });
 
               // Reset form after 3 seconds
@@ -127,32 +136,35 @@ function Payments() {
                   invoiceNumber: '',
                   amount: '',
                   description: '',
-                  currency: 'USD',
                 });
                 setShowPaymentForm(false);
+                setPaymentStatus(null);
               }, 3000);
             });
           },
+
           onError: (err) => {
-            console.error('PayPal error:', err);
+            console.error('❌ PayPal error:', err);
             setPaymentStatus({
               type: 'error',
-              message:
-                '❌ Payment Failed. Please try again or check the console for details.',
+              message: '❌ Payment failed. Please try again.',
             });
           },
+
           onCancel: (data) => {
-            console.log('Payment cancelled:', data);
+            console.log('Payment cancelled');
             setPaymentStatus({
               type: 'error',
-              message: '❌ Payment Cancelled by user.',
+              message: '⚠️ Payment cancelled by user.',
             });
           },
         })
         .render('#paypal-button-container')
         .catch((err) => {
-          console.error('Error rendering PayPal button:', err);
+          console.error('Error rendering PayPal buttons:', err);
         });
+    } catch (error) {
+      console.error('Error creating PayPal buttons:', error);
     }
   }, [sdkLoaded, paymentData.amount, paymentData.clientName, paymentData.invoiceNumber, paymentHistory]);
 
@@ -176,7 +188,6 @@ function Payments() {
       invoiceNumber: '',
       amount: '',
       description: '',
-      currency: 'USD',
     });
     setPaymentStatus(null);
   };
@@ -225,7 +236,7 @@ function Payments() {
           <div className="stat-content">
             <h3>Average Payment</h3>
             <p className="stat-value">
-              ${(getTotalRevenue() / getPaymentCount() || 0).toFixed(2)}
+              ${(getTotalRevenue() / (getPaymentCount() || 1)).toFixed(2)}
             </p>
             <span className="stat-label">Per transaction</span>
           </div>
@@ -260,7 +271,7 @@ function Payments() {
               <div className={`payment-status ${paymentStatus.type}`}>
                 <p>{paymentStatus.message}</p>
                 {paymentStatus.transactionId && (
-                  <small>ID: {paymentStatus.transactionId}</small>
+                  <small>Transaction ID: {paymentStatus.transactionId}</small>
                 )}
               </div>
             )}
@@ -302,7 +313,7 @@ function Payments() {
                   name="amount"
                   value={paymentData.amount}
                   onChange={handleInputChange}
-                  placeholder="0.00"
+                  placeholder="e.g., 100.00"
                   step="0.01"
                   min="0.01"
                   required
@@ -318,9 +329,10 @@ function Payments() {
                     borderRadius: '6px',
                     border: '1px solid rgba(59, 130, 246, 0.3)',
                     color: '#e2e8f0',
+                    fontWeight: '500',
                   }}
                 >
-                  USD (PayPal Sandbox requires USD)
+                  🇺🇸 USD
                 </div>
               </div>
             </div>
@@ -338,24 +350,22 @@ function Payments() {
             </div>
 
             {paymentData.amount && paymentData.clientName && paymentData.invoiceNumber ? (
-              <>
-                <div className="paypal-button-wrapper">
-                  <h3>Payment Summary:</h3>
-                  <div className="payment-summary">
-                    <p>
-                      <strong>{paymentData.clientName}</strong> pays{' '}
-                      <strong className="amount">${paymentData.amount}</strong>
-                    </p>
-                    <p className="invoice">Invoice: {paymentData.invoiceNumber}</p>
-                  </div>
-
-                  <div
-                    id="paypal-button-container"
-                    className="paypal-container"
-                    style={{ minHeight: '50px' }}
-                  ></div>
+              <div className="paypal-button-wrapper">
+                <h3>💵 Payment Summary:</h3>
+                <div className="payment-summary">
+                  <p>
+                    <strong>{paymentData.clientName}</strong> pays{' '}
+                    <strong className="amount">${parseFloat(paymentData.amount).toFixed(2)}</strong>
+                  </p>
+                  <p className="invoice">Invoice: {paymentData.invoiceNumber}</p>
                 </div>
-              </>
+
+                <div
+                  id="paypal-button-container"
+                  className="paypal-container"
+                  style={{ minHeight: '60px', marginTop: '20px' }}
+                ></div>
+              </div>
             ) : (
               <div className="form-warning">
                 ⚠️ Please fill in Client Name, Invoice Number, and Amount to proceed
@@ -410,18 +420,16 @@ function Payments() {
 
       {/* Help Section */}
       <div className="payment-help">
-        <h3>🧪 SANDBOX TEST MODE - HOW TO TEST</h3>
+        <h3>🧪 SANDBOX TEST MODE - HOW TO USE</h3>
         <ul>
-          <li>✅ This is TEST MODE - no real money is charged</li>
-          <li>✅ Fill in Client Name, Invoice Number, and Amount (USD only)</li>
-          <li>✅ Click "PayPal Checkout" button (blue button that appears)</li>
-          <li>✅ You'll see PayPal login page (TEST/SANDBOX page)</li>
-          <li>✅ Use any test email to complete payment</li>
-          <li>✅ After payment, you'll see success message ✅</li>
-          <li>✅ Payment appears in history table below</li>
-          <li>
-            ✅ When ready for REAL payments, we just change ONE line (Client ID)!
-          </li>
+          <li>✅ Fill in Client Name, Invoice Number, and Amount</li>
+          <li>✅ A BLUE "PayPal Checkout" button will appear</li>
+          <li>✅ Click the button → PayPal test page opens</li>
+          <li>✅ Complete the payment with test account</li>
+          <li>✅ You'll see success message ✅</li>
+          <li>✅ Payment appears in history table</li>
+          <li>✅ No real money charged (it's FAKE money for testing!)</li>
+          <li>✅ When ready for REAL payments, we change ONE line!</li>
         </ul>
       </div>
     </div>
