@@ -21,18 +21,20 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
         run: |
           RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
-          -H "x-api-key: $ANTHROPIC_API_KEY" \
-          -H "anthropic-version: 2023-06-01" \
-          -H "content-type: application/json" \
-          -d "{
-            \"model\": \"claude-3-opus-20240229\",
-            \"max_tokens\": 1000,
-            \"messages\": [
-              {\"role\": \"user\", \"content\": \"Please review the code changes in this pull request.\"}
-            ]
-          }" | jq -r '.content[0].text')
-
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "{
+              \"model\": \"claude-3-opus-20240229\",
+              \"max_tokens\": 1000,
+              \"messages\": [
+                {\"role\": \"user\", \"content\": \"Review the code changes in this pull request and suggest improvements.\"}
+              ]
+            }" | jq -r '.content[0].text')
           echo "$RESPONSE" > comment.txt
+          echo "----- BEGIN COMMENT -----"
+          cat comment.txt
+          echo "----- END COMMENT -----"
 
       - name: Post comment to PR
         uses: actions/github-script@v6
