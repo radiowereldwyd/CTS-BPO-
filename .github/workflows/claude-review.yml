@@ -1,8 +1,13 @@
 name: Claude Code Review
 
 on:
-  pull_request:
+ pull_request:
     types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
   review:
