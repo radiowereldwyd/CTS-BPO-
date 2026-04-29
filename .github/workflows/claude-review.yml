@@ -1,6 +1,10 @@
 name: Claude Code Review
 
 on:
+  permissions:
+  contents: read
+  pull-requests: write
+  issues: write
   pull_request:
     types: [opened, synchronize]
 
