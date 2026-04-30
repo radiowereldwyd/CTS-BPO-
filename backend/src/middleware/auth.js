@@ -38,7 +38,7 @@ function requireSubcontractor(req, res, next) {
   const token = authHeader.slice(7);
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'subcontractor') {
+    if (decoded.role !== 'subcontractor' && decoded.role !== 'admin') {
       return res.status(403).json({ error: 'Subcontractor access required' });
     }
     req.subUser = decoded;

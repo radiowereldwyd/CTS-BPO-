@@ -10,21 +10,34 @@ const auditLogger = require('./audit-logger');
 
 const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 
-// BPO job types CTS can perform
-// Queries target companies/clients who NEED work done — not employee job boards
+// ─────────────────────────────────────────────────────────────────────────────
+// ACTIVE SERVICE TYPES — only search for jobs CTS BPO can currently fulfil:
+//   • Translation    (Google Cloud Translation API)
+//   • Transcription  (Google Speech-to-Text / audio/video → text)
+//   • Document AI    (Google Document AI — extraction, parsing, OCR)
+//
+// DO NOT add queries for: data entry, virtual assistance, finance admin,
+// content moderation, or customer support until subcontractors capable of
+// performing those services are enrolled and active.
+// ─────────────────────────────────────────────────────────────────────────────
 const BPO_QUERIES = [
-  { query: '"looking for" "data entry" "outsource" OR "service provider" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'data-entry' },
-  { query: '"need" "data capture" "company" OR "service" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
-  { query: '"translation services" "outsource" "quote" OR "provider" -site:linkedin.com -site:indeed.com', type: 'translation' },
-  { query: '"transcription service" "outsource" "business" -site:linkedin.com -site:indeed.com', type: 'transcription' },
-  { query: '"virtual assistant" "outsourcing company" "services" -site:linkedin.com -site:indeed.com', type: 'virtual-assistant' },
-  { query: '"accounts payable" "outsource" "service provider" -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
-  { query: '"BPO" "outsourcing" "data entry" "available" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
-  { query: '"content moderation" "outsource" "company" -site:linkedin.com -site:indeed.com', type: 'content-moderation' },
-  { query: 'data entry outsourcing company "contact us" OR "get a quote" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'data-entry' },
-  { query: 'document digitization outsourcing company "request quote" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
-  { query: 'payroll processing outsource company small business -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
-  { query: 'customer service outsourcing "contact us" company -site:linkedin.com -site:indeed.com', type: 'customer-support' },
+  // ── Translation ───────────────────────────────────────────────────────────
+  { query: '"translation services" "outsource" "quote" OR "provider" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'translation' },
+  { query: '"document translation" "outsourcing" "company" OR "service" -site:linkedin.com -site:indeed.com', type: 'translation' },
+  { query: '"certified translation" "outsource" "get a quote" -site:linkedin.com -site:indeed.com', type: 'translation' },
+  { query: '"multilingual translation" "outsourcing company" "contact us" -site:linkedin.com -site:indeed.com', type: 'translation' },
+
+  // ── Transcription ─────────────────────────────────────────────────────────
+  { query: '"transcription service" "outsource" "business" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'transcription' },
+  { query: '"audio transcription" "outsourcing" "quote" OR "provider" -site:linkedin.com -site:indeed.com', type: 'transcription' },
+  { query: '"video transcription" "outsource" "company" -site:linkedin.com -site:indeed.com', type: 'transcription' },
+  { query: '"legal transcription" OR "medical transcription" "outsource" "service" -site:linkedin.com -site:indeed.com', type: 'transcription' },
+
+  // ── Document AI / Extraction ──────────────────────────────────────────────
+  { query: '"document data extraction" "outsource" "company" OR "service" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'document-ai' },
+  { query: '"document processing" "outsourcing" "quote" OR "contact" -site:linkedin.com -site:indeed.com', type: 'document-ai' },
+  { query: '"invoice processing" "outsource" "service provider" -site:linkedin.com -site:indeed.com', type: 'document-ai' },
+  { query: '"OCR" "document extraction" "outsourcing company" "contact us" -site:linkedin.com -site:indeed.com', type: 'document-ai' },
 ];
 
 // Ensure job_leads table exists

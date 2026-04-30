@@ -16,11 +16,23 @@ const emailOutreach = require('../modules/email-outreach');
 
 const router = express.Router();
 
+// Admin credentials for portal access (read from env or fallback to defaults)
+const ADMIN_EMAIL    = (process.env.ADMIN_EMAIL    || 'admin@ctsbpo.com').toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD  || 'Admin1234!';
+
 /* ── POST /login ─────────────────────────────────────────────────────────── */
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'email and password are required' });
+  }
+
+  // ── Admin shortcut: admin can log into the portal to inspect all data ──
+  if (email.toLowerCase() === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+    const payload = { sub_id: null, name: 'Admin', email: ADMIN_EMAIL, role: 'admin' };
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' });
+    await auditLogger.log('sub.admin_portal_login', 'admin', null, `Admin accessed subcontractor portal`, null, 'info');
+    return res.json({ token, user: { id: null, name: 'Admin', email: ADMIN_EMAIL, role: 'admin' } });
   }
 
   try {

@@ -117,6 +117,8 @@ function SubcontractorPortal({ user, token, onLogout }) {
     inp:    { width: '100%', background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: '12px 16px', color: '#e2e8f0', fontSize: 15, boxSizing: 'border-box', outline: 'none' },
   };
 
+  const isAdmin = user.role === 'admin';
+
   return (
     <div style={S.page}>
       {/* Header */}
@@ -124,8 +126,17 @@ function SubcontractorPortal({ user, token, onLogout }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <CTSLogo size="sm" />
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{user.name}</div>
-            <div style={{ fontSize: 11, color: '#6366f1', letterSpacing: 1 }}>SUBCONTRACTOR PORTAL</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{user.name}</div>
+              {isAdmin && (
+                <span style={{ background: 'rgba(245,158,11,0.2)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, padding: '2px 10px', fontSize: 11, fontWeight: 800, letterSpacing: 1 }}>
+                  ADMIN VIEW
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: isAdmin ? '#f59e0b' : '#6366f1', letterSpacing: 1 }}>
+              {isAdmin ? 'VIEWING ALL SUBCONTRACTOR DATA' : 'SUBCONTRACTOR PORTAL'}
+            </div>
           </div>
         </div>
         <button onClick={onLogout} style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 600 }}>
@@ -133,15 +144,21 @@ function SubcontractorPortal({ user, token, onLogout }) {
         </button>
       </div>
 
+      {isAdmin && (
+        <div style={{ background: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.2)', padding: '10px 32px', fontSize: 13, color: '#fbbf24', textAlign: 'center' }}>
+          You are viewing the portal as <strong>Admin</strong>. All jobs and payments across all subcontractors are shown. Work submission is disabled in admin mode.
+        </div>
+      )}
+
       <div style={S.main}>
         {/* Summary cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 16, marginBottom: 28 }}>
           <div style={S.card}>
-            <div style={S.lbl}>Outstanding Jobs</div>
-            <div style={{ ...S.val, color: '#818cf8' }}>{outstandingJobs.length}</div>
+            <div style={S.lbl}>{isAdmin ? 'Total Jobs' : 'Outstanding Jobs'}</div>
+            <div style={{ ...S.val, color: '#818cf8' }}>{isAdmin ? jobs.length : outstandingJobs.length}</div>
           </div>
           <div style={S.card}>
-            <div style={S.lbl}>Total Earned (Owed)</div>
+            <div style={S.lbl}>{isAdmin ? 'Total Payable' : 'Total Earned (Owed)'}</div>
             <div style={{ ...S.val, color: '#f59e0b' }}>{fmt(summary.totalOwed)}</div>
           </div>
           <div style={S.card}>
@@ -156,7 +173,10 @@ function SubcontractorPortal({ user, token, onLogout }) {
 
         {/* Tabs */}
         <div style={S.tabs}>
-          {[['jobs','📋 My Jobs'],['submit','⬆ Submit Work'],['payments','💳 Payments']].map(([id, label]) => (
+          {(isAdmin
+            ? [['jobs','📋 All Jobs'],['payments','💳 All Payments']]
+            : [['jobs','📋 My Jobs'],['submit','⬆ Submit Work'],['payments','💳 Payments']]
+          ).map(([id, label]) => (
             <button key={id} style={S.tab(tab === id)} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
@@ -193,12 +213,15 @@ function SubcontractorPortal({ user, token, onLogout }) {
                 )}
 
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                  <div><div style={S.lbl}>Your Payout</div><div style={{ color: '#10b981', fontWeight: 700 }}>{fmt(job.sub_payout)}</div></div>
+                  {isAdmin && job.subcontractor_name && (
+                    <div><div style={S.lbl}>Subcontractor</div><div style={{ color: '#a5b4fc', fontWeight: 600 }}>{job.subcontractor_name}</div></div>
+                  )}
+                  <div><div style={S.lbl}>{isAdmin ? 'Payout' : 'Your Payout'}</div><div style={{ color: '#10b981', fontWeight: 700 }}>{fmt(job.sub_payout)}</div></div>
                   {job.due_date && <div><div style={S.lbl}>Due Date</div><div style={{ color: '#fbbf24', fontWeight: 600 }}>{new Date(job.due_date).toLocaleDateString()}</div></div>}
                   {job.submitted_at && <div><div style={S.lbl}>Submitted</div><div style={{ color: '#94a3b8' }}>{new Date(job.submitted_at).toLocaleString()}</div></div>}
                 </div>
 
-                {['assigned','not_submitted'].includes(job.submission_status || job.status) && (
+                {!isAdmin && ['assigned','not_submitted'].includes(job.submission_status || job.status) && (
                   <button
                     onClick={() => { setSubmitJobId(String(job.id)); setTab('submit'); }}
                     style={{ marginTop: 16, background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}

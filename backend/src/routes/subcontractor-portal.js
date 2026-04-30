@@ -122,20 +122,33 @@ function aiQualityCheck(filePath, fileName, fileSizeBytes) {
 
 /* ── GET /jobs ───────────────────────────────────────────────────────────── */
 router.get('/jobs', requireSubcontractor, async (req, res) => {
-  const subId = req.subUser.sub_id;
+  const isAdmin = req.subUser.role === 'admin';
+  const subId   = req.subUser.sub_id;
   try {
     if (!db.isConnected()) return res.json([]);
-    const r = await db.query(
-      `SELECT sj.*,
-              COALESCE(
-                (SELECT status FROM job_submissions WHERE job_id = sj.id ORDER BY created_at DESC LIMIT 1),
-                'not_submitted'
-              ) AS submission_status
-       FROM subcontractor_jobs sj
-       WHERE sj.sub_id = $1
-       ORDER BY sj.created_at DESC`,
-      [subId]
-    );
+    const r = isAdmin
+      ? await db.query(
+          `SELECT sj.*,
+                  sa.name AS subcontractor_name, sa.email AS subcontractor_email,
+                  COALESCE(
+                    (SELECT status FROM job_submissions WHERE job_id = sj.id ORDER BY created_at DESC LIMIT 1),
+                    'not_submitted'
+                  ) AS submission_status
+           FROM subcontractor_jobs sj
+           LEFT JOIN subcontractor_applications sa ON sa.id = sj.sub_id
+           ORDER BY sj.created_at DESC`
+        )
+      : await db.query(
+          `SELECT sj.*,
+                  COALESCE(
+                    (SELECT status FROM job_submissions WHERE job_id = sj.id ORDER BY created_at DESC LIMIT 1),
+                    'not_submitted'
+                  ) AS submission_status
+           FROM subcontractor_jobs sj
+           WHERE sj.sub_id = $1
+           ORDER BY sj.created_at DESC`,
+          [subId]
+        );
     res.json(r.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -144,20 +157,32 @@ router.get('/jobs', requireSubcontractor, async (req, res) => {
 
 /* ── GET /payments ──────────────────────────────────────────────────────── */
 router.get('/payments', requireSubcontractor, async (req, res) => {
-  const subId = req.subUser.sub_id;
+  const isAdmin = req.subUser.role === 'admin';
+  const subId   = req.subUser.sub_id;
   try {
     if (!db.isConnected()) return res.json({ jobs: [], summary: {} });
 
-    const r = await db.query(
-      `SELECT sj.id, sj.title, sj.sub_payout, sj.status, sj.created_at,
-              js.payout_status, js.payout_reference, js.confirmed_at,
-              js.id AS submission_id
-       FROM subcontractor_jobs sj
-       LEFT JOIN job_submissions js ON js.job_id = sj.id AND js.status = 'delivered'
-       WHERE sj.sub_id = $1
-       ORDER BY sj.created_at DESC`,
-      [subId]
-    );
+    const r = isAdmin
+      ? await db.query(
+          `SELECT sj.id, sj.title, sj.sub_payout, sj.status, sj.created_at,
+                  sa.name AS subcontractor_name,
+                  js.payout_status, js.payout_reference, js.confirmed_at,
+                  js.id AS submission_id
+           FROM subcontractor_jobs sj
+           LEFT JOIN subcontractor_applications sa ON sa.id = sj.sub_id
+           LEFT JOIN job_submissions js ON js.job_id = sj.id AND js.status = 'delivered'
+           ORDER BY sj.created_at DESC`
+        )
+      : await db.query(
+          `SELECT sj.id, sj.title, sj.sub_payout, sj.status, sj.created_at,
+                  js.payout_status, js.payout_reference, js.confirmed_at,
+                  js.id AS submission_id
+           FROM subcontractor_jobs sj
+           LEFT JOIN job_submissions js ON js.job_id = sj.id AND js.status = 'delivered'
+           WHERE sj.sub_id = $1
+           ORDER BY sj.created_at DESC`,
+          [subId]
+        );
 
     const jobs = r.rows;
     const totalOwed = jobs.filter(j => ['assigned','submitted','delivered'].includes(j.status))
