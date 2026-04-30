@@ -1,8 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './EmailTemplates.css';
 
 const API = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+function getHeaders() {
+  return { Authorization: `Bearer ${localStorage.getItem('token')}` };
+}
 
 const CATEGORY_META = {
   outreach:    { label: 'Outreach',     icon: '📡', color: '#1e40af', bg: '#eff6ff' },
@@ -27,9 +31,6 @@ const STAGE_LABELS = [
 ];
 
 export default function EmailTemplates() {
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
-
   const [templates, setTemplates]       = useState([]);
   const [selected, setSelected]         = useState(null);
   const [preview, setPreview]           = useState(null);
@@ -39,11 +40,10 @@ export default function EmailTemplates() {
   const [testEmail, setTestEmail]       = useState('');
   const [testStatus, setTestStatus]     = useState(null); // null | 'sending' | 'ok' | 'error'
   const [testMsg, setTestMsg]           = useState('');
-  const iframeRef = useRef(null);
 
   // Load template list from backend
   useEffect(() => {
-    axios.get(`${API}/api/email/templates`, { headers })
+    axios.get(`${API}/api/email/templates`, { headers: getHeaders() })
       .then(r => {
         setTemplates(r.data);
         if (r.data.length > 0) setSelected(r.data[0]);
@@ -57,7 +57,7 @@ export default function EmailTemplates() {
     if (!key) return;
     setPrevLoading(true);
     setPreview(null);
-    axios.get(`${API}/api/email/templates/${key}/preview`, { headers })
+    axios.get(`${API}/api/email/templates/${key}/preview`, { headers: getHeaders() })
       .then(r => setPreview(r.data))
       .catch(() => setPreview({ subject: 'Error loading preview', html: '<p>Could not load preview.</p>' }))
       .finally(() => setPrevLoading(false));
@@ -65,23 +65,12 @@ export default function EmailTemplates() {
 
   useEffect(() => { if (selected) loadPreview(selected.key); }, [selected, loadPreview]);
 
-  // Write HTML into iframe
-  useEffect(() => {
-    if (!iframeRef.current || !preview) return;
-    const doc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
-    if (doc) {
-      doc.open();
-      doc.write(preview.html || '');
-      doc.close();
-    }
-  }, [preview, previewMode]);
-
   const handleTestSend = async () => {
     if (!testEmail || !selected) return;
     setTestStatus('sending');
     setTestMsg('');
     try {
-      const r = await axios.post(`${API}/api/email/templates/${selected.key}/test`, { to: testEmail }, { headers });
+      const r = await axios.post(`${API}/api/email/templates/${selected.key}/test`, { to: testEmail }, { headers: getHeaders() });
       if (r.data.sent) {
         setTestStatus('ok');
         setTestMsg(`✅ Sent to ${testEmail} — check inbox!`);
@@ -212,10 +201,10 @@ export default function EmailTemplates() {
                   previewMode === 'html' ? (
                     <div className="et-iframe-wrap">
                       <iframe
-                        ref={iframeRef}
+                        key={selected?.key}
                         title="email-preview"
                         className="et-iframe"
-                        sandbox="allow-same-origin"
+                        srcDoc={`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;padding:24px 16px;background:#e2e8f0;font-family:'Segoe UI',Arial,sans-serif}img{max-width:100%;height:auto}</style></head><body>${preview.html}</body></html>`}
                       />
                     </div>
                   ) : (
