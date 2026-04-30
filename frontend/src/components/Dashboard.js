@@ -11,7 +11,7 @@ function fmt(n, prefix = '') {
 function Dashboard({ token }) {
   const [metrics, setMetrics]     = useState(null);
   const [loading, setLoading]     = useState(true);
-  const [initiating, setInitiating] = useState(false);
+  const [running, setRunning]     = useState(false);
   const [message, setMessage]     = useState('');
   const [pingMs, setPingMs]       = useState(null);
 
@@ -44,14 +44,15 @@ function Dashboard({ token }) {
     } catch { setPingMs(null); }
   }
 
-  async function handleAIInitiate() {
-    setInitiating(true); setMessage('');
+  async function handleRunAll() {
+    setRunning(true); setMessage('');
     try {
-      await axios.post(`${API_BASE}/api/ai/initiate`, {}, { headers: authHeaders });
-      setMessage('AI workflow initiated successfully.');
-    } catch {
-      setMessage('AI workflow triggered.');
-    } finally { setInitiating(false); }
+      await axios.post(`${API_BASE}/api/ai-agent/trigger/all`, {}, { headers: authHeaders });
+      setMessage('All agent tasks are running — lead search, follow-ups, applications, contracts, payments.');
+      setTimeout(() => { fetchMetrics(); setMessage(''); }, 6000);
+    } catch (err) {
+      setMessage('Could not trigger agent: ' + (err?.response?.data?.error || err.message));
+    } finally { setRunning(false); }
   }
 
   const m = metrics || {};
@@ -72,12 +73,24 @@ function Dashboard({ token }) {
         </div>
       </div>
 
-      {/* AI Initiate */}
+      {/* Agent Status Bar */}
       <section className="ai-initiate">
-        <button onClick={handleAIInitiate} disabled={initiating} className="btn-ai-initiate">
-          {initiating ? '⏳ Initiating...' : '🚀 AI Initiate'}
-        </button>
-        {message && <p className="initiate-message">{message}</p>}
+        <div style={{ display:'flex', alignItems:'center', gap:16, flexWrap:'wrap', justifyContent:'center' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:10, padding:'8px 16px' }}>
+            <span style={{ width:8, height:8, borderRadius:'50%', background:'#10b981', display:'inline-block', boxShadow:'0 0 6px #10b981', animation:'pulse 2s infinite' }} />
+            <span style={{ color:'#10b981', fontWeight:700, fontSize:13 }}>Agent Auto-Running</span>
+            <span style={{ color:'#64748b', fontSize:12 }}>— lead search every 2h · follow-ups every 6h · bounces every 20m</span>
+          </div>
+          <button
+            onClick={handleRunAll}
+            disabled={running}
+            className="btn-ai-initiate"
+            title="Immediately run all agent tasks: lead search, follow-ups, applications, contracts, payment chase"
+          >
+            {running ? '⏳ Running...' : '▶ Run All Now'}
+          </button>
+        </div>
+        {message && <p className="initiate-message" style={{ color: message.startsWith('Could not') ? '#ef4444' : undefined }}>{message}</p>}
       </section>
 
       {loading && <p style={{textAlign:'center',color:'#64748b',padding:'40px'}}>Loading live data…</p>}
