@@ -81,7 +81,7 @@ function App() {
             <NavLink to="/global-markets">Global Markets</NavLink>
             <NavLink to="/profit-projection">Profit Projection</NavLink>
             <NavLink to="/deployment-guide">Deployment Guide</NavLink>
-	    <NavLink to="/email-templates">Email Templates</NavLink>
+            <NavLink to="/email-templates">Email Templates</NavLink>
             <NavLink to="/payments">Payments</NavLink>
           </nav>
           <div className="header-user">
@@ -101,7 +101,7 @@ function App() {
             <Route path="/profit-projection" element={<ProfitProjection />} />
             <Route path="/deployment-guide" element={<DeploymentGuide />} />
             <Route path="/email-templates" element={<EmailTemplates />} />
-            <Route path="/payments" element={<Payments />} />
+            <Route path="/payments" element={<Payments token={token} />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

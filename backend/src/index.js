@@ -175,10 +175,41 @@ app.post('/api/assign', requireAuth, async (req, res) => {
   }
 });
 
-// Payment routes
+// Payment config (frontend uses this to get the live client ID)
+app.get('/api/payments/config', requireAuth, (req, res) => {
+  res.json(paymentGateway.getPayPalConfig());
+});
+
+// Ozow payment initiate
 app.post('/api/payments/initiate', requireAuth, async (req, res) => {
   try {
     const result = await paymentGateway.initiatePayment(req.body);
+    res.json(result);
+  } catch (err) {
+    await auditLogger.log('payment.failed', null, null, err.message, null, 'error');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PayPal – create order (server-side, keeps secret off the browser)
+app.post('/api/payments/paypal/create-order', requireAuth, async (req, res) => {
+  try {
+    const { amount, currency, description, invoiceId } = req.body;
+    if (!amount) return res.status(400).json({ error: 'amount is required' });
+    const order = await paymentGateway.createPayPalOrder({ amount, currency, description, invoiceId });
+    res.json(order);
+  } catch (err) {
+    await auditLogger.log('payment.failed', null, null, err.message, null, 'error');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PayPal – capture order after buyer approval
+app.post('/api/payments/paypal/capture-order', requireAuth, async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId is required' });
+    const result = await paymentGateway.capturePayPalOrder(orderId);
     res.json(result);
   } catch (err) {
     await auditLogger.log('payment.failed', null, null, err.message, null, 'error');
