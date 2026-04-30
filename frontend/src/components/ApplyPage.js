@@ -102,10 +102,18 @@ export default function ApplyPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#0f3460 100%)' }}>
+      <style>{`
+        @keyframes logo3d {
+          0%,100% { filter: drop-shadow(0 6px 32px rgba(99,102,241,0.7)) drop-shadow(0 2px 8px rgba(56,189,248,0.5)); transform: perspective(600px) rotateX(0deg) rotateY(0deg) scale(1); }
+          25%      { filter: drop-shadow(8px 10px 40px rgba(56,189,248,0.6)) drop-shadow(-4px 4px 16px rgba(99,102,241,0.4)); transform: perspective(600px) rotateX(2deg) rotateY(-3deg) scale(1.02); }
+          50%      { filter: drop-shadow(0 12px 48px rgba(99,102,241,0.8)) drop-shadow(0 4px 20px rgba(56,189,248,0.6)); transform: perspective(600px) rotateX(1deg) rotateY(0deg) scale(1.03); }
+          75%      { filter: drop-shadow(-8px 10px 40px rgba(99,102,241,0.5)) drop-shadow(4px 4px 16px rgba(56,189,248,0.5)); transform: perspective(600px) rotateX(2deg) rotateY(3deg) scale(1.02); }
+        }
+      `}</style>
 
       {/* Header */}
       <div style={{ textAlign: 'center', padding: '40px 24px 0' }}>
-        <img src="/cts-bpo-logo-nobg.png" alt="CTS BPO" style={{ height: 80, width: 'auto', marginBottom: 16 }} />
+        <img src="/cts-bpo-logo-nobg.png" alt="CTS BPO" style={{ height: 560, width: 'auto', marginBottom: 24, animation: 'logo3d 6s ease-in-out infinite' }} />
         <h1 style={{ margin: '0 0 8px', color: '#fff', fontSize: 28, fontWeight: 800 }}>Subcontractor Application</h1>
         <p style={{ margin: '0 0 8px', color: '#94a3b8', fontSize: 14 }}>Join South Africa's fastest-growing BPO partner network</p>
         <div style={{ display: 'inline-flex', gap: 8, alignItems: 'center', background: 'rgba(56,189,248,0.12)', border: '1px solid #38bdf8', borderRadius: 20, padding: '5px 18px' }}>

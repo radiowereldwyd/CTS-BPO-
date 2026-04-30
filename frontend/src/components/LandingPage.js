@@ -160,27 +160,111 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* ── HERO — live office video background ─────────────────────────────── */}
-      <section style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '120px 24px 80px', overflow: 'hidden' }}>
+      {/* ── HERO — animated office background ──────────────────────────────── */}
+      <style>{`
+        @keyframes floatCard {
+          0%   { transform: translateY(0px) translateX(0px); opacity: 0.7; }
+          33%  { transform: translateY(-18px) translateX(8px); opacity: 1; }
+          66%  { transform: translateY(-8px) translateX(-6px); opacity: 0.85; }
+          100% { transform: translateY(0px) translateX(0px); opacity: 0.7; }
+        }
+        @keyframes pulse {
+          0%,100% { transform: scale(1); opacity: 0.4; }
+          50%      { transform: scale(1.15); opacity: 0.7; }
+        }
+        @keyframes drift {
+          0%   { transform: translate(0,0); }
+          25%  { transform: translate(40px,-30px); }
+          50%  { transform: translate(-20px,-60px); }
+          75%  { transform: translate(-50px,-20px); }
+          100% { transform: translate(0,0); }
+        }
+        @keyframes scanline {
+          0%   { top: -4px; }
+          100% { top: 100%; }
+        }
+        @keyframes logo3d {
+          0%,100% { filter: drop-shadow(0 6px 32px rgba(99,102,241,0.7)) drop-shadow(0 2px 8px rgba(56,189,248,0.5)); transform: perspective(600px) rotateX(0deg) rotateY(0deg) scale(1); }
+          25%      { filter: drop-shadow(8px 10px 40px rgba(56,189,248,0.6)) drop-shadow(-4px 4px 16px rgba(99,102,241,0.4)); transform: perspective(600px) rotateX(2deg) rotateY(-3deg) scale(1.02); }
+          50%      { filter: drop-shadow(0 12px 48px rgba(99,102,241,0.8)) drop-shadow(0 4px 20px rgba(56,189,248,0.6)); transform: perspective(600px) rotateX(1deg) rotateY(0deg) scale(1.03); }
+          75%      { filter: drop-shadow(-8px 10px 40px rgba(99,102,241,0.5)) drop-shadow(4px 4px 16px rgba(56,189,248,0.5)); transform: perspective(600px) rotateX(2deg) rotateY(3deg) scale(1.02); }
+        }
+      `}</style>
 
-        {/* Live BPO office video */}
-        <video
-          autoPlay muted loop playsInline
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0 }}
-          poster="https://images.pexels.com/photos/5453808/pexels-photo-5453808.jpeg?auto=compress&cs=tinysrgb&w=1280"
-        >
-          <source src="https://assets.mixkit.co/videos/preview/mixkit-people-working-in-a-call-center-23-large.mp4" type="video/mp4" />
-          <source src="https://assets.mixkit.co/videos/preview/mixkit-business-team-working-in-the-office-4-large.mp4" type="video/mp4" />
-        </video>
+      <section style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '120px 24px 80px', overflow: 'hidden', background: '#0a1530' }}>
 
-        {/* Deep dark gradient overlay */}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg,rgba(10,21,48,0.88) 0%,rgba(15,45,95,0.82) 50%,rgba(10,21,48,0.90) 100%)', zIndex: 1 }} />
+        {/* ── Animated office background layer ── */}
+        <div style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden' }}>
+
+          {/* Large pulsing "workstation" circles */}
+          {[
+            { left:'8%', top:'20%', size:220, delay:'0s', dur:'6s', color:'rgba(99,102,241,0.08)' },
+            { left:'78%', top:'12%', size:280, delay:'1.5s', dur:'7s', color:'rgba(56,189,248,0.07)' },
+            { left:'60%', top:'55%', size:180, delay:'3s', dur:'5s', color:'rgba(99,102,241,0.07)' },
+            { left:'15%', top:'65%', size:240, delay:'2s', dur:'8s', color:'rgba(16,185,129,0.06)' },
+          ].map((c,i) => (
+            <div key={i} style={{ position:'absolute', left:c.left, top:c.top, width:c.size, height:c.size, borderRadius:'50%', background:c.color, animation:`pulse ${c.dur} ${c.delay} ease-in-out infinite` }} />
+          ))}
+
+          {/* Floating "agent activity" cards */}
+          {[
+            { left:'5%', top:'18%', delay:'0s', dur:'8s', label:'📞 Agent Active', sub:'Call in progress — 4:32', color:'#6366f1' },
+            { left:'72%', top:'10%', delay:'2s', dur:'10s', label:'✅ Task Completed', sub:'Data Entry · 127 records', color:'#10b981' },
+            { left:'80%', top:'60%', delay:'4s', dur:'9s', label:'📊 Quality Check', sub:'Accuracy: 99.2%', color:'#38bdf8' },
+            { left:'2%', top:'60%', delay:'1s', dur:'11s', label:'🚀 New Contract', sub:'Transcription · 42 min', color:'#f59e0b' },
+            { left:'55%', top:'75%', delay:'5s', dur:'7s', label:'👤 Agent Online', sub:'Subcontractor #0047', color:'#a855f7' },
+            { left:'38%', top:'8%', delay:'3s', dur:'9s', label:'💳 Payment Sent', sub:'R 1,000 processed', color:'#10b981' },
+          ].map((card,i) => (
+            <div key={i} style={{
+              position:'absolute', left:card.left, top:card.top,
+              background:'rgba(15,28,56,0.85)', backdropFilter:'blur(8px)',
+              border:`1px solid ${card.color}40`, borderRadius:12, padding:'12px 16px',
+              minWidth:200, animation:`floatCard ${card.dur} ${card.delay} ease-in-out infinite`,
+              boxShadow:`0 4px 20px ${card.color}20`,
+            }}>
+              <div style={{ fontSize:13, fontWeight:700, color:'#e2e8f0', marginBottom:4 }}>{card.label}</div>
+              <div style={{ fontSize:11, color:'#64748b' }}>{card.sub}</div>
+              <div style={{ marginTop:8, height:2, borderRadius:2, background:`linear-gradient(90deg,${card.color},transparent)` }} />
+            </div>
+          ))}
+
+          {/* Connecting grid lines (network effect) */}
+          <svg style={{ position:'absolute', inset:0, width:'100%', height:'100%', opacity:0.06 }} viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <pattern id="grid" width="80" height="80" patternUnits="userSpaceOnUse">
+                <path d="M 80 0 L 0 0 0 80" fill="none" stroke="#6366f1" strokeWidth="0.5" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+          </svg>
+
+          {/* Drifting bokeh dots */}
+          {[
+            { left:'20%', top:'40%', delay:'0s', dur:'18s', size:6, color:'rgba(56,189,248,0.5)' },
+            { left:'50%', top:'20%', delay:'4s', dur:'22s', size:4, color:'rgba(99,102,241,0.6)' },
+            { left:'80%', top:'50%', delay:'8s', dur:'16s', size:5, color:'rgba(16,185,129,0.5)' },
+            { left:'35%', top:'70%', delay:'2s', dur:'20s', size:4, color:'rgba(245,158,11,0.5)' },
+            { left:'65%', top:'30%', delay:'6s', dur:'24s', size:6, color:'rgba(168,85,247,0.5)' },
+          ].map((d,i) => (
+            <div key={i} style={{ position:'absolute', left:d.left, top:d.top, width:d.size, height:d.size, borderRadius:'50%', background:d.color, boxShadow:`0 0 12px ${d.color}`, animation:`drift ${d.dur} ${d.delay} ease-in-out infinite` }} />
+          ))}
+
+          {/* Moving scanline (subtle) */}
+          <div style={{ position:'absolute', left:0, right:0, height:2, background:'linear-gradient(90deg,transparent 0%,rgba(56,189,248,0.12) 50%,transparent 100%)', animation:'scanline 8s linear infinite', zIndex:1 }} />
+        </div>
+
+        {/* Deep overlay for readability */}
+        <div style={{ position:'absolute', inset:0, background:'linear-gradient(160deg,rgba(10,21,48,0.75) 0%,rgba(10,21,48,0.55) 50%,rgba(10,21,48,0.80) 100%)', zIndex: 1 }} />
 
         {/* Hero content */}
         <div style={{ maxWidth: 900, position: 'relative', zIndex: 2 }}>
 
-          {/* Logo — 3× larger */}
-          <img src="/cts-bpo-logo-nobg.png" alt="CTS BPO" style={{ height: 280, width: 'auto', marginBottom: 28, filter: 'drop-shadow(0 4px 24px rgba(99,102,241,0.4))' }} />
+          {/* Logo — 2× bigger with 3D animated glow */}
+          <img
+            src="/cts-bpo-logo-nobg.png"
+            alt="CTS BPO"
+            style={{ height: 560, width: 'auto', marginBottom: 24, animation: 'logo3d 6s ease-in-out infinite' }}
+          />
 
           {/* Badge */}
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.45)', borderRadius: 24, padding: '7px 22px', marginBottom: 28 }}>
