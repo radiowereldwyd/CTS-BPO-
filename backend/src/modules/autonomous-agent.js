@@ -313,6 +313,14 @@ async function assignContracts() {
     FROM subcontractor_jobs j
     WHERE j.status = 'outstanding'
       AND (j.notes IS NULL OR j.notes NOT LIKE '%assigned%')
+      AND NOT EXISTS (
+        SELECT 1 FROM job_submissions js2
+        JOIN subcontractor_jobs sj2 ON sj2.id = js2.job_id
+        WHERE sj2.contract_id = j.contract_id
+          AND j.contract_id IS NOT NULL
+          AND js2.overdue_flagged_at IS NOT NULL
+          AND js2.confirmed_at IS NULL
+      )
     LIMIT 10
   `);
 

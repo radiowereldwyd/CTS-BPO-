@@ -398,6 +398,22 @@ router.get('/client-confirm/:token', async (req, res) => {
     }
 
     await db.query(`UPDATE job_submissions SET status='confirmed', confirmed_at=NOW() WHERE delivery_token=$1`, [req.params.token]);
+
+    // Check if this client was overdue-blocked — if so, log that they've been unblocked
+    const wasOverdue = await db.query(
+      `SELECT overdue_flagged_at FROM job_submissions WHERE delivery_token=$1`,
+      [req.params.token]
+    );
+    if (wasOverdue.rows[0]?.overdue_flagged_at) {
+      await auditLogger.log(
+        'payment.overdue_resolved',
+        'job_submission',
+        row.job_id,
+        `Client confirmed overdue job "${row.title}" — payment block lifted, new work can now be assigned`,
+        null, 'info'
+      );
+    }
+
     await autoReleasePayout(req.params.token, row.job_id, row.sub_payout, row.sub_id, row.sub_name);
 
     res.send(`
