@@ -1131,6 +1131,59 @@ async function sendClientDelivery(email, clientName, jobTitle, confirmLink, down
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
+   CLIENT PAYMENT REMINDER — chases client who has not confirmed/paid
+   reminderNumber: 1 (day 3), 2 (day 7), 3 (day 14 — final / overdue notice)
+   ───────────────────────────────────────────────────────────────────────── */
+async function sendClientPaymentReminder(email, clientName, jobTitle, confirmLink, downloadLink, reminderNumber = 1) {
+  const isFinal = reminderNumber >= 3;
+  const dayMap  = { 1: '3 days', 2: '7 days', 3: '14 days' };
+  const daysAgo = dayMap[reminderNumber] || '14 days';
+  const subject = isFinal
+    ? `⚠️ Final Notice — Outstanding Payment: "${jobTitle}" | CTS BPO`
+    : `Reminder ${reminderNumber}: Payment Outstanding — "${jobTitle}" | CTS BPO`;
+
+  const html = `
+    ${portalBaseStyle()}
+    <div class="container">
+      ${portalLogoHeader()}
+      <div class="body">
+        <h2>${isFinal ? '⚠️ Final Payment Notice' : `Payment Reminder #${reminderNumber}`}</h2>
+        <p>Dear ${esc(clientName)},</p>
+        <p>
+          This is a ${isFinal ? '<strong style="color:#ef4444">final</strong>' : `<strong>reminder #${reminderNumber}</strong>`} regarding the completed job
+          <strong>${esc(jobTitle)}</strong>, which was delivered to you <strong>${daysAgo} ago</strong>.
+        </p>
+        <div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:20px;margin:20px 0;text-align:center">
+          <div style="font-size:36px;margin-bottom:8px">${isFinal ? '🔴' : '🟡'}</div>
+          <strong style="color:#f59e0b;font-size:16px">Payment / Confirmation Pending</strong>
+          <p style="color:#94a3b8;font-size:13px;margin:8px 0 0">Your confirmation is required to finalise this transaction.</p>
+        </div>
+        <p style="color:#cbd5e1">The completed work is still available for download and your payment confirmation is outstanding. Please confirm receipt at your earliest convenience.</p>
+        <div class="cta-block" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+          <a href="${esc(downloadLink)}" class="cta-btn" style="background:#10b981">⬇ Download Completed Work</a>
+          <a href="${esc(confirmLink)}" class="cta-btn">✅ Confirm Receipt Now</a>
+        </div>
+        <hr style="border-color:rgba(255,255,255,0.07);margin:28px 0">
+        ${isFinal
+          ? `<p style="color:#ef4444;font-size:13px;font-weight:600">⚠️ This is our final notice. If we do not receive confirmation within the next 7 days, this matter will be escalated to our collections process. Please contact us immediately if you have any concerns.</p>`
+          : `<p style="color:#94a3b8;font-size:13px">If you have already arranged payment or have concerns about the delivered work, please reply to this email and we will assist you promptly.</p>`
+        }
+        <p style="color:#64748b;font-size:13px;margin-top:16px">— The CTS BPO Team</p>
+      </div>
+      ${portalFooter()}
+    </div>
+  `;
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
+    await auditLogger.log('email.payment_reminder', 'client', email, `Payment reminder #${reminderNumber} → ${email} for job "${jobTitle}"`, null, 'info');
+    return { sent: true, to: email };
+  }
+  console.log(`[EMAIL STUB] Payment reminder #${reminderNumber} →`, email, jobTitle);
+  return { sent: false, simulated: true, to: email };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
    SUBCONTRACTOR PAYOUT — notifies sub that payment has been released
    ───────────────────────────────────────────────────────────────────────── */
 async function sendSubcontractorPayout(email, name, amount, jobTitle, reference) {
@@ -1195,7 +1248,7 @@ module.exports = {
   sendClientColdOutreach, sendClientFollowUp,
   sendSubcontractorAcknowledgment, sendSubcontractorApproval,
   sendContractAssignment,
-  sendPortalSetupEmail, sendClientDelivery, sendSubcontractorPayout,
+  sendPortalSetupEmail, sendClientDelivery, sendClientPaymentReminder, sendSubcontractorPayout,
   templates, TEMPLATE_META, VALID_TEMPLATES,
   isConfigured: () => !!(GMAIL_USER && GMAIL_APP_PASS),
 };

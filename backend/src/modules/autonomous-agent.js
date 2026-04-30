@@ -518,6 +518,154 @@ async function processAIJobs() {
   }
 }
 
+// ── 6. Payment Chase & Auto-release ────────────────────────────────────────
+// Runs every hour. Three jobs:
+//   A) Auto-release payouts for delivered jobs older than 48h (cron-safe replacement for setTimeout)
+//   B) Send client payment reminders: day 3, day 7, day 14
+//   C) Flag jobs as overdue after 14 days with no client confirmation
+async function runPaymentChase() {
+  if (!db.isConnected()) return;
+
+  const appBase = process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : (process.env.APP_URL || '');
+
+  // Helper: get client email + name for a job via its contract_id → ai_leads
+  async function getClientInfo(contractId) {
+    if (!contractId) return null;
+    try {
+      const r = await db.query(
+        `SELECT al.contact_email AS email, al.company AS name
+         FROM ai_leads al
+         WHERE al.id = $1`,
+        [contractId]
+      );
+      return r.rows[0] || null;
+    } catch { return null; }
+  }
+
+  // ── A) Auto-release payouts for jobs delivered > 48h ago, not yet paid ──
+  try {
+    const overdue = await db.query(`
+      SELECT js.id, js.delivery_token, js.job_id, js.sub_application_id,
+             sj.sub_payout, sj.contract_id,
+             sa.name AS sub_name
+      FROM job_submissions js
+      JOIN subcontractor_jobs sj ON sj.id = js.job_id
+      LEFT JOIN subcontractor_applications sa ON sa.id = js.sub_application_id
+      WHERE js.status = 'delivered'
+        AND js.payout_status != 'paid'
+        AND js.delivered_at < NOW() - INTERVAL '48 hours'
+      LIMIT 20
+    `);
+
+    for (const row of overdue.rows) {
+      try {
+        const ref = `AUTO-CRON-${Date.now()}`;
+        await db.query(
+          `UPDATE job_submissions
+           SET payout_status='paid', payout_reference=$1, confirmed_at=COALESCE(confirmed_at,NOW())
+           WHERE id=$2`,
+          [ref, row.id]
+        );
+        await db.query(`UPDATE subcontractor_jobs SET status='completed', updated_at=NOW() WHERE id=$1`, [row.job_id]);
+
+        // Notify sub
+        if (row.sub_application_id) {
+          const subR = await db.query(`SELECT email FROM subcontractor_applications WHERE id=$1`, [row.sub_application_id]);
+          const subEmail = subR.rows[0]?.email;
+          const jobR    = await db.query(`SELECT title FROM subcontractor_jobs WHERE id=$1`, [row.job_id]);
+          if (subEmail) {
+            await emailOutreach.sendSubcontractorPayout(subEmail, row.sub_name, row.sub_payout, jobR.rows[0]?.title || 'your job', ref).catch(() => {});
+          }
+        }
+
+        await logActivity('payment_auto_release', `Cron auto-released payout for submission #${row.id} (48h rule)`, 'job_submission', row.id, 'success');
+      } catch (e) {
+        await logActivity('payment_auto_release', `Auto-release failed for submission #${row.id}: ${e.message}`, 'job_submission', row.id, 'error');
+      }
+    }
+  } catch (e) {
+    await logActivity('payment_chase', `Auto-release query error: ${e.message}`, null, null, 'error');
+  }
+
+  // ── B) Client payment reminders ──
+  const reminderCases = [
+    { day: 3,  field: 'client_reminder1_at', prevField: null,                 num: 1 },
+    { day: 7,  field: 'client_reminder2_at', prevField: 'client_reminder1_at', num: 2 },
+    { day: 14, field: 'client_reminder3_at', prevField: 'client_reminder2_at', num: 3 },
+  ];
+
+  for (const rc of reminderCases) {
+    try {
+      const prevCondition = rc.prevField
+        ? `AND js.${rc.prevField} < NOW() - INTERVAL '${rc.day - (rc.num === 2 ? 3 : 7)} days'`
+        : `AND js.delivered_at   < NOW() - INTERVAL '${rc.day} days'`;
+
+      const rows = await db.query(`
+        SELECT js.id, js.delivery_token, js.job_id, sj.contract_id, sj.title
+        FROM job_submissions js
+        JOIN subcontractor_jobs sj ON sj.id = js.job_id
+        WHERE js.status = 'delivered'
+          AND js.payout_status != 'paid'
+          AND js.confirmed_at IS NULL
+          AND js.${rc.field} IS NULL
+          ${prevCondition}
+        LIMIT 20
+      `);
+
+      for (const row of rows.rows) {
+        try {
+          const client = await getClientInfo(row.contract_id);
+          if (client?.email) {
+            await emailOutreach.sendClientPaymentReminder(
+              client.email,
+              client.name || 'Valued Client',
+              row.title,
+              `${appBase}/api/sub/client-confirm/${row.delivery_token}`,
+              `${appBase}/api/sub/download/${row.delivery_token}`,
+              rc.num
+            );
+            agentState.totalEmailsSent++;
+          }
+          // Mark reminder sent regardless (avoids hammering clients with no email on record)
+          await db.query(`UPDATE job_submissions SET ${rc.field}=NOW() WHERE id=$1`, [row.id]);
+          await logActivity('payment_reminder_sent', `Reminder #${rc.num} sent for job "${row.title}" (submission #${row.id})${client?.email ? ` → ${client.email}` : ' (no client email)'}`, 'job_submission', row.id);
+        } catch (e) {
+          await logActivity('payment_reminder_sent', `Reminder #${rc.num} failed for submission #${row.id}: ${e.message}`, 'job_submission', row.id, 'error');
+        }
+      }
+    } catch (e) {
+      await logActivity('payment_chase', `Reminder #${rc.num} query error: ${e.message}`, null, null, 'error');
+    }
+  }
+
+  // ── C) Flag as overdue: delivered > 14 days, no confirmation, no flag yet ──
+  try {
+    const flagged = await db.query(`
+      UPDATE job_submissions
+      SET overdue_flagged_at = NOW()
+      WHERE status = 'delivered'
+        AND payout_status != 'paid'
+        AND confirmed_at IS NULL
+        AND overdue_flagged_at IS NULL
+        AND delivered_at < NOW() - INTERVAL '14 days'
+      RETURNING id, job_id
+    `);
+    if (flagged.rows.length > 0) {
+      await db.query(`
+        UPDATE subcontractor_jobs SET status='overdue', updated_at=NOW()
+        WHERE id = ANY($1::int[])
+      `, [flagged.rows.map(r => r.job_id)]);
+      await logActivity('payment_chase', `Flagged ${flagged.rows.length} job(s) as overdue (14-day rule)`, null, null, 'warning');
+    }
+  } catch (e) {
+    await logActivity('payment_chase', `Overdue-flag error: ${e.message}`, null, null, 'error');
+  }
+
+  agentState.lastPaymentChase = new Date().toISOString();
+}
+
 // ── Start the agent ────────────────────────────────────────────────────────
 async function startAgent() {
   await ensureTables();
@@ -559,6 +707,12 @@ async function startAgent() {
     processAIJobs().catch(e => logActivity('ai_job_process', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
+  // Payment chase every hour — auto-release overdue payouts + client reminders
+  cron.schedule('30 * * * *', () => {
+    runPaymentChase().catch(e => logActivity('payment_chase', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+  setTimeout(() => runPaymentChase().catch(console.error), 25000);
+
   // Daily heartbeat log
   cron.schedule('0 8 * * *', () => {
     logActivity('heartbeat', `Daily check — leads: ${agentState.totalLeadsFound}, emails: ${agentState.totalEmailsSent}, apps: ${agentState.totalAppProcessed}, contracts: ${agentState.totalContractsAssigned}`);
@@ -573,12 +727,14 @@ async function triggerNow(task) {
     case 'applications': await processApplications(); break;
     case 'contracts':    await assignContracts(); break;
     case 'ai_jobs':      await processAIJobs(); break;
+    case 'payment_chase': await runPaymentChase(); break;
     case 'all':
       await runLeadSearch();
       await processApplications();
       await assignContracts();
       await processAIJobs();
       await runFollowUpSequence();
+      await runPaymentChase();
       break;
     default: throw new Error(`Unknown task: ${task}`);
   }
@@ -589,4 +745,4 @@ function getStatus() {
   return { ...agentState };
 }
 
-module.exports = { startAgent, triggerNow, getStatus, processAIJobs };
+module.exports = { startAgent, triggerNow, getStatus, processAIJobs, runPaymentChase };

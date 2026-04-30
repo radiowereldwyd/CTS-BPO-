@@ -776,6 +776,12 @@ async function ensureSubcontractorTables() {
       created_at          TIMESTAMPTZ DEFAULT NOW()
     )
   `).catch(() => {});
+
+  // Migrations: add payment-chase tracking columns to job_submissions
+  await db.query(`ALTER TABLE job_submissions ADD COLUMN IF NOT EXISTS client_reminder1_at TIMESTAMPTZ`).catch(() => {});
+  await db.query(`ALTER TABLE job_submissions ADD COLUMN IF NOT EXISTS client_reminder2_at TIMESTAMPTZ`).catch(() => {});
+  await db.query(`ALTER TABLE job_submissions ADD COLUMN IF NOT EXISTS client_reminder3_at TIMESTAMPTZ`).catch(() => {});
+  await db.query(`ALTER TABLE job_submissions ADD COLUMN IF NOT EXISTS overdue_flagged_at  TIMESTAMPTZ`).catch(() => {});
 }
 ensureSubcontractorTables().catch(e => console.error('ensureSubcontractorTables:', e.message));
 

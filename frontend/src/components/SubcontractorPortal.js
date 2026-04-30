@@ -8,11 +8,12 @@ function fmt(n) { return n != null ? `R ${parseFloat(n).toLocaleString('en-ZA', 
 
 function statusBadge(s) {
   const map = {
-    assigned:      { bg: 'rgba(99,102,241,0.15)', color: '#818cf8', label: 'Assigned' },
-    submitted:     { bg: 'rgba(245,158,11,0.15)', color: '#fbbf24', label: 'Submitted' },
-    delivered:     { bg: 'rgba(20,184,166,0.15)', color: '#2dd4bf', label: 'Delivered' },
-    completed:     { bg: 'rgba(16,185,129,0.15)', color: '#10b981', label: 'Completed' },
-    not_submitted: { bg: 'rgba(148,163,184,0.1)', color: '#94a3b8', label: 'Pending' },
+    assigned:      { bg: 'rgba(99,102,241,0.15)',  color: '#818cf8', label: 'Assigned' },
+    submitted:     { bg: 'rgba(245,158,11,0.15)',  color: '#fbbf24', label: 'Submitted' },
+    delivered:     { bg: 'rgba(20,184,166,0.15)',  color: '#2dd4bf', label: 'Delivered — Awaiting Payment' },
+    completed:     { bg: 'rgba(16,185,129,0.15)',  color: '#10b981', label: 'Completed' },
+    not_submitted: { bg: 'rgba(148,163,184,0.1)',  color: '#94a3b8', label: 'Pending' },
+    overdue:       { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444', label: '🔴 OVERDUE' },
   };
   const b = map[s] || map.not_submitted;
   return (
