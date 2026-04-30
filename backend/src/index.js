@@ -542,7 +542,7 @@ app.get('/api/audit-logs', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// Subcontractors list
+// Subcontractors list (original)
 app.get('/api/subcontractors', requireAuth, async (req, res) => {
   try {
     const list = await subcontractorAssignment.getSubcontractors();
@@ -550,6 +550,369 @@ app.get('/api/subcontractors', requireAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── Subcontractor Hub ────────────────────────────────────────────────────────
+
+async function ensureSubcontractorTables() {
+  if (!db.isConnected()) return;
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS subcontractor_applications (
+      id                   SERIAL PRIMARY KEY,
+      name                 VARCHAR(255) NOT NULL,
+      email                VARCHAR(255) NOT NULL,
+      phone                VARCHAR(50),
+      location             VARCHAR(255),
+      desired_earnings     NUMERIC(12,2) NOT NULL DEFAULT 0,
+      platform_fee         NUMERIC(12,2) NOT NULL DEFAULT 0,
+      job_value            NUMERIC(12,2) NOT NULL DEFAULT 0,
+      our_margin           NUMERIC(12,2) NOT NULL DEFAULT 0,
+      services             TEXT[],
+      experience           TEXT,
+      availability         VARCHAR(50) DEFAULT 'flexible',
+      equipment            TEXT,
+      internet_speed       VARCHAR(50),
+      penalty_acknowledged BOOLEAN DEFAULT FALSE,
+      status               VARCHAR(20) DEFAULT 'pending',
+      notes                TEXT,
+      source               VARCHAR(50) DEFAULT 'email',
+      created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at          TIMESTAMP,
+      reviewed_by          INTEGER
+    )
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS subcontractor_jobs (
+      id               SERIAL PRIMARY KEY,
+      sub_id           INTEGER,
+      contract_id      INTEGER,
+      title            VARCHAR(255) NOT NULL,
+      description      TEXT,
+      job_value        NUMERIC(12,2) NOT NULL DEFAULT 0,
+      sub_payout       NUMERIC(12,2) NOT NULL DEFAULT 0,
+      our_margin       NUMERIC(12,2) NOT NULL DEFAULT 0,
+      due_date         TIMESTAMP,
+      submitted_at     TIMESTAMP,
+      verified_at      TIMESTAMP,
+      status           VARCHAR(30) DEFAULT 'assigned',
+      reminder_count   INTEGER DEFAULT 0,
+      last_reminder_at TIMESTAMP,
+      created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+ensureSubcontractorTables().catch(e => console.error('ensureSubcontractorTables:', e.message));
+
+// GET all subcontractor applications
+app.get('/api/subcontractors/applications', requireAuth, async (req, res) => {
+  try {
+    if (db.isConnected()) {
+      const r = await db.query(`SELECT * FROM subcontractor_applications ORDER BY created_at DESC`);
+      return res.json(r.rows);
+    }
+    res.json([]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST submit a subcontractor application (public — linked from recruitment email)
+app.post('/api/subcontractors/applications', async (req, res) => {
+  try {
+    const {
+      name, email, phone, location,
+      desired_earnings, services, experience,
+      availability, equipment, internet_speed, penalty_acknowledged
+    } = req.body;
+    if (!name || !email || !desired_earnings) {
+      return res.status(400).json({ error: 'name, email and desired_earnings are required' });
+    }
+    const de = parseFloat(desired_earnings) || 0;
+    const pf = Math.round(de * 0.5 * 100) / 100;
+    const jv = Math.round(de * 1.5 * 100) / 100;
+    const om = Math.round(de * 0.5 * 100) / 100;
+
+    if (db.isConnected()) {
+      const r = await db.query(`
+        INSERT INTO subcontractor_applications
+          (name,email,phone,location,desired_earnings,platform_fee,job_value,our_margin,
+           services,experience,availability,equipment,internet_speed,penalty_acknowledged)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        RETURNING *
+      `, [name, email, phone||null, location||null, de, pf, jv, om,
+          services||[], experience||null, availability||'flexible',
+          equipment||null, internet_speed||null, !!penalty_acknowledged]);
+      await auditLogger.log('subcontractor.applied', 'application', r.rows[0].id,
+        `New application from ${name} (${email}) — desired R${de}`, null, 'info');
+      return res.json({ success: true, application: r.rows[0] });
+    }
+    res.json({ success: true, message: 'Application received (no DB)' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH approve or reject an application
+app.patch('/api/subcontractors/applications/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, notes } = req.body;
+    if (!['approved','rejected'].includes(status)) {
+      return res.status(400).json({ error: 'status must be approved or rejected' });
+    }
+    if (!db.isConnected()) return res.json({ success: true, message: 'No DB' });
+
+    await db.query(`
+      UPDATE subcontractor_applications
+      SET status=$1, notes=$2, reviewed_at=NOW(), reviewed_by=$3
+      WHERE id=$4
+    `, [status, notes||null, req.user.id, id]);
+
+    if (status === 'approved') {
+      const app = await db.query(`SELECT * FROM subcontractor_applications WHERE id=$1`, [id]);
+      const a = app.rows[0];
+      if (a) {
+        await db.query(`
+          INSERT INTO subcontractors (name, email, specializations, capacity, active_jobs, success_rate, status)
+          VALUES ($1,$2,$3,10,0,0.90,'active')
+          ON CONFLICT (email) DO NOTHING
+        `, [a.name, a.email, a.services || []]);
+      }
+    }
+    await auditLogger.log('subcontractor.reviewed', 'application', parseInt(id),
+      `Application ${id} ${status} by ${req.user.email}`, req.user.id, 'info');
+    res.json({ success: true, status });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET all subcontractor job assignments
+app.get('/api/subcontractors/jobs', requireAuth, async (req, res) => {
+  try {
+    if (db.isConnected()) {
+      const r = await db.query(`
+        SELECT sj.*, s.name AS sub_name, s.email AS sub_email
+        FROM subcontractor_jobs sj
+        LEFT JOIN subcontractors s ON sj.sub_id = s.id
+        ORDER BY sj.created_at DESC
+      `);
+      return res.json(r.rows);
+    }
+    res.json([]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST create a new job assignment
+app.post('/api/subcontractors/jobs', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { sub_id, title, description, sub_payout, due_date, contract_id } = req.body;
+    if (!sub_id || !title || !sub_payout) {
+      return res.status(400).json({ error: 'sub_id, title and sub_payout are required' });
+    }
+    const payout = parseFloat(sub_payout) || 0;
+    const jv = Math.round(payout * 1.5 * 100) / 100;
+    const om = Math.round(payout * 0.5 * 100) / 100;
+
+    if (!db.isConnected()) return res.json({ success: true, message: 'No DB' });
+
+    const r = await db.query(`
+      INSERT INTO subcontractor_jobs
+        (sub_id, contract_id, title, description, job_value, sub_payout, our_margin, due_date, status)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'assigned')
+      RETURNING *
+    `, [sub_id, contract_id||null, title, description||null, jv, payout, om,
+        due_date ? new Date(due_date) : null]);
+
+    await db.query(`UPDATE subcontractors SET active_jobs = active_jobs + 1 WHERE id=$1`, [sub_id]);
+    await auditLogger.log('subcontractor.job_assigned', 'subcontractor_job', r.rows[0].id,
+      `Job "${title}" assigned to sub ${sub_id}`, req.user.id, 'info');
+    res.json({ success: true, job: r.rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH update job status (submit, verify, pay, fail)
+app.patch('/api/subcontractors/jobs/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const allowed = ['assigned','in_progress','submitted','verified','paid','failed'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${allowed.join(', ')}` });
+    }
+    if (!db.isConnected()) return res.json({ success: true });
+
+    const extra = {};
+    if (status === 'submitted') extra.submitted_at = new Date();
+    if (status === 'verified')  extra.verified_at  = new Date();
+
+    await db.query(`
+      UPDATE subcontractor_jobs SET status=$1, updated_at=NOW()
+      ${status === 'submitted' ? ', submitted_at=NOW()' : ''}
+      ${status === 'verified'  ? ', verified_at=NOW()'  : ''}
+      WHERE id=$2
+    `, [status, id]);
+
+    if (status === 'paid' || status === 'failed') {
+      const job = await db.query(`SELECT sub_id FROM subcontractor_jobs WHERE id=$1`, [id]);
+      if (job.rows[0]?.sub_id) {
+        await db.query(`UPDATE subcontractors SET active_jobs = GREATEST(active_jobs-1,0) WHERE id=$1`,
+          [job.rows[0].sub_id]);
+      }
+    }
+    await auditLogger.log('subcontractor.job_updated', 'subcontractor_job', parseInt(id),
+      `Job ${id} status → ${status}`, req.user.id, 'info');
+    res.json({ success: true, status });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST send reminder emails for outstanding jobs
+app.post('/api/subcontractors/jobs/remind', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    if (!db.isConnected()) return res.json({ sent: 0, message: 'No DB' });
+
+    const pending = await db.query(`
+      SELECT sj.*, s.name AS sub_name, s.email AS sub_email
+      FROM subcontractor_jobs sj
+      JOIN subcontractors s ON sj.sub_id = s.id
+      WHERE sj.status IN ('assigned','in_progress')
+        AND sj.due_date IS NOT NULL
+        AND sj.due_date > NOW()
+      ORDER BY sj.due_date ASC
+    `);
+
+    let sent = 0;
+    for (const job of pending.rows) {
+      if (!job.sub_email) continue;
+      await emailOutreach.sendSubcontractorReminder({
+        name: job.sub_name,
+        email: job.sub_email,
+        jobTitle: job.title,
+        dueDate: job.due_date,
+        jobId: job.id,
+      });
+      await db.query(`
+        UPDATE subcontractor_jobs
+        SET reminder_count = reminder_count + 1, last_reminder_at = NOW()
+        WHERE id=$1
+      `, [job.id]);
+      sent++;
+    }
+    await auditLogger.log('subcontractor.reminders_sent', null, null,
+      `${sent} reminder emails sent`, req.user.id, 'info');
+    res.json({ success: true, sent });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST recruit — AI sends recruitment emails to a list of targets
+app.post('/api/subcontractors/recruit', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { targets } = req.body; // [{ name, email }]
+    if (!Array.isArray(targets) || targets.length === 0) {
+      return res.status(400).json({ error: 'targets array required' });
+    }
+    let sent = 0;
+    for (const t of targets) {
+      if (!t.email) continue;
+      await emailOutreach.sendSubcontractorRecruitment({ name: t.name || 'Future Partner', email: t.email });
+      sent++;
+    }
+    await auditLogger.log('subcontractor.recruitment_sent', null, null,
+      `Recruitment emails sent to ${sent} prospects`, req.user.id, 'info');
+    res.json({ success: true, sent });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET operations summary (live totals for hub dashboard)
+app.get('/api/summary', requireAuth, async (req, res) => {
+  try {
+    const zero = v => parseFloat(v) || 0;
+    const int  = v => parseInt(v, 10) || 0;
+
+    if (db.isConnected()) {
+      const [clients, subs, contracts, txns, apps, jobs] = await Promise.all([
+        db.query(`SELECT COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE status='active') AS active
+                  FROM clients`),
+        db.query(`SELECT COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE status='active') AS active
+                  FROM subcontractors`),
+        db.query(`SELECT COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE status='active')    AS active,
+                    COUNT(*) FILTER (WHERE status='completed') AS completed,
+                    COUNT(*) FILTER (WHERE status='pending')   AS pending,
+                    COALESCE(SUM(value),0) AS total_value,
+                    COALESCE(SUM(value) FILTER (WHERE status='active'),0) AS active_value,
+                    COALESCE(SUM(value) FILTER (WHERE status='completed'),0) AS completed_value
+                  FROM contracts`),
+        db.query(`SELECT COALESCE(SUM(amount_zar) FILTER (WHERE status='succeeded'),0) AS paid,
+                    COALESCE(SUM(amount_zar) FILTER (WHERE status='pending'),0) AS pending
+                  FROM transactions`),
+        db.query(`SELECT COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE status='pending')  AS pending,
+                    COUNT(*) FILTER (WHERE status='approved') AS approved,
+                    COUNT(*) FILTER (WHERE status='rejected') AS rejected
+                  FROM subcontractor_applications`),
+        db.query(`SELECT COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE status IN ('assigned','in_progress')) AS outstanding,
+                    COUNT(*) FILTER (WHERE status='submitted') AS submitted,
+                    COUNT(*) FILTER (WHERE status='verified')  AS verified,
+                    COUNT(*) FILTER (WHERE status='paid')      AS paid,
+                    COALESCE(SUM(job_value),0)  AS total_job_value,
+                    COALESCE(SUM(sub_payout),0) AS total_payout,
+                    COALESCE(SUM(our_margin),0) AS total_margin,
+                    COALESCE(SUM(job_value) FILTER (WHERE status IN ('assigned','in_progress')),0) AS outstanding_value
+                  FROM subcontractor_jobs`),
+      ]);
+
+      return res.json({
+        clients: {
+          total: int(clients.rows[0].total),
+          active: int(clients.rows[0].active),
+        },
+        subcontractors: {
+          total: int(subs.rows[0].total),
+          active: int(subs.rows[0].active),
+        },
+        contracts: {
+          total:          int(contracts.rows[0].total),
+          active:         int(contracts.rows[0].active),
+          completed:      int(contracts.rows[0].completed),
+          pending:        int(contracts.rows[0].pending),
+          totalValue:     zero(contracts.rows[0].total_value),
+          activeValue:    zero(contracts.rows[0].active_value),
+          completedValue: zero(contracts.rows[0].completed_value),
+        },
+        revenue: {
+          paid:    zero(txns.rows[0].paid),
+          pending: zero(txns.rows[0].pending),
+        },
+        applications: {
+          total:    int(apps.rows[0].total),
+          pending:  int(apps.rows[0].pending),
+          approved: int(apps.rows[0].approved),
+          rejected: int(apps.rows[0].rejected),
+        },
+        jobs: {
+          total:          int(jobs.rows[0].total),
+          outstanding:    int(jobs.rows[0].outstanding),
+          submitted:      int(jobs.rows[0].submitted),
+          verified:       int(jobs.rows[0].verified),
+          paid:           int(jobs.rows[0].paid),
+          totalJobValue:  zero(jobs.rows[0].total_job_value),
+          totalPayout:    zero(jobs.rows[0].total_payout),
+          totalMargin:    zero(jobs.rows[0].total_margin),
+          outstandingValue: zero(jobs.rows[0].outstanding_value),
+        },
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    res.json({
+      clients: { total: 0, active: 0 },
+      subcontractors: { total: 0, active: 0 },
+      contracts: { total: 0, active: 0, completed: 0, pending: 0, totalValue: 0, activeValue: 0, completedValue: 0 },
+      revenue: { paid: 0, pending: 0 },
+      applications: { total: 0, pending: 0, approved: 0, rejected: 0 },
+      jobs: { total: 0, outstanding: 0, submitted: 0, verified: 0, paid: 0, totalJobValue: 0, totalPayout: 0, totalMargin: 0, outstandingValue: 0 },
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ── Serve React build in production ──────────────────────────────────────────

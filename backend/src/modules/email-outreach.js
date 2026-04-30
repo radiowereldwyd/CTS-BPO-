@@ -572,8 +572,115 @@ function previewTemplate(templateName) {
   return templates[templateName](sample);
 }
 
+// ─── Subcontractor Recruitment Email ─────────────────────────────────────────
+
+const APPLICATION_URL = process.env.APP_URL
+  ? `${process.env.APP_URL}/apply`
+  : 'https://your-app.replit.app/apply';
+
+async function sendSubcontractorRecruitment({ name, email }) {
+  const subject = 'Work From Home Opportunity — CTS BPO Solutions';
+  const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f4f6f9;">
+<table width="640" align="center" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;margin:20px auto;">
+  <tr><td style="background:#0f172a;padding:32px 40px;text-align:center;">
+    <img src="${LOGO_B64}" alt="CTS BPO" style="height:80px;width:auto;margin-bottom:12px;"><br>
+    <span style="color:#38bdf8;font-size:13px;letter-spacing:2px;text-transform:uppercase;font-weight:600;">Work From Home Opportunity</span>
+  </td></tr>
+  <tr><td style="padding:36px 40px;">
+    <p style="font-size:16px;color:#1e293b;">Hi <strong>${esc(name)}</strong>,</p>
+    <p style="font-size:15px;color:#334155;line-height:1.7;">
+      We have an exciting opportunity for you to earn a consistent income working from the comfort of your home with <strong>CTS BPO Solutions</strong>.
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.7;">
+      We connect skilled individuals with professional business process tasks — including data entry, transcription, translation, virtual assistance, customer support, and more.
+    </p>
+    <div style="background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:6px;padding:20px 24px;margin:24px 0;">
+      <p style="margin:0 0 10px;font-weight:700;color:#0c4a6e;font-size:15px;">How It Works</p>
+      <ul style="margin:0;padding-left:18px;color:#334155;font-size:14px;line-height:2;">
+        <li>You tell us your desired monthly earning target</li>
+        <li>We supply you with professionally sourced work worth 1.5× your target</li>
+        <li>A small platform fee (50% of your target) is charged for job sourcing &amp; quality assurance</li>
+        <li>You deliver quality work on time — we handle client relationships &amp; billing</li>
+        <li>You get paid your agreed earnings each month</li>
+      </ul>
+    </div>
+    <div style="background:#fef9c3;border-left:4px solid #eab308;border-radius:6px;padding:16px 24px;margin:20px 0;">
+      <p style="margin:0;font-size:14px;color:#713f12;"><strong>Important:</strong> Reliability is essential. Subcontractors who accept work and fail to deliver on time are subject to penalties as outlined in the application form. We maintain strict quality standards to protect our client relationships.</p>
+    </div>
+    <p style="font-size:15px;color:#334155;line-height:1.7;"><strong>Available work types:</strong> Data Entry · Transcription · Translation · Virtual Assistant · Customer Support · Finance &amp; Admin · Content Moderation · Reporting</p>
+    <div style="text-align:center;margin:32px 0;">
+      <a href="${APPLICATION_URL}" style="background:#0f172a;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:6px;font-size:15px;font-weight:600;display:inline-block;">Apply Now — It's Free</a>
+    </div>
+    <p style="font-size:13px;color:#64748b;">If you have any questions, reply to this email and our team will assist you promptly.</p>
+    <p style="font-size:15px;color:#334155;">Warm regards,<br><strong>Calvin &amp; The CTS BPO Team</strong></p>
+  </td></tr>
+  <tr><td style="background:#0f172a;padding:20px 40px;text-align:center;">
+    <p style="color:#94a3b8;font-size:12px;margin:0;">CTS BPO Solutions &nbsp;|&nbsp; cts.bposolutions@gmail.com</p>
+    <p style="color:#64748b;font-size:11px;margin:6px 0 0;">You received this because you expressed interest in work-from-home opportunities. To unsubscribe reply STOP.</p>
+  </td></tr>
+</table></body></html>`;
+
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
+    await auditLogger.log('outreach.recruitment_sent', null, null, `Recruitment email sent to ${email}`, null, 'info');
+    return { sent: true, to: email };
+  }
+  console.log('[EMAIL STUB] Recruitment →', email);
+  return { sent: false, simulated: true, to: email };
+}
+
+// ─── Subcontractor Task Reminder Email ───────────────────────────────────────
+
+async function sendSubcontractorReminder({ name, email, jobTitle, dueDate, jobId }) {
+  const due = dueDate ? new Date(dueDate).toLocaleDateString('en-ZA', { weekday:'long', year:'numeric', month:'long', day:'numeric' }) : 'as agreed';
+  const subject = `Action Required: Task Due Soon — ${esc(jobTitle)}`;
+  const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f4f6f9;">
+<table width="640" align="center" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;margin:20px auto;">
+  <tr><td style="background:#0f172a;padding:28px 40px;text-align:center;">
+    <img src="${LOGO_B64}" alt="CTS BPO" style="height:72px;width:auto;">
+    <p style="color:#fbbf24;margin:8px 0 0;font-size:13px;letter-spacing:1px;text-transform:uppercase;font-weight:700;">Task Submission Reminder</p>
+  </td></tr>
+  <tr><td style="padding:36px 40px;">
+    <p style="font-size:16px;color:#1e293b;">Hi <strong>${esc(name)}</strong>,</p>
+    <p style="font-size:15px;color:#334155;line-height:1.7;">
+      This is a friendly reminder that you have an outstanding task assigned to you that requires your attention.
+    </p>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:20px 24px;margin:24px 0;">
+      <p style="margin:0 0 8px;font-size:13px;color:#991b1b;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Outstanding Task</p>
+      <p style="margin:0 0 4px;font-size:17px;font-weight:700;color:#1e293b;">${esc(jobTitle)}</p>
+      <p style="margin:0;font-size:14px;color:#dc2626;">Due: <strong>${due}</strong></p>
+    </div>
+    <div style="background:#fff7ed;border-left:4px solid #f97316;border-radius:6px;padding:16px 24px;margin:20px 0;">
+      <p style="margin:0;font-size:14px;color:#7c2d12;line-height:1.6;">
+        <strong>Please note:</strong> Failure to submit your completed work on time may result in penalty deductions as per your subcontractor agreement. Quality-reviewed submissions are required before we can process your payment.
+      </p>
+    </div>
+    <p style="font-size:15px;color:#334155;line-height:1.7;">
+      Please submit your completed work as soon as possible. If you are experiencing any difficulties, contact us immediately so we can assist you.
+    </p>
+    <p style="font-size:15px;color:#334155;">Kind regards,<br><strong>Calvin &amp; The CTS BPO Operations Team</strong></p>
+  </td></tr>
+  <tr><td style="background:#0f172a;padding:20px 40px;text-align:center;">
+    <p style="color:#94a3b8;font-size:12px;margin:0;">CTS BPO Solutions &nbsp;|&nbsp; cts.bposolutions@gmail.com</p>
+    <p style="color:#64748b;font-size:11px;margin:6px 0 0;">Reply to this email to contact your operations manager.</p>
+  </td></tr>
+</table></body></html>`;
+
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
+    return { sent: true, to: email };
+  }
+  console.log('[EMAIL STUB] Reminder →', email, '| Job:', jobId);
+  return { sent: false, simulated: true, to: email };
+}
+
 module.exports = {
   sendOutreachEmail, runCampaign, previewTemplate,
+  sendSubcontractorRecruitment, sendSubcontractorReminder,
   templates, TEMPLATE_META, VALID_TEMPLATES,
   isConfigured: () => !!(GMAIL_USER && GMAIL_APP_PASS),
 };

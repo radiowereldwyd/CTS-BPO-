@@ -12,6 +12,7 @@ import LoginPage from './components/LoginPage';
 import Payments from './components/Payments';
 import JobSearch from './components/JobSearch';
 import AIServices from './components/AIServices';
+import SubcontractorHub from './components/SubcontractorHub';
 import CTSLogo from './components/CTSLogo';
 import './App.css';
 
@@ -87,6 +88,7 @@ function App() {
             <NavLink to="/payments">Payments</NavLink>
             <NavLink to="/job-search">🌐 Job Search</NavLink>
             <NavLink to="/ai-services">🤖 AI Services</NavLink>
+            <NavLink to="/subcontractors">🤝 Subcontractors</NavLink>
           </nav>
           <div className="header-user">
             <span className="user-name">{user.name}</span>
@@ -108,6 +110,7 @@ function App() {
             <Route path="/payments" element={<Payments />} />
             <Route path="/job-search" element={<JobSearch />} />
             <Route path="/ai-services" element={<AIServices />} />
+            <Route path="/subcontractors" element={<SubcontractorHub token={token} />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

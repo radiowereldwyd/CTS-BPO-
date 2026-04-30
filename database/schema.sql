@@ -107,6 +107,51 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Subcontractor Applications table
+CREATE TABLE IF NOT EXISTS subcontractor_applications (
+    id                   SERIAL PRIMARY KEY,
+    name                 VARCHAR(255) NOT NULL,
+    email                VARCHAR(255) NOT NULL,
+    phone                VARCHAR(50),
+    location             VARCHAR(255),
+    desired_earnings     NUMERIC(12, 2) NOT NULL,
+    platform_fee         NUMERIC(12, 2) NOT NULL,
+    job_value            NUMERIC(12, 2) NOT NULL,
+    our_margin           NUMERIC(12, 2) NOT NULL,
+    services             TEXT[],
+    experience           TEXT,
+    availability         VARCHAR(50) DEFAULT 'flexible',
+    equipment            TEXT,
+    internet_speed       VARCHAR(50),
+    penalty_acknowledged BOOLEAN DEFAULT FALSE,
+    status               VARCHAR(20) DEFAULT 'pending',
+    notes                TEXT,
+    source               VARCHAR(50) DEFAULT 'email',
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at          TIMESTAMP,
+    reviewed_by          INTEGER REFERENCES users(id)
+);
+
+-- Subcontractor Jobs (task assignments) table
+CREATE TABLE IF NOT EXISTS subcontractor_jobs (
+    id               SERIAL PRIMARY KEY,
+    sub_id           INTEGER REFERENCES subcontractors(id) ON DELETE SET NULL,
+    contract_id      INTEGER REFERENCES contracts(id) ON DELETE SET NULL,
+    title            VARCHAR(255) NOT NULL,
+    description      TEXT,
+    job_value        NUMERIC(12, 2) NOT NULL,
+    sub_payout       NUMERIC(12, 2) NOT NULL,
+    our_margin       NUMERIC(12, 2) NOT NULL,
+    due_date         TIMESTAMP,
+    submitted_at     TIMESTAMP,
+    verified_at      TIMESTAMP,
+    status           VARCHAR(30) DEFAULT 'assigned',
+    reminder_count   INTEGER DEFAULT 0,
+    last_reminder_at TIMESTAMP,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_contracts_client_id ON contracts(client_id);
 CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);
