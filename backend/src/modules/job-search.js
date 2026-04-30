@@ -11,19 +11,20 @@ const auditLogger = require('./audit-logger');
 const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 
 // BPO job types CTS can perform
+// Queries target companies/clients who NEED work done — not employee job boards
 const BPO_QUERIES = [
-  { query: 'data entry outsourcing work available hire', type: 'data-entry' },
-  { query: 'data capture service provider needed outsource', type: 'data-entry' },
-  { query: 'translation services needed outsource freelance', type: 'translation' },
-  { query: 'document translation outsourcing company needed', type: 'translation' },
-  { query: 'transcription services outsource audio to text', type: 'transcription' },
-  { query: 'virtual assistant outsourcing business services', type: 'virtual-assistant' },
-  { query: 'invoice processing outsource accounts payable', type: 'finance-admin' },
-  { query: 'customer support outsourcing BPO company needed', type: 'customer-support' },
-  { query: 'content moderation outsource remote team', type: 'content-moderation' },
-  { query: 'data cleansing database cleaning service outsource', type: 'data-entry' },
-  { query: 'document digitisation scanning outsource', type: 'data-entry' },
-  { query: 'spreadsheet data management outsource', type: 'data-entry' },
+  { query: '"looking for" "data entry" "outsource" OR "service provider" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'data-entry' },
+  { query: '"need" "data capture" "company" OR "service" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
+  { query: '"translation services" "outsource" "quote" OR "provider" -site:linkedin.com -site:indeed.com', type: 'translation' },
+  { query: '"transcription service" "outsource" "business" -site:linkedin.com -site:indeed.com', type: 'transcription' },
+  { query: '"virtual assistant" "outsourcing company" "services" -site:linkedin.com -site:indeed.com', type: 'virtual-assistant' },
+  { query: '"accounts payable" "outsource" "service provider" -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
+  { query: '"BPO" "outsourcing" "data entry" "available" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
+  { query: '"content moderation" "outsource" "company" -site:linkedin.com -site:indeed.com', type: 'content-moderation' },
+  { query: 'data entry outsourcing company "contact us" OR "get a quote" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'data-entry' },
+  { query: 'document digitization outsourcing company "request quote" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
+  { query: 'payroll processing outsource company small business -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
+  { query: 'customer service outsourcing "contact us" company -site:linkedin.com -site:indeed.com', type: 'customer-support' },
 ];
 
 // Ensure job_leads table exists
@@ -86,9 +87,11 @@ function parseResult(result, jobType, query) {
     company = company.charAt(0).toUpperCase() + company.slice(1);
   } catch { company = 'Unknown'; }
 
-  // Skip job boards that list employee jobs (we want outsourcing opportunities)
-  const skipDomains = ['linkedin.com', 'indeed.com', 'glassdoor.com', 'reed.co.uk', 'monster.com', 'ziprecruiter.com', 'careers.'];
+  // Skip pure employee job boards (we want companies that need outsourcing, not employee listings)
+  const skipDomains = ['linkedin.com', 'indeed.com', 'glassdoor.com', 'reed.co.uk', 'monster.com', 'ziprecruiter.com', 'simplyhired.com', 'careerbuilder.com'];
   if (skipDomains.some(d => url.includes(d))) return null;
+  // Must have a valid URL
+  if (!url.startsWith('http')) return null;
 
   return { title, company, source_url: url, snippet, job_type: jobType, search_query: query };
 }
