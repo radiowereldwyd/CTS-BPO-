@@ -1,0 +1,379 @@
+/* ── Job Search Engine ──────────────────────────────────────────────────── */
+.jobsearch-container {
+  padding: 28px 32px;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+
+.jobsearch-header {
+  margin-bottom: 28px;
+}
+
+.jobsearch-header h1 {
+  font-size: 26px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #00c8ff, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 0 0 6px;
+}
+
+.jobsearch-header p {
+  color: #94a3b8;
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Stats row */
+.js-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.js-stat {
+  background: rgba(15,23,42,0.7);
+  border: 1px solid rgba(0,200,255,0.15);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+}
+
+.js-stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #00c8ff;
+  line-height: 1;
+}
+
+.js-stat-label {
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 6px;
+}
+
+/* Controls */
+.js-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.btn-scan {
+  background: linear-gradient(135deg, #1e40af, #00c8ff);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 0 18px rgba(0, 200, 255, 0.3);
+}
+
+.btn-scan:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 28px rgba(0, 200, 255, 0.5);
+}
+
+.btn-scan:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.js-filter {
+  background: rgba(15,23,42,0.7);
+  border: 1px solid rgba(0,200,255,0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #e2e8f0;
+  font-size: 14px;
+}
+
+.js-search-box {
+  flex: 1;
+  min-width: 200px;
+  background: rgba(15,23,42,0.7);
+  border: 1px solid rgba(0,200,255,0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #e2e8f0;
+  font-size: 14px;
+}
+
+.js-search-box::placeholder { color: #475569; }
+
+.scan-info {
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* Email config notice */
+.email-notice {
+  background: rgba(234,179,8,0.08);
+  border: 1px solid rgba(234,179,8,0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: #fbbf24;
+}
+
+.serpapi-notice {
+  background: rgba(59,130,246,0.08);
+  border: 1px solid rgba(59,130,246,0.25);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 13px;
+  color: #93c5fd;
+}
+
+/* Leads table */
+.leads-table-wrap {
+  background: rgba(15,23,42,0.7);
+  border: 1px solid rgba(0,200,255,0.12);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.leads-table-head {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1fr 0.9fr 1.2fr;
+  padding: 12px 16px;
+  background: rgba(0,200,255,0.06);
+  border-bottom: 1px solid rgba(0,200,255,0.12);
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.leads-row {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1fr 0.9fr 1.2fr;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(0,200,255,0.06);
+  align-items: center;
+  transition: background 0.15s;
+}
+
+.leads-row:last-child { border-bottom: none; }
+.leads-row:hover { background: rgba(0,200,255,0.04); }
+
+.lead-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lead-snippet {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lead-url {
+  font-size: 12px;
+  color: #3b82f6;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.lead-url:hover { color: #00c8ff; text-decoration: underline; }
+
+.badge-type {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: rgba(59,130,246,0.15);
+  color: #93c5fd;
+  border: 1px solid rgba(59,130,246,0.2);
+}
+
+.badge-status {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-status.new        { background: rgba(0,200,255,0.1);  color: #00c8ff;  border: 1px solid rgba(0,200,255,0.2); }
+.badge-status.contacted  { background: rgba(234,179,8,0.1);  color: #fbbf24;  border: 1px solid rgba(234,179,8,0.2); }
+.badge-status.responded  { background: rgba(16,185,129,0.1); color: #34d399;  border: 1px solid rgba(16,185,129,0.2); }
+.badge-status.in-progress { background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2); }
+.badge-status.completed  { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+
+.lead-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-send-email {
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.btn-send-email:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 10px rgba(59,130,246,0.4);
+}
+
+.btn-send-email:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-edit-contact {
+  background: rgba(0,200,255,0.1);
+  color: #00c8ff;
+  border: 1px solid rgba(0,200,255,0.2);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-edit-contact:hover {
+  background: rgba(0,200,255,0.2);
+}
+
+/* Empty state */
+.js-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #475569;
+}
+
+.js-empty h3 { font-size: 18px; margin-bottom: 8px; color: #64748b; }
+
+/* Contact modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.contact-modal {
+  background: #0f172a;
+  border: 1px solid rgba(0,200,255,0.2);
+  border-radius: 12px;
+  padding: 28px;
+  width: 420px;
+  max-width: 95vw;
+}
+
+.contact-modal h3 {
+  margin: 0 0 20px;
+  color: #00c8ff;
+  font-size: 18px;
+}
+
+.contact-modal .form-group {
+  margin-bottom: 14px;
+}
+
+.contact-modal label {
+  display: block;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.contact-modal input,
+.contact-modal textarea {
+  width: 100%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(0,200,255,0.2);
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #e2e8f0;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.contact-modal textarea { resize: vertical; min-height: 70px; }
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.btn-modal-save {
+  flex: 1;
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-modal-cancel {
+  background: rgba(255,255,255,0.05);
+  color: #94a3b8;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Flash message */
+.js-flash {
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.js-flash.success { background: rgba(16,185,129,0.1); color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
+.js-flash.error   { background: rgba(239,68,68,0.1);  color: #f87171;  border: 1px solid rgba(239,68,68,0.2); }
+.js-flash.info    { background: rgba(59,130,246,0.1);  color: #93c5fd;  border: 1px solid rgba(59,130,246,0.2); }
+
+@media (max-width: 900px) {
+  .js-stats { grid-template-columns: repeat(3, 1fr); }
+  .leads-table-head, .leads-row { grid-template-columns: 1fr 1fr; }
+  .leads-table-head > *:nth-child(n+3),
+  .leads-row > *:nth-child(n+3) { display: none; }
+}

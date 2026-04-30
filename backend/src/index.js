@@ -8,6 +8,7 @@ const subcontractorAssignment = require('./modules/subcontractor-assignment');
 const paymentGateway = require('./modules/payment-gateway');
 const auditLogger = require('./modules/audit-logger');
 const emailOutreach = require('./modules/email-outreach');
+const jobSearch = require('./modules/job-search');
 const db = require('./db');
 const authRouter = require('./routes/auth');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
@@ -231,7 +232,84 @@ app.post('/api/outreach/campaign', requireAuth, requireAdmin, async (req, res) =
   }
 });
 
-// Audit logs (admin only)
+// ─── Job Search Engine ────────────────────────────────────────────────────────
+
+// Trigger a web scan for BPO job opportunities
+app.post('/api/jobs/scan', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await jobSearch.scanForJobs();
+    await auditLogger.log('job.scan', null, null, `Scan found ${result.total} new leads`, req.user.id, 'info');
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all job leads
+app.get('/api/jobs/leads', requireAuth, async (req, res) => {
+  try {
+    const { status, jobType, limit } = req.query;
+    const leads = await jobSearch.getLeads({ status, jobType, limit: limit ? parseInt(limit) : 100 });
+    res.json(leads);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get job lead stats
+app.get('/api/jobs/stats', requireAuth, async (req, res) => {
+  try {
+    const stats = await jobSearch.getStats();
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update a lead (contact info, status, notes)
+app.patch('/api/jobs/leads/:id', requireAuth, async (req, res) => {
+  try {
+    const lead = await jobSearch.updateLead(parseInt(req.params.id), req.body);
+    res.json(lead);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Send application email to a lead
+app.post('/api/jobs/send-application', requireAuth, async (req, res) => {
+  try {
+    const { leadId, contactEmail, contactName, company, title, jobType } = req.body;
+    if (!contactEmail) {
+      return res.status(400).json({ error: 'contactEmail is required. Edit the lead to add a contact email first.' });
+    }
+
+    const result = await emailOutreach.sendOutreachEmail({
+      email:   contactEmail,
+      name:    contactName || 'Hiring Manager',
+      company: company || 'your organisation',
+      jobType: jobType || 'business process outsourcing',
+    }, 'bpoApplication');
+
+    // Mark lead as contacted
+    if (leadId) await jobSearch.markContacted(leadId);
+
+    await auditLogger.log('outreach.sent', 'job_lead', leadId,
+      `Application ${result.sent ? 'sent' : 'simulated'} to ${contactEmail} (${company})`,
+      req.user.id, 'info');
+
+    res.json({ ...result, emailConfigured: emailOutreach.isConfigured() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Email configuration status
+app.get('/api/jobs/email-status', requireAuth, (req, res) => {
+  res.json({ configured: emailOutreach.isConfigured(), from: process.env.GMAIL_USER || '' });
+});
+
+// ─── Audit logs (admin only) ──────────────────────────────────────────────────
 app.get('/api/audit-logs', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { eventType, status, entityId } = req.query;
