@@ -16,6 +16,8 @@ import SubcontractorHub from './components/SubcontractorHub';
 import AIAgentDashboard from './components/AIAgentDashboard';
 import LandingPage from './components/LandingPage';
 import ApplyPage from './components/ApplyPage';
+import SubcontractorLogin from './components/SubcontractorLogin';
+import SubcontractorPortal from './components/SubcontractorPortal';
 import CTSLogo from './components/CTSLogo';
 import './App.css';
 
@@ -88,54 +90,96 @@ function AdminShell({ user, token, onLogout }) {
 }
 
 function App() {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
+  const [user, setUser]         = useState(null);
+  const [token, setToken]       = useState(null);
+  const [subUser, setSubUser]   = useState(null);
+  const [subToken, setSubToken] = useState(null);
 
   useEffect(() => {
+    // Admin session
     const storedToken = localStorage.getItem('cts_token');
-    const storedUser = localStorage.getItem('cts_user');
+    const storedUser  = localStorage.getItem('cts_user');
     if (storedToken && storedUser) {
-      try {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-      } catch {
+      try { setToken(storedToken); setUser(JSON.parse(storedUser)); } catch {
         localStorage.removeItem('cts_token');
         localStorage.removeItem('cts_user');
       }
     }
+    // Subcontractor session
+    const st = localStorage.getItem('cts_sub_token');
+    const su = localStorage.getItem('cts_sub_user');
+    if (st && su) {
+      try { setSubToken(st); setSubUser(JSON.parse(su)); } catch {
+        localStorage.removeItem('cts_sub_token');
+        localStorage.removeItem('cts_sub_user');
+      }
+    }
   }, []);
 
-  function handleLogin(loggedInUser, authToken) {
+  function handleAdminLogin(loggedInUser, authToken) {
     setUser(loggedInUser);
     setToken(authToken);
   }
 
-  function handleLogout() {
+  function handleAdminLogout() {
     localStorage.removeItem('cts_token');
     localStorage.removeItem('cts_user');
     setUser(null);
     setToken(null);
   }
 
+  function handleSubLogin(loggedInUser, authToken) {
+    setSubUser(loggedInUser);
+    setSubToken(authToken);
+    localStorage.setItem('cts_sub_token', authToken);
+    localStorage.setItem('cts_sub_user', JSON.stringify(loggedInUser));
+  }
+
+  function handleSubLogout() {
+    localStorage.removeItem('cts_sub_token');
+    localStorage.removeItem('cts_sub_user');
+    setSubUser(null);
+    setSubToken(null);
+  }
+
   return (
     <Router>
       <Routes>
-        {/* Always public — no login required */}
+        {/* Always public */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/apply" element={<ApplyPage />} />
 
-        {/* Login page */}
+        {/* Subcontractor login — always public */}
+        <Route path="/subcontractor/login" element={
+          subUser
+            ? <Navigate to="/subcontractor/portal" replace />
+            : <SubcontractorLogin onLogin={handleSubLogin} />
+        } />
+
+        {/* Subcontractor set-password — always public (accessed via email link) */}
+        <Route path="/subcontractor/set-password" element={
+          <SubcontractorLogin onLogin={handleSubLogin} />
+        } />
+
+        {/* Subcontractor portal — requires subcontractor login */}
+        <Route path="/subcontractor/portal" element={
+          subUser
+            ? <SubcontractorPortal user={subUser} token={subToken} onLogout={handleSubLogout} />
+            : <Navigate to="/subcontractor/login" replace />
+        } />
+
+        {/* Admin login page */}
         <Route path="/login" element={
           user
             ? <Navigate to="/dashboard" replace />
-            : <div className="app"><Routes><Route path="*" element={<LoginPage onLogin={handleLogin} />} /></Routes></div>
+            : <div className="app"><Routes><Route path="*" element={<LoginPage onLogin={handleAdminLogin} />} /></Routes></div>
         } />
 
-        {/* All admin routes — require login */}
+        {/* All admin routes — require admin login, subcontractors cannot access */}
         <Route path="/*" element={
           user
-            ? <AdminShell user={user} token={token} onLogout={handleLogout} />
-            : <div className="app"><Routes><Route path="*" element={<LoginPage onLogin={handleLogin} />} /></Routes></div>
+            ? <AdminShell user={user} token={token} onLogout={handleAdminLogout} />
+            : <div className="app"><Routes><Route path="*" element={<LoginPage onLogin={handleAdminLogin} />} /></Routes></div>
         } />
       </Routes>
     </Router>

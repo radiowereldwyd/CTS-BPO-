@@ -68,8 +68,8 @@ function LoginPage({ onLogin }) {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
 
-          <p className="login-hint">
-            Default: <strong>admin@ctsbpo.com</strong> / <strong>Admin1234!</strong>
+          <p className="login-hint" style={{ color: '#475569', fontSize: 12 }}>
+            Admin access only. Unauthorised access is prohibited.
           </p>
         </form>
       </div>

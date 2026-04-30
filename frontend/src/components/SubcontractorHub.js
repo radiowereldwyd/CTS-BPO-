@@ -151,6 +151,15 @@ export default function SubcontractorHub({ token }) {
     setLoading(p => ({ ...p, [`paid_${id}`]: false }));
   }
 
+  async function handleSendPortalAccess(id) {
+    setLoading(p => ({ ...p, [`portal_${id}`]: true }));
+    try {
+      await axios.post(`${API}/api/sub/auth/request-setup`, { sub_id: id }, { headers: auth });
+      flash('Portal setup email sent! The subcontractor will receive a link to set their password.');
+    } catch (e) { flash(e.response?.data?.error || 'Failed to send portal access email.', true); }
+    setLoading(p => ({ ...p, [`portal_${id}`]: false }));
+  }
+
   async function handleReminders() {
     setLoading(p => ({ ...p, remind: true }));
     try {
@@ -382,8 +391,16 @@ export default function SubcontractorHub({ token }) {
                       </div>
                     )}
                     {a.status === 'approved' && a.payment_confirmed && (
-                      <div style={{ paddingTop: 8, marginTop: 4, fontSize: 12, color: '#065f46' }}>
-                        ✅ Payment confirmed {a.payment_confirmed_at ? `on ${new Date(a.payment_confirmed_at).toLocaleDateString('en-ZA')}` : ''} — eligible to receive contracts from the AI.
+                      <div style={{ paddingTop: 10, marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                        <div style={{ fontSize: 12, color: '#065f46' }}>
+                          ✅ Payment confirmed {a.payment_confirmed_at ? `on ${new Date(a.payment_confirmed_at).toLocaleDateString('en-ZA')}` : ''} — eligible to receive contracts.
+                        </div>
+                        <button
+                          onClick={() => handleSendPortalAccess(a.id)}
+                          disabled={loading[`portal_${a.id}`]}
+                          style={{ padding: '8px 16px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          {loading[`portal_${a.id}`] ? '...' : '🔑 Send Portal Access'}
+                        </button>
                       </div>
                     )}
                     {a.notes && <p style={{ margin: '8px 0 0', fontSize: 12, color: '#94a3b8' }}>Note: {a.notes}</p>}

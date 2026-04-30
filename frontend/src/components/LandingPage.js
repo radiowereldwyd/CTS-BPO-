@@ -155,7 +155,8 @@ export default function LandingPage() {
             {[['Services', 'services'], ['How It Works', 'how-it-works'], ['Examples', 'examples'], ['FAQ', 'faq'], ['Online Jobs', 'online-jobs']].map(([label, id]) => (
               <button key={id} onClick={() => scrollTo(id)} style={{ background: 'none', border: 'none', color: '#cbd5e1', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '6px 0', letterSpacing: 0.2 }}>{label}</button>
             ))}
-            <Link to="/login" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid #6366f1', color: '#a5b4fc', padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Admin Login</Link>
+            <Link to="/subcontractor/login" style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid #10b981', color: '#34d399', padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Subcontractor Login</Link>
+            <Link to="/login" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid #6366f1', color: '#a5b4fc', padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Admin</Link>
           </div>
         </div>
       </nav>

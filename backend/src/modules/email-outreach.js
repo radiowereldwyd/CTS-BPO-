@@ -1053,12 +1053,149 @@ async function sendContractAssignment({ name, email, jobTitle, jobValue, dueDate
   return { sent: false, simulated: true, to: email };
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   PORTAL SETUP — sent to a newly approved subcontractor to set their password
+   ───────────────────────────────────────────────────────────────────────── */
+async function sendPortalSetupEmail(email, name, setupLink) {
+  const subject = 'CTS BPO — Set Up Your Subcontractor Portal Access';
+  const html = `
+    ${portalBaseStyle()}
+    <div class="container">
+      ${portalLogoHeader()}
+      <div class="body">
+        <h2>Welcome to the CTS BPO Subcontractor Portal, ${esc(name)}!</h2>
+        <p>Your application has been approved and your enrolment payment has been confirmed. You now have access to your personal subcontractor portal where you can:</p>
+        <ul style="color:#94a3b8;line-height:2">
+          <li>View your assigned jobs and deadlines</li>
+          <li>Upload your completed work directly</li>
+          <li>Track your earnings and payment history</li>
+        </ul>
+        <p>Click the button below to set your portal password. This link expires in <strong>48 hours</strong>.</p>
+        <div class="cta-block">
+          <a href="${esc(setupLink)}" class="cta-btn">Set My Portal Password</a>
+        </div>
+        <p style="color:#64748b;font-size:13px">If the button does not work, copy and paste this link into your browser:<br><span style="color:#6366f1">${esc(setupLink)}</span></p>
+        <hr style="border-color:rgba(255,255,255,0.07);margin:28px 0">
+        <p>Once your password is set, log in at <a href="#" style="color:#6366f1">the CTS BPO portal</a> using your email address.</p>
+      </div>
+      ${portalFooter()}
+    </div>
+  `;
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
+    await auditLogger.log('email.portal_setup', 'subcontractor', email, `Portal setup email → ${email}`, null, 'info');
+    return { sent: true, to: email };
+  }
+  console.log('[EMAIL STUB] Portal setup →', email, setupLink);
+  return { sent: false, simulated: true, to: email };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CLIENT DELIVERY — sent to the client with the completed work + confirm link
+   ───────────────────────────────────────────────────────────────────────── */
+async function sendClientDelivery(email, clientName, jobTitle, confirmLink, downloadLink) {
+  const subject = `CTS BPO — Your Job is Complete: "${jobTitle}"`;
+  const html = `
+    ${portalBaseStyle()}
+    <div class="container">
+      ${portalLogoHeader()}
+      <div class="body">
+        <h2>Your job is complete, ${esc(clientName)}!</h2>
+        <p>Great news — your CTS BPO job <strong>${esc(jobTitle)}</strong> has been completed and passed our AI quality verification.</p>
+        <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:20px;margin:20px 0;text-align:center">
+          <div style="font-size:40px;margin-bottom:8px">✅</div>
+          <strong style="color:#10b981;font-size:18px">Work Ready for Download</strong>
+        </div>
+        <div class="cta-block" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+          <a href="${esc(downloadLink)}" class="cta-btn" style="background:#10b981">⬇ Download Completed Work</a>
+          <a href="${esc(confirmLink)}" class="cta-btn">✅ Confirm Receipt</a>
+        </div>
+        <hr style="border-color:rgba(255,255,255,0.07);margin:28px 0">
+        <p style="color:#94a3b8;font-size:13px">
+          Please confirm receipt by clicking the green button above. If we do not hear from you within <strong>48 hours</strong>, receipt will be automatically confirmed and payment released to the subcontractor.
+        </p>
+        <p style="color:#64748b;font-size:13px">If you have any concerns about the quality of the delivered work, please reply to this email within 48 hours.</p>
+      </div>
+      ${footer()}
+    </div>
+  `;
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
+    await auditLogger.log('email.client_delivery', 'client', email, `Delivery email → ${email} for job "${jobTitle}"`, null, 'info');
+    return { sent: true, to: email };
+  }
+  console.log('[EMAIL STUB] Client delivery →', email, jobTitle);
+  return { sent: false, simulated: true, to: email };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SUBCONTRACTOR PAYOUT — notifies sub that payment has been released
+   ───────────────────────────────────────────────────────────────────────── */
+async function sendSubcontractorPayout(email, name, amount, jobTitle, reference) {
+  const subject = `CTS BPO — Payment Released: R${amount} for "${jobTitle}"`;
+  const html = `
+    ${portalBaseStyle()}
+    <div class="container">
+      ${portalLogoHeader()}
+      <div class="body">
+        <h2>Payment Released, ${esc(name)}!</h2>
+        <p>Your payment for the completed job <strong>${esc(jobTitle)}</strong> has been approved and released.</p>
+        <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);border-radius:10px;padding:24px;margin:24px 0;text-align:center">
+          <div style="font-size:13px;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Amount Released</div>
+          <div style="font-size:40px;font-weight:800;color:#10b981">R ${parseFloat(amount).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          <div style="font-size:12px;color:#64748b;margin-top:8px">Reference: ${esc(reference)}</div>
+        </div>
+        <p>Please allow 1-3 business days for the funds to reflect in your account depending on your bank.</p>
+        <p style="color:#64748b;font-size:13px">Log in to your subcontractor portal to view your full payment history.</p>
+      </div>
+      ${footer()}
+    </div>
+  `;
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
+    await auditLogger.log('email.payout_sent', 'subcontractor', email, `Payout email → ${email} R${amount} for "${jobTitle}"`, null, 'info');
+    return { sent: true, to: email };
+  }
+  console.log('[EMAIL STUB] Payout →', email, `R${amount}`, jobTitle);
+  return { sent: false, simulated: true, to: email };
+}
+
+/* ── Shared helpers for portal emails ────────────────────────────────────── */
+function portalBaseStyle() {
+  return `<style>
+    body{margin:0;padding:0;background:#0a1530;font-family:'Segoe UI',Arial,sans-serif}
+    .container{max-width:600px;margin:0 auto;background:#0f172a;border-radius:16px;overflow:hidden}
+    .body{padding:32px 36px;color:#e2e8f0}
+    h2{color:#fff;font-size:22px;margin-bottom:16px}
+    p{color:#94a3b8;line-height:1.7;margin-bottom:16px}
+    .cta-block{text-align:center;margin:28px 0}
+    .cta-btn{display:inline-block;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:700;font-size:15px}
+  </style>`;
+}
+
+function portalLogoHeader() {
+  return `<div style="background:linear-gradient(135deg,#1e3a5f,#0f172a);padding:28px 36px;text-align:center">
+    <div style="font-size:28px;font-weight:900;color:#fff;letter-spacing:2px">CTS <span style="color:#6366f1">BPO</span></div>
+    <div style="font-size:12px;color:#64748b;letter-spacing:3px;text-transform:uppercase;margin-top:4px">AI Business Process Outsourcing</div>
+  </div>`;
+}
+
+function portalFooter() {
+  return `<div style="background:#080f1f;padding:20px 36px;text-align:center;font-size:12px;color:#475569">
+    CTS BPO Solutions · cts.bposolutions@gmail.com · AI-Powered Outsourcing
+  </div>`;
+}
+
 module.exports = {
   sendOutreachEmail, runCampaign, previewTemplate,
   sendSubcontractorRecruitment, sendSubcontractorReminder,
   sendClientColdOutreach, sendClientFollowUp,
   sendSubcontractorAcknowledgment, sendSubcontractorApproval,
   sendContractAssignment,
+  sendPortalSetupEmail, sendClientDelivery, sendSubcontractorPayout,
   templates, TEMPLATE_META, VALID_TEMPLATES,
   isConfigured: () => !!(GMAIL_USER && GMAIL_APP_PASS),
 };

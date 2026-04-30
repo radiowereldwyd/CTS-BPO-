@@ -69,6 +69,14 @@ app.get('/health', (req, res) => {
 // Auth routes (login, me)
 app.use('/api/auth', authLimiter, authRouter);
 
+// Subcontractor portal auth
+const subAuthRouter = require('./routes/subcontractor-auth');
+app.use('/api/sub/auth', authLimiter, subAuthRouter);
+
+// Subcontractor portal
+const subPortalRouter = require('./routes/subcontractor-portal');
+app.use('/api/sub', subPortalRouter);
+
 // ─── Protected routes (require JWT) ──────────────────────────────────────────
 
 // Dashboard metrics
@@ -713,6 +721,8 @@ async function ensureSubcontractorTables() {
   await db.query(`ALTER TABLE subcontractor_applications ADD COLUMN IF NOT EXISTS payment_confirmed BOOLEAN DEFAULT FALSE`).catch(() => {});
   await db.query(`ALTER TABLE subcontractor_applications ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMP`).catch(() => {});
   await db.query(`ALTER TABLE subcontractor_applications ADD COLUMN IF NOT EXISTS payment_reference TEXT`).catch(() => {});
+  await db.query(`ALTER TABLE subcontractor_applications ADD COLUMN IF NOT EXISTS password_hash TEXT`).catch(() => {});
+  await db.query(`ALTER TABLE subcontractor_applications ADD COLUMN IF NOT EXISTS portal_active BOOLEAN DEFAULT FALSE`).catch(() => {});
   await db.query(`
     CREATE TABLE IF NOT EXISTS subcontractor_jobs (
       id               SERIAL PRIMARY KEY,
@@ -733,6 +743,39 @@ async function ensureSubcontractorTables() {
       updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  // Portal: password setup tokens
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS set_password_tokens (
+      id                  SERIAL PRIMARY KEY,
+      sub_application_id  INTEGER REFERENCES subcontractor_applications(id),
+      token               TEXT UNIQUE NOT NULL,
+      expires_at          TIMESTAMPTZ,
+      used                BOOLEAN DEFAULT FALSE,
+      created_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `).catch(() => {});
+
+  // Portal: work submissions
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS job_submissions (
+      id                  SERIAL PRIMARY KEY,
+      job_id              INTEGER REFERENCES subcontractor_jobs(id),
+      sub_application_id  INTEGER REFERENCES subcontractor_applications(id),
+      submitted_at        TIMESTAMPTZ DEFAULT NOW(),
+      file_name           TEXT,
+      file_path           TEXT,
+      file_size           BIGINT,
+      ai_quality_score    INTEGER,
+      ai_quality_notes    TEXT,
+      status              TEXT DEFAULT 'pending_review',
+      delivery_token      TEXT UNIQUE,
+      delivered_at        TIMESTAMPTZ,
+      confirmed_at        TIMESTAMPTZ,
+      payout_status       TEXT DEFAULT 'pending',
+      payout_reference    TEXT,
+      created_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `).catch(() => {});
 }
 ensureSubcontractorTables().catch(e => console.error('ensureSubcontractorTables:', e.message));
 
