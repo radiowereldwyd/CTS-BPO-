@@ -592,11 +592,11 @@ async function sendSubcontractorRecruitment({ name, email }) {
 
   <!-- HERO HEADER -->
   <tr><td style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f3460 100%);padding:40px 48px;text-align:center;">
-    <img src="${LOGO_B64}" alt="CTS BPO Solutions" style="height:90px;width:auto;margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;">
+    <img src="${LOGO_B64}" alt="CTS BPO Solutions" width="300" style="display:block;margin:0 auto 20px;max-width:300px;height:auto;">
     <div style="display:inline-block;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;border-radius:20px;padding:6px 20px;margin-bottom:18px;">
       <span style="color:#38bdf8;font-size:11px;letter-spacing:3px;text-transform:uppercase;font-weight:700;">Exclusive Partner Opportunity</span>
     </div>
-    <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:800;line-height:1.25;">Work From Home.<br>Earn Double Your Investment.</h1>
+    <h1 style="margin:0;color:#ffffff;font-size:30px;font-weight:800;line-height:1.25;">Work From Home.<br>Earn Double Your Investment.</h1>
     <p style="margin:14px 0 0;color:#94a3b8;font-size:14px;">Join South Africa's fastest-growing BPO network</p>
   </td></tr>
 
@@ -605,14 +605,18 @@ async function sendSubcontractorRecruitment({ name, email }) {
     <p style="margin:0 0 20px;font-size:16px;color:#1e293b;line-height:1.6;">Dear <strong style="color:#0f172a;">${esc(name)}</strong>,</p>
 
     <!-- MARKETING PARAGRAPH 1 -->
-    <p style="margin:0 0 18px;font-size:15px;color:#334155;line-height:1.8;">
-      <strong>CTS BPO Solutions</strong> is a South African business process outsourcing company with an established and rapidly growing client base spanning multiple industries — from finance and legal services to retail, healthcare and logistics. We currently service clients across South Africa, the United Kingdom and beyond, managing thousands of tasks every month with a verified <strong style="color:#10b981;">98.6% success rate</strong>. Our AI-powered matching engine continuously sources new contracts around the clock, meaning our pipeline of available work never runs dry. When you partner with us, you tap directly into that pipeline — no cold calling, no client hunting, no invoicing headaches. We do all of that for you.
-    </p>
+    <div style="background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:0 10px 10px 0;padding:20px 24px;margin:0 0 20px;">
+      <p style="margin:0;font-size:15px;color:#0f172a;line-height:1.9;">
+        <strong style="color:#0ea5e9;">CTS BPO Solutions</strong> is a South African business process outsourcing company with an established and rapidly growing client base spanning multiple industries — from finance and legal services to retail, healthcare and logistics. We currently service clients across South Africa, the United Kingdom and beyond, managing thousands of tasks every month with a verified <strong style="color:#10b981;">98.6% success rate</strong>. Our AI-powered matching engine continuously sources new contracts around the clock, meaning our pipeline of available work never runs dry. When you partner with us, you tap directly into that pipeline — no cold calling, no client hunting, no invoicing headaches. We do all of that for you.
+      </p>
+    </div>
 
     <!-- MARKETING PARAGRAPH 2 -->
-    <p style="margin:0 0 30px;font-size:15px;color:#334155;line-height:1.8;">
-      What sets CTS BPO apart is our <strong>double-return model</strong> — a first in the South African freelance market. We believe in rewarding reliability: when you invest your commitment with us and deliver quality work, we deliver <strong>twice your investment back to you</strong>. Our subcontractor network currently processes over R2.4 million in assignments monthly, and every single registered partner who maintains a clean delivery record continues to grow their earning tier with us. Whether you are supplementing your income or building a full-time home-based career, CTS BPO gives you the contracts, the clients, and the certainty — all you bring is your skills and your dedication.
-    </p>
+    <div style="background:#f0fdf4;border-left:4px solid #10b981;border-radius:0 10px 10px 0;padding:20px 24px;margin:0 0 32px;">
+      <p style="margin:0;font-size:15px;color:#0f172a;line-height:1.9;">
+        What sets CTS BPO apart is our <strong style="color:#10b981;">double-return model</strong> — a first in the South African freelance market. We believe in rewarding reliability: when you invest your commitment with us and deliver quality work, we deliver <strong>twice your investment back to you</strong>. Our subcontractor network currently processes over <strong>R2.4 million</strong> in assignments monthly, and every single registered partner who maintains a clean delivery record continues to grow their earning tier with us. Whether you are supplementing your income or building a full-time home-based career, CTS BPO gives you the contracts, the clients, and the certainty — all you bring is your skills and your dedication.
+      </p>
+    </div>
 
     <!-- DIVIDER -->
     <div style="border-top:2px solid #e2e8f0;margin:0 0 30px;"></div>

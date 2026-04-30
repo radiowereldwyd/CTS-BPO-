@@ -13,6 +13,7 @@ import Payments from './components/Payments';
 import JobSearch from './components/JobSearch';
 import AIServices from './components/AIServices';
 import SubcontractorHub from './components/SubcontractorHub';
+import LandingPage from './components/LandingPage';
 import ApplyPage from './components/ApplyPage';
 import CTSLogo from './components/CTSLogo';
 import './App.css';
@@ -24,6 +25,62 @@ function NavLink({ to, children }) {
     <Link to={to} className={isActive ? 'active' : ''}>
       {children}
     </Link>
+  );
+}
+
+function AdminShell({ user, token, onLogout }) {
+  return (
+    <div className="app">
+      <header className="app-header">
+        <Link to="/dashboard" className="header-brand-link">
+          <CTSLogo size="md" className="header-brand-logo" />
+          <CTSLogo size="sm" className="header-brand-logo-sm" />
+        </Link>
+        <nav className="header-nav">
+          <NavLink to="/dashboard">Dashboard</NavLink>
+          <NavLink to="/status">Status</NavLink>
+          <NavLink to="/failed-contracts">Failed Contracts</NavLink>
+          <NavLink to="/pricing">Pricing</NavLink>
+          <NavLink to="/global-markets">Global Markets</NavLink>
+          <NavLink to="/profit-projection">Profit Projection</NavLink>
+          <NavLink to="/deployment-guide">Deployment Guide</NavLink>
+          <NavLink to="/email-templates">Email Templates</NavLink>
+          <NavLink to="/payments">Payments</NavLink>
+          <NavLink to="/job-search">🌐 Job Search</NavLink>
+          <NavLink to="/ai-services">🤖 AI Services</NavLink>
+          <NavLink to="/subcontractors">🤝 Subcontractors</NavLink>
+        </nav>
+        <div className="header-user">
+          <Link to="/" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none', marginRight: 12 }}>← Public Site</Link>
+          <span className="user-name">{user.name}</span>
+          <span className={`user-role role-${user.role}`}>{user.role}</span>
+          <button className="btn-logout" onClick={onLogout}>Sign Out</button>
+        </div>
+      </header>
+
+      <main className="app-main">
+        <Routes>
+          <Route path="/dashboard" element={<Dashboard token={token} />} />
+          <Route path="/status" element={<StatusPanel token={token} />} />
+          <Route path="/failed-contracts" element={<FailedContracts token={token} />} />
+          <Route path="/pricing" element={<PricingTable />} />
+          <Route path="/global-markets" element={<GlobalMarkets />} />
+          <Route path="/profit-projection" element={<ProfitProjection />} />
+          <Route path="/deployment-guide" element={<DeploymentGuide />} />
+          <Route path="/email-templates" element={<EmailTemplates />} />
+          <Route path="/payments" element={<Payments />} />
+          <Route path="/job-search" element={<JobSearch />} />
+          <Route path="/ai-services" element={<AIServices />} />
+          <Route path="/subcontractors" element={<SubcontractorHub token={token} />} />
+          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </main>
+
+      <footer className="app-footer">
+        <p>&copy; {new Date().getFullYear()} CTS BPO – AI Business Process Outsourcing</p>
+      </footer>
+    </div>
   );
 }
 
@@ -57,73 +114,29 @@ function App() {
     setToken(null);
   }
 
-  if (!user) {
-    return (
-      <Router>
-        <div className="app">
-          <Routes>
-            <Route path="/apply" element={<ApplyPage />} />
-            <Route path="*" element={<LoginPage onLogin={handleLogin} />} />
-          </Routes>
-        </div>
-      </Router>
-    );
-  }
-
   return (
     <Router>
-      <div className="app">
-        <header className="app-header">
-          <Link to="/" className="header-brand-link">
-            <CTSLogo size="md" className="header-brand-logo" />
-            <CTSLogo size="sm" className="header-brand-logo-sm" />
-          </Link>
-          <nav className="header-nav">
-            <NavLink to="/">Dashboard</NavLink>
-            <NavLink to="/status">Status</NavLink>
-            <NavLink to="/failed-contracts">Failed Contracts</NavLink>
-            <NavLink to="/pricing">Pricing</NavLink>
-            <NavLink to="/global-markets">Global Markets</NavLink>
-            <NavLink to="/profit-projection">Profit Projection</NavLink>
-            <NavLink to="/deployment-guide">Deployment Guide</NavLink>
-            <NavLink to="/email-templates">Email Templates</NavLink>
-            <NavLink to="/payments">Payments</NavLink>
-            <NavLink to="/job-search">🌐 Job Search</NavLink>
-            <NavLink to="/ai-services">🤖 AI Services</NavLink>
-            <NavLink to="/subcontractors">🤝 Subcontractors</NavLink>
-          </nav>
-          <div className="header-user">
-            <span className="user-name">{user.name}</span>
-            <span className={`user-role role-${user.role}`}>{user.role}</span>
-            <button className="btn-logout" onClick={handleLogout}>Sign Out</button>
-          </div>
-        </header>
+      <Routes>
+        {/* Always public — no login required */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/apply" element={<ApplyPage />} />
 
-        <main className="app-main">
-          <Routes>
-            <Route path="/" element={<Dashboard token={token} />} />
-            <Route path="/status" element={<StatusPanel token={token} />} />
-            <Route path="/failed-contracts" element={<FailedContracts token={token} />} />
-            <Route path="/pricing" element={<PricingTable />} />
-            <Route path="/global-markets" element={<GlobalMarkets />} />
-            <Route path="/profit-projection" element={<ProfitProjection />} />
-            <Route path="/deployment-guide" element={<DeploymentGuide />} />
-            <Route path="/email-templates" element={<EmailTemplates />} />
-            <Route path="/payments" element={<Payments />} />
-            <Route path="/job-search" element={<JobSearch />} />
-            <Route path="/ai-services" element={<AIServices />} />
-            <Route path="/subcontractors" element={<SubcontractorHub token={token} />} />
-            <Route path="/login" element={<Navigate to="/" replace />} />
-          </Routes>
-        </main>
+        {/* Login page */}
+        <Route path="/login" element={
+          user
+            ? <Navigate to="/dashboard" replace />
+            : <div className="app"><Routes><Route path="*" element={<LoginPage onLogin={handleLogin} />} /></Routes></div>
+        } />
 
-        <footer className="app-footer">
-          <p>&copy; {new Date().getFullYear()} CTS BPO – AI Business Process Outsourcing</p>
-        </footer>
-      </div>
+        {/* All admin routes — require login */}
+        <Route path="/*" element={
+          user
+            ? <AdminShell user={user} token={token} onLogout={handleLogout} />
+            : <div className="app"><Routes><Route path="*" element={<LoginPage onLogin={handleLogin} />} /></Routes></div>
+        } />
+      </Routes>
     </Router>
   );
 }
 
 export default App;
-
