@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const path    = require('path');
 
 const negotiation = require('./modules/negotiation');
 const contractManager = require('./modules/contract-manager');
@@ -551,7 +552,17 @@ app.get('/api/subcontractors', requireAuth, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+// ── Serve React build in production ──────────────────────────────────────────
+// Only activated when the frontend has been built (production / after `npm run build`)
+const buildDir = path.join(__dirname, '../../frontend/build');
+if (require('fs').existsSync(buildDir)) {
+  app.use(express.static(buildDir));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(buildDir, 'index.html'));
+  });
+}
+
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`CTS BPO Backend running on port ${PORT}`);
   auditLogger.log('system.start', null, null, `Server started on port ${PORT}`, null, 'info');
 });
