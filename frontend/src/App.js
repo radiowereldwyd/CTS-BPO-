@@ -67,7 +67,7 @@ function AdminShell({ user, token, onLogout }) {
           <Route path="/failed-contracts" element={<FailedContracts token={token} />} />
           <Route path="/pricing" element={<PricingTable />} />
           <Route path="/global-markets" element={<GlobalMarkets />} />
-          <Route path="/profit-projection" element={<ProfitProjection />} />
+          <Route path="/profit-projection" element={<ProfitProjection token={token} />} />
           <Route path="/deployment-guide" element={<DeploymentGuide />} />
           <Route path="/email-templates" element={<EmailTemplates />} />
           <Route path="/payments" element={<Payments />} />

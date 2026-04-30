@@ -1,113 +1,100 @@
-import React from 'react';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  CartesianGrid, ResponsiveContainer
-} from 'recharts';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
-const regionData = [
-  { region: 'N. America', usd: 6000,  zar: 114000 },
-  { region: 'Europe',     usd: 4500,  zar: 85000  },
-  { region: 'Asia',       usd: 2500,  zar: 47500  },
-  { region: 'Australia',  usd: 1800,  zar: 34200  },
-  { region: 'Africa',     usd: 700,   zar: 13200  },
-  { region: 'Total',      usd: 15500, zar: 300000 },
-];
+const API_BASE = process.env.REACT_APP_API_URL || '';
 
-const summary = [
-  { region: 'North America', usd: '$6.0k',  zar: 'R114k' },
-  { region: 'Europe',        usd: '$4.5k',  zar: 'R85k'  },
-  { region: 'Asia',          usd: '$2.5k',  zar: 'R47.5k'},
-  { region: 'Australia',     usd: '$1.8k',  zar: 'R34.2k'},
-  { region: 'Africa',        usd: '$700',   zar: 'R13.2k'},
-  { region: 'Total Global',  usd: '$15.5k', zar: 'R300k+'},
-];
+function ProfitProjection({ token }) {
+  const [metrics, setMetrics] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-const tooltipStyle = {
-  background: '#0f1e3d',
-  border: '1px solid rgba(0,200,255,0.2)',
-  borderRadius: 8,
-  color: '#e2e8f0',
-  fontSize: 12,
-};
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
-function ProfitProjection() {
+  useEffect(() => {
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 30000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  async function fetchMetrics() {
+    try {
+      const res = await axios.get(`${API_BASE}/api/metrics`, { headers: authHeaders });
+      setMetrics(res.data);
+    } catch {
+      setMetrics(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const m = metrics || {};
+  const hasRevenue = (m.totalRevZar > 0) || (m.monthlyRevZar > 0);
+
   return (
     <div className="pp-page">
       <div className="pp-header">
-        <h1>Global Profit Projection: Daily Earnings Breakdown</h1>
-        <p>Professional BPO Worldwide</p>
+        <h1>Revenue & Earnings Overview</h1>
+        <p>Professional BPO Worldwide — Live from database</p>
       </div>
 
-      <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10, padding: '12px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontSize: 18 }}>📊</span>
-        <div style={{ fontSize: 13, color: '#fbbf24', lineHeight: 1.6 }}>
-          <strong style={{ color: '#f59e0b' }}>Business Model Projection — Not Live Revenue.</strong> These figures represent target earnings potential based on pricing model and market research. Actual revenue will be shown on the main Dashboard as contracts are fulfilled.
+      {loading && (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+          <div>Loading revenue data...</div>
         </div>
-      </div>
+      )}
 
-      <div className="pp-chart-card">
-        <div className="pp-chart-title">Daily Earnings by Region</div>
-        <ResponsiveContainer width="100%" height={320}>
-          <BarChart
-            data={regionData}
-            margin={{ top: 10, right: 20, left: 0, bottom: 5 }}
-            barGap={4}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-            <XAxis
-              dataKey="region"
-              tick={{ fill: '#94a3b8', fontSize: 12 }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis
-              yAxisId="usd"
-              orientation="left"
-              tick={{ fill: '#94a3b8', fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
-              tickFormatter={v => `$${(v/1000).toFixed(0)}k`}
-            />
-            <YAxis
-              yAxisId="zar"
-              orientation="right"
-              tick={{ fill: '#94a3b8', fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
-              tickFormatter={v => `R${(v/1000).toFixed(0)}k`}
-            />
-            <Tooltip
-              contentStyle={tooltipStyle}
-              formatter={(v, name) =>
-                name === 'usd'
-                  ? [`$${(v/1000).toFixed(1)}k`, 'USD Earnings']
-                  : [`R${(v/1000).toFixed(1)}k`, 'ZAR Earnings']
-              }
-            />
-            <Legend
-              wrapperStyle={{ fontSize: 12, color: '#94a3b8', paddingTop: 8 }}
-              formatter={v => v === 'usd' ? 'USD Earnings' : 'ZAR Earnings'}
-            />
-            <Bar yAxisId="usd" dataKey="usd" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={36} />
-            <Bar yAxisId="zar" dataKey="zar" fill="#22c55e" radius={[4, 4, 0, 0]} maxBarSize={36} />
-          </BarChart>
-        </ResponsiveContainer>
-
-        <div className="pp-legend">
-          <span className="legend-label"><span className="legend-dot" style={{ background: '#3b82f6' }} /> USD Earnings</span>
-          <span className="legend-label"><span className="legend-dot" style={{ background: '#22c55e' }} /> ZAR Earnings</span>
+      {!loading && !hasRevenue && (
+        <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>📊</div>
+          <h3 style={{ color: '#e2e8f0', marginBottom: 12 }}>No revenue yet</h3>
+          <p style={{ color: '#64748b', maxWidth: 480, margin: '0 auto', lineHeight: 1.7 }}>
+            Earnings will appear here automatically as contracts are completed and payments are processed. The AI agent is actively searching for clients — check the <strong style={{ color: '#818cf8' }}>AI Agent</strong> tab to see live outreach activity.
+          </p>
         </div>
-      </div>
+      )}
 
-      <div className="pp-summary">
-        {summary.map((s, i) => (
-          <div key={i} className="pp-summary-card">
-            <div className="pp-region">{s.region}</div>
-            <div className="pp-usd">{s.usd}</div>
-            <div className="pp-zar">{s.zar}</div>
+      {!loading && hasRevenue && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20, marginTop: 24 }}>
+
+          <div className="glow-card tile">
+            <div className="tile-accent accent-blue" />
+            <div className="tile-title">Total Revenue (All-Time)</div>
+            <div className="tile-value">
+              R {Number(m.totalRevZar || 0).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}
+            </div>
+            <div className="tile-sub">Payments received to date</div>
           </div>
-        ))}
-      </div>
+
+          <div className="glow-card tile">
+            <div className="tile-accent accent-green" />
+            <div className="tile-title">This Month</div>
+            <div className="tile-value" style={{ color: 'var(--green)' }}>
+              R {Number(m.monthlyRevZar || 0).toLocaleString('en-ZA', { maximumFractionDigits: 0 })}
+            </div>
+            <div className="tile-sub">Revenue in current month</div>
+          </div>
+
+          <div className="glow-card tile">
+            <div className="tile-accent accent-amber" />
+            <div className="tile-title">Contracts Completed</div>
+            <div className="tile-value" style={{ color: 'var(--amber)' }}>
+              {m.totalCompleted ?? 0}
+            </div>
+            <div className="tile-sub">All completed to date</div>
+          </div>
+
+          <div className="glow-card tile">
+            <div className="tile-accent accent-blue" />
+            <div className="tile-title">Success Rate</div>
+            <div className="tile-value" style={{ color: 'var(--green)' }}>
+              {m.totalCompleted > 0 ? `${m.successRate}%` : '—'}
+            </div>
+            <div className="tile-sub">{m.totalCompleted > 0 ? `Based on ${m.totalCompleted} contracts` : 'No completed contracts yet'}</div>
+          </div>
+
+        </div>
+      )}
     </div>
   );
 }
