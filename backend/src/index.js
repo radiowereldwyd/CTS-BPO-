@@ -13,6 +13,7 @@ const authRouter = require('./routes/auth');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json());
 
 // CORS – allow frontend dev server
