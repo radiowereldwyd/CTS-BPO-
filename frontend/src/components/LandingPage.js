@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import './LandingPage.css';
 import {
   HiOutlineDocumentText, HiOutlineMicrophone, HiOutlineGlobeAlt,
   HiOutlineComputerDesktop, HiOutlinePhone, HiOutlineCurrencyDollar,
@@ -128,6 +129,7 @@ function AccordionItem({ q, a, open, onClick }) {
 export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState(null);
   const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 60);
@@ -135,7 +137,10 @@ export default function LandingPage() {
     return () => window.removeEventListener('scroll', fn);
   }, []);
 
-  const scrollTo = id => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  const scrollTo = id => {
+    setMenuOpen(false);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   return (
     <div style={{ fontFamily: "'Segoe UI', Arial, sans-serif", color: '#1e293b', background: '#fff', overflowX: 'hidden' }}>
@@ -143,21 +148,38 @@ export default function LandingPage() {
       {/* ── STICKY NAV ─────────────────────────────────────────────────────── */}
       <nav style={{
         position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000,
-        background: scrolled ? 'rgba(10,21,48,0.96)' : 'rgba(10,21,48,0.30)',
+        background: scrolled || menuOpen ? 'rgba(10,21,48,0.96)' : 'rgba(10,21,48,0.30)',
         backdropFilter: 'blur(14px)',
-        borderBottom: scrolled ? '1px solid rgba(255,255,255,0.07)' : 'none',
+        borderBottom: scrolled || menuOpen ? '1px solid rgba(255,255,255,0.07)' : 'none',
         transition: 'all 0.3s ease',
-        padding: '0 40px',
       }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 70 }}>
-          <img src="/cts-bpo-logo-nobg.png" alt="CTS BPO" style={{ height: 44, width: 'auto' }} />
-          <div style={{ display: 'flex', gap: 28, alignItems: 'center' }}>
+        <div className="lp-nav-inner" style={{ padding: '0 24px' }}>
+          <img src="/cts-bpo-logo-nobg.png" alt="CTS BPO" style={{ height: 40, width: 'auto' }} />
+
+          {/* Desktop links */}
+          <div className="lp-nav-links">
             {[['Services', 'services'], ['How It Works', 'how-it-works'], ['Examples', 'examples'], ['FAQ', 'faq'], ['Online Jobs', 'online-jobs']].map(([label, id]) => (
               <button key={id} onClick={() => scrollTo(id)} style={{ background: 'none', border: 'none', color: '#cbd5e1', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '6px 0', letterSpacing: 0.2 }}>{label}</button>
             ))}
             <Link to="/subcontractor/login" style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid #10b981', color: '#34d399', padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Subcontractor Login</Link>
             <Link to="/login" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid #6366f1', color: '#a5b4fc', padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Admin</Link>
           </div>
+
+          {/* Hamburger button — mobile only */}
+          <button className="lp-hamburger" onClick={() => setMenuOpen(o => !o)} aria-label="Menu">
+            <span style={{ transform: menuOpen ? 'rotate(45deg) translate(5px, 5px)' : 'none' }} />
+            <span style={{ opacity: menuOpen ? 0 : 1 }} />
+            <span style={{ transform: menuOpen ? 'rotate(-45deg) translate(5px, -5px)' : 'none' }} />
+          </button>
+        </div>
+
+        {/* Mobile dropdown menu */}
+        <div className={`lp-mobile-menu${menuOpen ? ' open' : ''}`}>
+          {[['Services', 'services'], ['How It Works', 'how-it-works'], ['Examples', 'examples'], ['FAQ', 'faq'], ['Online Jobs', 'online-jobs']].map(([label, id]) => (
+            <button key={id} onClick={() => scrollTo(id)}>{label}</button>
+          ))}
+          <Link to="/subcontractor/login" className="lp-mob-login" style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid #10b981', color: '#34d399', borderRadius: 8, fontWeight: 700 }}>Subcontractor Login</Link>
+          <Link to="/login" className="lp-mob-login" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid #6366f1', color: '#a5b4fc', borderRadius: 8, fontWeight: 700, marginTop: 6 }}>Admin Login</Link>
         </div>
       </nav>
 
@@ -192,10 +214,10 @@ export default function LandingPage() {
         }
       `}</style>
 
-      <section style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '120px 24px 80px', overflow: 'hidden', background: '#0a1530' }}>
+      <section className="lp-hero-section" style={{ position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '120px 24px 80px', overflow: 'hidden', background: '#0a1530' }}>
 
         {/* ── Animated office background layer ── */}
-        <div style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden' }}>
+        <div className="lp-float-cards" style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'hidden' }}>
 
           {/* Large pulsing "workstation" circles */}
           {[
@@ -264,7 +286,8 @@ export default function LandingPage() {
           <img
             src="/cts-bpo-logo-nobg.png"
             alt="CTS BPO"
-            style={{ height: 560, width: 'auto', marginBottom: 24, animation: 'logo3d 6s ease-in-out infinite' }}
+            className="lp-hero-logo"
+            style={{ animation: 'logo3d 6s ease-in-out infinite' }}
           />
 
           {/* Badge */}
@@ -282,11 +305,11 @@ export default function LandingPage() {
             We handle your back-office operations with precision, speed and confidentiality — so you can focus on growing your business.
           </p>
 
-          <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <div className="lp-hero-ctas" style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
             <a href="mailto:cts.bposolutions@gmail.com" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', padding: '16px 36px', borderRadius: 10, fontWeight: 800, fontSize: 16, textDecoration: 'none', boxShadow: '0 4px 28px rgba(99,102,241,0.45)' }}>
               <HiOutlineEnvelope style={{ fontSize: 20 }} /> Get a Free Quote
             </a>
-            <button onClick={() => scrollTo('online-jobs')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.22)', color: '#fff', padding: '16px 36px', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer' }}>
+            <button onClick={() => scrollTo('online-jobs')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.22)', color: '#fff', padding: '16px 36px', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit' }}>
               Work From Home <HiOutlineArrowRight style={{ fontSize: 18 }} />
             </button>
           </div>
@@ -300,8 +323,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── STATS BAR ──────────────────────────────────────────────────────── */}
-      <section style={{ background: 'linear-gradient(90deg,#6366f1,#4f46e5)', padding: '32px 40px' }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 20 }}>
+      <section style={{ background: 'linear-gradient(90deg,#6366f1,#4f46e5)', padding: '32px 20px' }}>
+        <div className="lp-stats-grid">
           {STATS.map(s => (
             <div key={s.label} style={{ textAlign: 'center' }}>
               <s.Icon style={{ fontSize: 28, color: 'rgba(255,255,255,0.7)', marginBottom: 8 }} />
@@ -313,8 +336,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── ABOUT ──────────────────────────────────────────────────────────── */}
-      <section style={{ background: '#fff', padding: '80px 40px' }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 60, alignItems: 'center' }}>
+      <section className="lp-section-pad" style={{ background: '#fff' }}>
+        <div className="lp-about-grid">
           <div>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 2 }}>Who We Are</span>
             <h2 style={{ margin: '12px 0 20px', fontSize: 'clamp(28px,3vw,40px)', fontWeight: 900, color: '#0f172a', lineHeight: 1.2 }}>Your Worldwide Trusted BPO Partner</h2>
@@ -347,7 +370,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── SERVICES ───────────────────────────────────────────────────────── */}
-      <section id="services" style={{ background: '#f8fafc', padding: '80px 40px' }}>
+      <section id="services" className="lp-section-pad" style={{ background: '#f8fafc' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 56 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 2 }}>What We Do</span>
@@ -373,13 +396,13 @@ export default function LandingPage() {
       </section>
 
       {/* ── HOW IT WORKS ───────────────────────────────────────────────────── */}
-      <section id="how-it-works" style={{ background: '#fff', padding: '80px 40px' }}>
+      <section id="how-it-works" className="lp-section-pad" style={{ background: '#fff' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 56 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 2 }}>The Process</span>
             <h2 style={{ margin: '12px 0 0', fontSize: 'clamp(28px,3vw,42px)', fontWeight: 900, color: '#0f172a' }}>Simple. Transparent. Reliable.</h2>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 24 }}>
+          <div className="lp-how-grid">
             {HOW_IT_WORKS.map((s, i) => (
               <div key={s.step} style={{ textAlign: 'center', position: 'relative' }}>
                 {i < HOW_IT_WORKS.length - 1 && (
@@ -398,7 +421,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── WORK EXAMPLES ──────────────────────────────────────────────────── */}
-      <section id="examples" style={{ background: '#f8fafc', padding: '80px 40px' }}>
+      <section id="examples" className="lp-section-pad" style={{ background: '#f8fafc' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 56 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 2 }}>Our Work</span>
@@ -406,7 +429,7 @@ export default function LandingPage() {
             <p style={{ fontSize: 16, color: '#64748b', maxWidth: 600, margin: '0 auto' }}>Real examples of transcription, data capture and multimedia processing — the standard our clients expect every time.</p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: 28 }}>
+          <div className="lp-examples-grid">
 
             {/* Video Example */}
             <div style={{ background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.07)' }}>
@@ -512,7 +535,7 @@ export default function LandingPage() {
             </div>
 
             {/* Full Transcription Sample */}
-            <div style={{ background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.07)', gridColumn: 'span 2' }}>
+            <div className="lp-span2" style={{ background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.07)' }}>
               <div style={{ background: '#0f172a', padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <HiOutlineDocumentDuplicate style={{ fontSize: 20, color: '#6366f1' }} />
@@ -541,7 +564,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── FAQ ────────────────────────────────────────────────────────────── */}
-      <section id="faq" style={{ background: '#fff', padding: '80px 40px' }}>
+      <section id="faq" className="lp-section-pad" style={{ background: '#fff' }}>
         <div style={{ maxWidth: 860, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 52 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: 2 }}>Got Questions?</span>
@@ -561,7 +584,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── ONLINE JOBS ────────────────────────────────────────────────────── */}
-      <section id="online-jobs" style={{ background: 'linear-gradient(135deg,#0a1530,#0f172a,#0f2d5f)', padding: '80px 40px' }}>
+      <section id="online-jobs" className="lp-section-pad" style={{ background: 'linear-gradient(135deg,#0a1530,#0f172a,#0f2d5f)' }}>
         <div style={{ maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 52 }}>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: 24, padding: '7px 22px', marginBottom: 20 }}>
@@ -580,7 +603,7 @@ export default function LandingPage() {
               <HiOutlineSparkles style={{ color: '#f59e0b', marginRight: 8, verticalAlign: 'middle', fontSize: 22 }} />
               The Double-Return Model — A South African First
             </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', gap: 16, alignItems: 'center' }}>
+            <div className="lp-earn-steps" style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto 1fr', gap: 16, alignItems: 'center' }}>
               {EARN_STEPS.map((item, i) => {
                 if (!item) return (
                   <div key={i} style={{ textAlign: 'center' }}>
