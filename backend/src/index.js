@@ -338,6 +338,40 @@ app.get('/api/jobs/email-status', requireAuth, (req, res) => {
   res.json({ configured: emailOutreach.isConfigured(), from: process.env.GMAIL_USER || '' });
 });
 
+// ─── Email Template Routes ────────────────────────────────────────────────────
+
+// List all templates with metadata
+app.get('/api/email/templates', requireAuth, (req, res) => {
+  const list = emailOutreach.VALID_TEMPLATES
+    .filter(key => emailOutreach.TEMPLATE_META[key])
+    .map(key => ({ key, ...emailOutreach.TEMPLATE_META[key] }))
+    .sort((a, b) => a.stage - b.stage);
+  res.json(list);
+});
+
+// Preview a template as HTML (with sample data)
+app.get('/api/email/templates/:key/preview', requireAuth, (req, res) => {
+  const preview = emailOutreach.previewTemplate(req.params.key);
+  if (!preview) return res.status(404).json({ error: 'Template not found' });
+  res.json(preview);
+});
+
+// Send a test email using a template
+app.post('/api/email/templates/:key/test', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { to } = req.body;
+    if (!to) return res.status(400).json({ error: 'to (email address) is required' });
+    const sample = {
+      name: 'Test Client', company: 'Test Company Ltd', email: to,
+      jobType: 'data entry and transcription', amount: 'R 15,000 / month',
+      duration: '3 months', invoiceNo: 'TEST-001', dueDate: '15 May 2026',
+      reference: 'TEST-REF', notes: 'Test delivery note.',
+    };
+    const result = await emailOutreach.sendOutreachEmail(sample, req.params.key);
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Google Cloud AI Services ────────────────────────────────────────────────
 
 // Config status — which services are live

@@ -1,271 +1,297 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import axios from 'axios';
 import './EmailTemplates.css';
 
-function EmailTemplates() {
-  const [templates, setTemplates] = useState([
-    {
-      id: 1,
-      name: 'Welcome Email',
-      subject: 'Welcome to CTS BPO, {client_name}!',
-      body: 'Hello {client_name},\n\nWelcome to CTS BPO! We\'re excited to work with you.\n\nYour account has been set up and you can log in at:\nhttps://cts-bpo-frontend.onrender.com\n\nBest regards,\nCTS BPO Team',
-      category: 'onboarding',
-      variables: ['{client_name}', '{email}', '{date}']
-    },
-    {
-      id: 2,
-      name: 'Quote Email',
-      subject: 'Your Quote - {project_name}',
-      body: 'Hello {client_name},\n\nPlease find your quote below:\n\nProject: {project_name}\nValue: {amount_zar}\nDeadline: {deadline}\n\nPlease review and let us know if you have any questions.\n\nBest regards,\nCTS BPO Team',
-      category: 'quotes',
-      variables: ['{client_name}', '{project_name}', '{amount_zar}', '{deadline}']
-    },
-    {
-      id: 3,
-      name: 'Invoice Email',
-      subject: 'Invoice {invoice_number}',
-      body: 'Hello {client_name},\n\nPlease find your invoice attached.\n\nInvoice Number: {invoice_number}\nAmount: {amount_zar}\nDue Date: {due_date}\n\nPayment methods available:\n- Ozow: {ozow_link}\n- PayPal: {paypal_link}\n\nThank you for your business!\n\nBest regards,\nCTS BPO Team',
-      category: 'invoicing',
-      variables: ['{client_name}', '{invoice_number}', '{amount_zar}', '{due_date}']
-    },
-    {
-      id: 4,
-      name: 'Payment Confirmation',
-      subject: 'Payment Received - Thank You!',
-      body: 'Hello {client_name},\n\nWe\'ve received your payment of {amount_zar}.\n\nTransaction Reference: {reference}\nDate: {date}\n\nYour work is now in progress. We\'ll update you soon.\n\nBest regards,\nCTS BPO Team',
-      category: 'payments',
-      variables: ['{client_name}', '{amount_zar}', '{reference}', '{date}']
-    },
-    {
-      id: 5,
-      name: 'Completion Notification',
-      subject: 'Your Project Is Complete!',
-      body: 'Hello {client_name},\n\nGood news! Your project is complete.\n\nProject: {project_name}\nCompleted Date: {completion_date}\n\nYou can now download your deliverables from your dashboard.\n\nThank you for choosing CTS BPO!\n\nBest regards,\nCTS BPO Team',
-      category: 'completion',
-      variables: ['{client_name}', '{project_name}', '{completion_date}']
+const API = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+
+const CATEGORY_META = {
+  outreach:    { label: 'Outreach',     icon: '📡', color: '#1e40af', bg: '#eff6ff' },
+  negotiation: { label: 'Negotiation',  icon: '🤝', color: '#7c3aed', bg: '#f5f3ff' },
+  onboarding:  { label: 'Onboarding',   icon: '🎉', color: '#059669', bg: '#ecfdf5' },
+  billing:     { label: 'Billing',      icon: '💰', color: '#b45309', bg: '#fffbeb' },
+  delivery:    { label: 'Delivery',     icon: '📦', color: '#0891b2', bg: '#ecfeff' },
+  retention:   { label: 'Retention',    icon: '⭐', color: '#be185d', bg: '#fdf2f8' },
+};
+
+const STAGE_LABELS = [
+  '', // 0 placeholder
+  'AI scans web → finds company needing BPO → sends this email',
+  'No reply after 5–7 days → system auto-sends follow-up',
+  'Client replies positively → you send pricing & terms',
+  'Verbal agreement reached → send formal service agreement',
+  'Contract accepted → welcome the new client aboard',
+  'Work delivered or milestone reached → request payment',
+  'Payment lands → send immediate confirmation',
+  'Task batch complete → deliver output files to client',
+  'After delivery → request review or testimonial',
+];
+
+export default function EmailTemplates() {
+  const token = localStorage.getItem('token');
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const [templates, setTemplates]       = useState([]);
+  const [selected, setSelected]         = useState(null);
+  const [preview, setPreview]           = useState(null);
+  const [previewMode, setPreviewMode]   = useState('html'); // 'html' | 'text'
+  const [loading, setLoading]           = useState(true);
+  const [prevLoading, setPrevLoading]   = useState(false);
+  const [testEmail, setTestEmail]       = useState('');
+  const [testStatus, setTestStatus]     = useState(null); // null | 'sending' | 'ok' | 'error'
+  const [testMsg, setTestMsg]           = useState('');
+  const iframeRef = useRef(null);
+
+  // Load template list from backend
+  useEffect(() => {
+    axios.get(`${API}/api/email/templates`, { headers })
+      .then(r => {
+        setTemplates(r.data);
+        if (r.data.length > 0) setSelected(r.data[0]);
+      })
+      .catch(() => setTemplates([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Load HTML preview whenever selected changes
+  const loadPreview = useCallback((key) => {
+    if (!key) return;
+    setPrevLoading(true);
+    setPreview(null);
+    axios.get(`${API}/api/email/templates/${key}/preview`, { headers })
+      .then(r => setPreview(r.data))
+      .catch(() => setPreview({ subject: 'Error loading preview', html: '<p>Could not load preview.</p>' }))
+      .finally(() => setPrevLoading(false));
+  }, []);
+
+  useEffect(() => { if (selected) loadPreview(selected.key); }, [selected, loadPreview]);
+
+  // Write HTML into iframe
+  useEffect(() => {
+    if (!iframeRef.current || !preview) return;
+    const doc = iframeRef.current.contentDocument || iframeRef.current.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(preview.html || '');
+      doc.close();
     }
-  ]);
+  }, [preview, previewMode]);
 
-  const [selectedTemplate, setSelectedTemplate] = useState(templates[0]);
-  const [editMode, setEditMode] = useState(false);
-  const [editedTemplate, setEditedTemplate] = useState(null);
-  const [showPreview, setShowPreview] = useState(false);
-
-  const handleEdit = (template) => {
-    setEditMode(true);
-    setEditedTemplate({ ...template });
-    setShowPreview(false);
+  const handleTestSend = async () => {
+    if (!testEmail || !selected) return;
+    setTestStatus('sending');
+    setTestMsg('');
+    try {
+      const r = await axios.post(`${API}/api/email/templates/${selected.key}/test`, { to: testEmail }, { headers });
+      if (r.data.sent) {
+        setTestStatus('ok');
+        setTestMsg(`✅ Sent to ${testEmail} — check inbox!`);
+      } else {
+        setTestStatus('ok');
+        setTestMsg(`⚠️ Simulated (Gmail not configured) — email not actually delivered.`);
+      }
+    } catch (err) {
+      setTestStatus('error');
+      setTestMsg(`❌ ${err.response?.data?.error || err.message}`);
+    }
   };
 
-  const handleSave = () => {
-    setTemplates(templates.map(t => t.id === editedTemplate.id ? editedTemplate : t));
-    setSelectedTemplate(editedTemplate);
-    setEditMode(false);
-    setEditedTemplate(null);
-  };
+  const grouped = Object.keys(CATEGORY_META).reduce((acc, cat) => {
+    acc[cat] = templates.filter(t => t.category === cat);
+    return acc;
+  }, {});
 
-  const handleCancel = () => {
-    setEditMode(false);
-    setEditedTemplate(null);
-  };
-
-  const handlePreview = () => {
-    setShowPreview(!showPreview);
-  };
-
-  const handleFieldChange = (field, value) => {
-    setEditedTemplate({ ...editedTemplate, [field]: value });
-  };
-
-  const getPreviewText = (text) => {
-    if (!text) return '';
-    return text
-      .replace(/{client_name}/g, 'John Doe')
-      .replace(/{email}/g, 'john@example.com')
-      .replace(/{project_name}/g, 'Data Entry Project')
-      .replace(/{amount_zar}/g, 'R 15,000')
-      .replace(/{deadline}/g, '2026-05-15')
-      .replace(/{invoice_number}/g, 'INV-001')
-      .replace(/{due_date}/g, '2026-05-31')
-      .replace(/{ozow_link}/g, 'pay.ozow.com')
-      .replace(/{paypal_link}/g, 'paypal.me')
-      .replace(/{reference}/g, 'TXN-12345')
-      .replace(/{date}/g, '2026-04-27')
-      .replace(/{completion_date}/g, '2026-04-26');
-  };
+  if (loading) return (
+    <div className="et-container">
+      <div className="et-loading"><div className="et-spinner" /><p>Loading templates…</p></div>
+    </div>
+  );
 
   return (
-    <div className="email-templates-container">
-      <div className="email-templates-header">
-        <h1>📧 Email Templates Manager</h1>
-        <p>Customize emails for every business scenario</p>
+    <div className="et-container">
+
+      {/* ── Header ── */}
+      <div className="et-header">
+        <div>
+          <h1>📧 Email & Marketing Templates</h1>
+          <p>Full sales funnel — from cold outreach to client retention</p>
+        </div>
+        <div className="et-pipeline-badge">9 Templates · 6 Stages</div>
       </div>
 
-      <div className="email-templates-layout">
-        {/* Left Sidebar - Template List */}
-        <div className="template-list-sidebar">
-          <h3>Templates</h3>
-          <div className="template-categories">
-            {['onboarding', 'quotes', 'invoicing', 'payments', 'completion'].map(category => (
-              <div key={category} className="category-group">
-                <h4>{category.charAt(0).toUpperCase() + category.slice(1)}</h4>
-                {templates.filter(t => t.category === category).map(template => (
+      {/* ── Pipeline diagram ── */}
+      <div className="et-pipeline">
+        {Object.entries(CATEGORY_META).map(([cat, meta], idx, arr) => (
+          <React.Fragment key={cat}>
+            <div
+              className={`et-pipe-step ${selected?.category === cat ? 'active' : ''}`}
+              style={{ '--step-color': meta.color, '--step-bg': meta.bg }}
+              onClick={() => {
+                const first = grouped[cat]?.[0];
+                if (first) setSelected(first);
+              }}
+            >
+              <span className="pipe-icon">{meta.icon}</span>
+              <span className="pipe-label">{meta.label}</span>
+            </div>
+            {idx < arr.length - 1 && <div className="et-pipe-arrow">→</div>}
+          </React.Fragment>
+        ))}
+      </div>
+
+      <div className="et-layout">
+
+        {/* ── Sidebar ── */}
+        <div className="et-sidebar">
+          {Object.entries(CATEGORY_META).map(([cat, meta]) => (
+            grouped[cat]?.length > 0 && (
+              <div key={cat} className="et-sidebar-group">
+                <div className="et-sidebar-heading" style={{ color: meta.color }}>
+                  {meta.icon} {meta.label}
+                </div>
+                {grouped[cat].map(t => (
                   <div
-                    key={template.id}
-                    className={`template-item ${selectedTemplate?.id === template.id ? 'active' : ''}`}
-                    onClick={() => {
-                      setSelectedTemplate(template);
-                      setEditMode(false);
-                    }}
+                    key={t.key}
+                    className={`et-sidebar-item ${selected?.key === t.key ? 'active' : ''}`}
+                    style={selected?.key === t.key ? { borderLeftColor: meta.color, color: meta.color } : {}}
+                    onClick={() => setSelected(t)}
                   >
-                    {template.name}
+                    <span className="et-item-stage">#{t.stage}</span>
+                    {t.name}
                   </div>
                 ))}
               </div>
-            ))}
-          </div>
+            )
+          ))}
         </div>
 
-        {/* Main Content - Template Editor */}
-        <div className="template-editor">
-          {!editMode ? (
+        {/* ── Main panel ── */}
+        <div className="et-main">
+          {selected ? (
             <>
-              {/* View Mode */}
-              <div className="template-view">
-                <div className="template-view-header">
-                  <h2>{selectedTemplate.name}</h2>
-                  <div className="template-view-actions">
-                    <button className="btn-preview" onClick={handlePreview}>
-                      {showPreview ? '👁️ Hide Preview' : '👁️ Preview'}
-                    </button>
-                    <button className="btn-edit" onClick={() => handleEdit(selectedTemplate)}>
-                      ✏️ Edit
-                    </button>
+              {/* Template header */}
+              <div className="et-main-header">
+                <div>
+                  <div className="et-main-title">
+                    <span className="et-stage-num">Stage {selected.stage}</span>
+                    <h2>{selected.name}</h2>
+                    <span
+                      className="et-cat-badge"
+                      style={{ background: CATEGORY_META[selected.category]?.bg, color: CATEGORY_META[selected.category]?.color }}
+                    >
+                      {CATEGORY_META[selected.category]?.icon} {CATEGORY_META[selected.category]?.label}
+                    </span>
                   </div>
+                  <p className="et-trigger">
+                    <strong>Trigger:</strong> {STAGE_LABELS[selected.stage] || selected.description}
+                  </p>
+                </div>
+              </div>
+
+              {/* Subject line */}
+              {preview && (
+                <div className="et-subject-bar">
+                  <span className="et-subject-label">SUBJECT</span>
+                  <span className="et-subject-text">{preview.subject}</span>
+                </div>
+              )}
+
+              {/* Preview area */}
+              <div className="et-preview-area">
+                <div className="et-preview-toolbar">
+                  <span className="et-preview-label">Email Preview</span>
+                  <div className="et-view-tabs">
+                    <button className={previewMode === 'html' ? 'active' : ''} onClick={() => setPreviewMode('html')}>HTML Render</button>
+                    <button className={previewMode === 'text' ? 'active' : ''} onClick={() => setPreviewMode('text')}>Raw HTML</button>
+                  </div>
+                  <button className="et-refresh-btn" onClick={() => loadPreview(selected.key)} title="Reload preview">↻ Refresh</button>
                 </div>
 
-                <div className="template-details">
-                  <div className="detail-group">
-                    <label>Subject Line:</label>
-                    <p className="subject-line">{selectedTemplate.subject}</p>
-                  </div>
-
-                  <div className="detail-group">
-                    <label>Email Body:</label>
-                    <div className={`email-body ${showPreview ? 'preview-mode' : ''}`}>
-                      {showPreview ? (
-                        <div className="preview-content">
-                          {getPreviewText(selectedTemplate.body)}
-                        </div>
-                      ) : (
-                        <pre>{selectedTemplate.body}</pre>
-                      )}
+                {prevLoading ? (
+                  <div className="et-prev-loading"><div className="et-spinner" /></div>
+                ) : preview ? (
+                  previewMode === 'html' ? (
+                    <div className="et-iframe-wrap">
+                      <iframe
+                        ref={iframeRef}
+                        title="email-preview"
+                        className="et-iframe"
+                        sandbox="allow-same-origin"
+                      />
                     </div>
-                  </div>
+                  ) : (
+                    <pre className="et-raw-html">{preview.html}</pre>
+                  )
+                ) : null}
+              </div>
 
-                  <div className="detail-group">
-                    <label>Available Variables (copy & paste into template):</label>
-                    <div className="variables-list">
-                      {selectedTemplate.variables.map((variable, idx) => (
-                        <span key={idx} className="variable-tag">{variable}</span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="template-info">
-                    <span className="category-badge">{selectedTemplate.category}</span>
-                  </div>
+              {/* Test send */}
+              <div className="et-test-send">
+                <h3>🧪 Send Test Email</h3>
+                <p>Send this template with sample data to any address to verify it looks correct.</p>
+                <div className="et-test-row">
+                  <input
+                    type="email"
+                    placeholder="recipient@example.com"
+                    value={testEmail}
+                    onChange={e => { setTestEmail(e.target.value); setTestStatus(null); }}
+                    className="et-test-input"
+                  />
+                  <button
+                    className={`et-test-btn ${testStatus === 'sending' ? 'sending' : ''}`}
+                    onClick={handleTestSend}
+                    disabled={!testEmail || testStatus === 'sending'}
+                  >
+                    {testStatus === 'sending' ? '⏳ Sending…' : '📨 Send Test'}
+                  </button>
                 </div>
+                {testMsg && (
+                  <div className={`et-test-msg ${testStatus}`}>{testMsg}</div>
+                )}
               </div>
             </>
           ) : (
-            <>
-              {/* Edit Mode */}
-              <div className="template-edit">
-                <div className="edit-header">
-                  <h2>Editing: {editedTemplate.name}</h2>
-                  <div className="edit-actions">
-                    <button className="btn-save" onClick={handleSave}>
-                      💾 Save Changes
-                    </button>
-                    <button className="btn-cancel" onClick={handleCancel}>
-                      ❌ Cancel
-                    </button>
-                  </div>
-                </div>
-
-                <div className="edit-form">
-                  <div className="form-group">
-                    <label htmlFor="template-name">Template Name:</label>
-                    <input
-                      id="template-name"
-                      type="text"
-                      value={editedTemplate.name}
-                      onChange={(e) => handleFieldChange('name', e.target.value)}
-                      placeholder="e.g., Welcome Email"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label htmlFor="template-subject">Subject Line:</label>
-                    <input
-                      id="template-subject"
-                      type="text"
-                      value={editedTemplate.subject}
-                      onChange={(e) => handleFieldChange('subject', e.target.value)}
-                      placeholder="e.g., Welcome to CTS BPO, {client_name}!"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label htmlFor="template-body">Email Body:</label>
-                    <textarea
-                      id="template-body"
-                      value={editedTemplate.body}
-                      onChange={(e) => handleFieldChange('body', e.target.value)}
-                      placeholder="Write your email. Use variables like {client_name}, {amount_zar}, etc."
-                      rows="12"
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Quick Variables (click to insert):</label>
-                    <div className="quick-variables">
-                      {editedTemplate.variables.map((variable, idx) => (
-                        <button
-                          key={idx}
-                          className="quick-var-btn"
-                          onClick={() => {
-                            const textarea = document.getElementById('template-body');
-                            textarea.value += variable;
-                            handleFieldChange('body', textarea.value);
-                          }}
-                        >
-                          {variable}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </>
+            <div className="et-empty">
+              <div style={{ fontSize: 48 }}>📧</div>
+              <p>Select a template from the sidebar</p>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Help Section */}
-      <div className="template-help">
-        <h3>💡 Tips For Email Templates</h3>
-        <ul>
-          <li>Use variables like <code>{'{client_name}'}</code> to make emails personal</li>
-          <li>Variables are automatically filled when the email is sent</li>
-          <li>Keep subject lines under 50 characters for mobile</li>
-          <li>Use {'{deadline}'} for project deadlines</li>
-          <li>Use {'{amount_zar}'} or {'{amount_usd}'} for amounts</li>
-          <li>Professional tone = better client relationships!</li>
-        </ul>
+      {/* ── How the pipeline works ── */}
+      <div className="et-info-box">
+        <h3>🤖 How the Automated Pipeline Works</h3>
+        <div className="et-info-grid">
+          <div className="et-info-item">
+            <span className="et-info-icon">🔍</span>
+            <div>
+              <strong>Stage 1–2: AI Scans & Outreaches</strong>
+              <p>The job scanner finds companies needing BPO work. It automatically sends the Cold Outreach email, then a Follow-Up if there is no reply after 5–7 days.</p>
+            </div>
+          </div>
+          <div className="et-info-item">
+            <span className="et-info-icon">🤝</span>
+            <div>
+              <strong>Stage 3–4: Negotiation</strong>
+              <p>When a prospect replies, you send the Pricing Proposal manually. Once they agree verbally, you send the Contract Proposal to formalise the deal.</p>
+            </div>
+          </div>
+          <div className="et-info-item">
+            <span className="et-info-icon">⚙️</span>
+            <div>
+              <strong>Stage 5–7: Onboarding & Billing</strong>
+              <p>Welcome the client, assign subcontractors, deliver the work, and send the Invoice. Payment confirmation is sent automatically when payment lands.</p>
+            </div>
+          </div>
+          <div className="et-info-item">
+            <span className="et-info-icon">🔁</span>
+            <div>
+              <strong>Stage 8–9: Delivery & Retention</strong>
+              <p>Work Delivery notifies the client their files are ready. Feedback Request builds your reputation and encourages repeat orders.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
-
-export default EmailTemplates;
