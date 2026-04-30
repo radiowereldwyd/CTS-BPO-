@@ -506,11 +506,23 @@ async function processAIJobs() {
         const appBase = process.env.REPLIT_DEV_DOMAIN
           ? `https://${process.env.REPLIT_DEV_DOMAIN}`
           : (APP_URL || '');
+        const portalLink = `${appBase}/client/portal/${deliveryToken}`;
         await emailOutreach.sendClientDelivery(
           clientEmail, clientName, job.title,
           `${appBase}/api/sub/client-confirm/${deliveryToken}`,
-          `${appBase}/api/sub/download/${sr.rows[0].id}`
+          `${appBase}/api/sub/download/${sr.rows[0].id}`,
+          portalLink
         ).catch(() => {});
+        // WhatsApp notification to client
+        try {
+          const wa = require('./whatsapp-notifier');
+          if (wa.isConfigured()) {
+            const phoneR = await db.query(`SELECT phone FROM ai_leads al JOIN contracts c ON c.client_id=al.id::text::integer WHERE c.id=$1`, [job.contract_id]).catch(() => ({ rows:[] }));
+            if (phoneR.rows[0]?.phone) {
+              await wa.notifyClientDelivery({ phone: phoneR.rows[0].phone, clientName, jobTitle: job.title, confirmLink: portalLink }).catch(() => {});
+            }
+          }
+        } catch {}
       }
 
       await logActivity(

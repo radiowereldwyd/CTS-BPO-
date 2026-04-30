@@ -19,6 +19,7 @@ const db = require('./db');
 const authRouter = require('./routes/auth');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 const autonomousAgent = require('./modules/autonomous-agent');
+const clientPortalRouter = require('./routes/client-portal');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1153,6 +1154,236 @@ app.post('/api/ai-agent/trigger/:task', requireAuth, requireAdmin, async (req, r
     await autonomousAgent.triggerNow(req.params.task);
     res.json({ ok: true, message: `Task "${req.params.task}" triggered successfully.` });
   } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// ── Client Portal Routes ──────────────────────────────────────────────────────
+app.use('/api/client', clientPortalRouter);
+
+// ── Analytics API ─────────────────────────────────────────────────────────────
+app.get('/api/analytics', requireAuth, async (req, res) => {
+  try {
+    if (!db.isConnected()) return res.json({ kpis:{}, revenueByMonth:[], jobsByServiceType:[], leadFunnel:[], subStats:{}, recentActivity:[] });
+
+    const [
+      revenueMonthly, jobsService, leadStats,
+      subTotal, subQuality, subPaid, subPerformers,
+      recentTxns, recentJobs,
+    ] = await Promise.all([
+      // Revenue + payouts by month (last 12 months)
+      db.query(`
+        SELECT TO_CHAR(DATE_TRUNC('month', COALESCE(js.delivered_at, sj.created_at)),'Mon YYYY') AS month,
+               DATE_TRUNC('month', COALESCE(js.delivered_at, sj.created_at)) AS month_dt,
+               COALESCE(SUM(sj.job_value),0)   AS revenue,
+               COALESCE(SUM(sj.sub_payout),0)  AS payouts,
+               COALESCE(SUM(sj.our_margin),0)  AS margin
+        FROM job_submissions js
+        JOIN subcontractor_jobs sj ON sj.id = js.job_id
+        WHERE js.status IN ('delivered','confirmed','paid')
+          AND COALESCE(js.delivered_at, sj.created_at) >= NOW() - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', COALESCE(js.delivered_at, sj.created_at))
+        ORDER BY month_dt ASC
+      `),
+      // Jobs by service type
+      db.query(`
+        SELECT COALESCE(service_type,'Other') AS type,
+               COUNT(*)                        AS count,
+               COALESCE(SUM(job_value),0)      AS total_value,
+               COALESCE(AVG(job_value),0)      AS avg_value
+        FROM subcontractor_jobs
+        GROUP BY service_type
+        ORDER BY count DESC
+        LIMIT 10
+      `),
+      // Lead funnel
+      db.query(`
+        SELECT
+          COUNT(*)                                                      AS total,
+          COUNT(*) FILTER (WHERE outreach_sent_at IS NOT NULL)          AS outreached,
+          COUNT(*) FILTER (WHERE status IN ('responded','negotiating','contracted','active')) AS responded,
+          COUNT(*) FILTER (WHERE status IN ('contracted','active'))     AS contracted
+        FROM ai_leads
+      `).catch(() => ({ rows:[{ total:0, outreached:0, responded:0, contracted:0 }] })),
+      // Subcontractor total
+      db.query(`SELECT COUNT(*) AS total FROM subcontractors`),
+      // Avg quality + on-time
+      db.query(`
+        SELECT
+          COALESCE(AVG(ai_quality_score),0)   AS avg_quality,
+          COUNT(*) FILTER (WHERE status='active') AS active
+        FROM subcontractors
+      `).catch(() => ({ rows:[{ avg_quality:0, active:0 }] })),
+      // Total paid out to subs
+      db.query(`
+        SELECT COALESCE(SUM(sj.sub_payout),0) AS total_paid
+        FROM job_submissions js
+        JOIN subcontractor_jobs sj ON sj.id = js.job_id
+        WHERE js.payout_status = 'paid'
+      `).catch(() => ({ rows:[{ total_paid:0 }] })),
+      // Top performers
+      db.query(`
+        SELECT s.name, s.id,
+               COUNT(js.id)                      AS jobs_done,
+               COALESCE(AVG(js.ai_quality_score),0) AS avg_quality,
+               COALESCE(SUM(sj.sub_payout),0)   AS total_earned,
+               COALESCE(AVG(CASE WHEN sj.due_date IS NULL THEN NULL
+                                 WHEN js.submitted_at <= sj.due_date THEN 100 ELSE 0 END),0) AS on_time_rate
+        FROM subcontractors s
+        JOIN job_submissions js ON js.sub_id = s.id
+        JOIN subcontractor_jobs sj ON sj.id = js.job_id
+        WHERE js.status IN ('submitted','delivered','confirmed','paid')
+          AND s.id != 0
+        GROUP BY s.id, s.name
+        ORDER BY avg_quality DESC, jobs_done DESC
+        LIMIT 20
+      `).catch(() => ({ rows:[] })),
+      // Recent transactions
+      db.query(`
+        SELECT 'payment' AS type, 'Payment received' AS event,
+               amount_zar AS amount, paid_at AS date,
+               '💰' AS icon
+        FROM transactions
+        WHERE paid_at IS NOT NULL
+        ORDER BY paid_at DESC LIMIT 10
+      `).catch(() => ({ rows:[] })),
+      // Recent completed jobs
+      db.query(`
+        SELECT 'job' AS type,
+               ('Job completed: ' || sj.title) AS event,
+               sj.job_value AS amount,
+               js.delivered_at AS date,
+               '✅' AS icon
+        FROM job_submissions js
+        JOIN subcontractor_jobs sj ON sj.id = js.job_id
+        WHERE js.status IN ('delivered','confirmed','paid')
+        ORDER BY js.delivered_at DESC NULLS LAST LIMIT 10
+      `).catch(() => ({ rows:[] })),
+    ]);
+
+    const rm = revenueMonthly.rows;
+    const totalRevenue  = rm.reduce((a,r) => a + parseFloat(r.revenue||0), 0);
+    const totalPayouts  = rm.reduce((a,r) => a + parseFloat(r.payouts||0), 0);
+    const currentMonth  = rm[rm.length - 1];
+    const monthlyRevenue = parseFloat(currentMonth?.revenue || 0);
+    const marginPct      = totalRevenue > 0 ? Math.round(((totalRevenue - totalPayouts) / totalRevenue) * 100) : 0;
+
+    // Lead funnel for recharts FunnelChart
+    const lf = leadStats.rows[0] || {};
+    const leadFunnel = [
+      { name:'Total Leads',     value: parseInt(lf.total||0) },
+      { name:'Outreached',      value: parseInt(lf.outreached||0) },
+      { name:'Responded',       value: parseInt(lf.responded||0) },
+      { name:'Contracted',      value: parseInt(lf.contracted||0) },
+    ].filter(f => f.value > 0);
+
+    // Jobs: aggregate total count/value
+    let totalJobs = 0, completedJobs = 0;
+    try {
+      const jt = await db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status IN ('delivered','confirmed','paid')) AS completed FROM job_submissions`);
+      totalJobs    = parseInt(jt.rows[0].total||0);
+      completedJobs = parseInt(jt.rows[0].completed||0);
+    } catch {}
+
+    const subQRow = subQuality.rows[0] || {};
+    const subStats = {
+      total:     parseInt(subTotal.rows[0]?.total||0),
+      active:    parseInt(subQRow.active||0),
+      avgQuality: parseFloat(subQRow.avg_quality||0),
+      avgOnTime:  subPerformers.rows.length > 0
+                    ? subPerformers.rows.reduce((a,r) => a + parseFloat(r.on_time_rate||0), 0) / subPerformers.rows.length
+                    : 0,
+      totalPaid:  parseFloat(subPaid.rows[0]?.total_paid||0),
+      topPerformers: subPerformers.rows.map(r => ({
+        name:       r.name,
+        jobsDone:   parseInt(r.jobs_done||0),
+        avgQuality: parseFloat(r.avg_quality||0),
+        totalEarned:parseFloat(r.total_earned||0),
+        onTimeRate: parseFloat(r.on_time_rate||0),
+      })),
+    };
+
+    const allActivity = [...recentTxns.rows, ...recentJobs.rows]
+      .sort((a,b) => new Date(b.date||0) - new Date(a.date||0))
+      .slice(0, 20);
+
+    res.json({
+      kpis: {
+        totalRevenue,
+        monthlyRevenue,
+        totalJobs,
+        completedJobs,
+        activeSubs:  subStats.active,
+        totalLeads:  parseInt(lf.total||0),
+        respondedLeads: parseInt(lf.responded||0),
+        avgQuality:  subStats.avgQuality,
+        marginPct,
+      },
+      revenueByMonth: rm.map(r => ({
+        month:   r.month,
+        revenue: parseFloat(r.revenue||0),
+        payouts: parseFloat(r.payouts||0),
+        margin:  parseFloat(r.margin||0),
+      })),
+      jobsByServiceType: jobsService.rows.map(r => ({
+        type:       r.type,
+        count:      parseInt(r.count||0),
+        totalValue: parseFloat(r.total_value||0),
+        avgValue:   parseFloat(r.avg_value||0),
+      })),
+      leadFunnel,
+      subStats,
+      recentActivity: allActivity,
+    });
+  } catch (err) {
+    console.error('Analytics error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Subcontractor Performance API ─────────────────────────────────────────────
+app.get('/api/subcontractors/performance', requireAuth, async (req, res) => {
+  try {
+    if (!db.isConnected()) return res.json({ performers: [] });
+    const r = await db.query(`
+      SELECT s.id, s.name, s.email, s.skills, s.status,
+             COUNT(js.id)                                     AS jobs_done,
+             COALESCE(AVG(js.ai_quality_score), 0)            AS avg_quality,
+             COALESCE(SUM(sj.sub_payout)
+               FILTER (WHERE js.payout_status='paid'), 0)     AS total_earned,
+             COUNT(js.id) FILTER (WHERE js.payout_status='paid') AS paid_jobs,
+             COALESCE(AVG(CASE
+               WHEN sj.due_date IS NULL THEN NULL
+               WHEN js.submitted_at IS NOT NULL AND js.submitted_at <= sj.due_date THEN 100
+               ELSE 0 END), 0)                                AS on_time_rate,
+             MAX(js.submitted_at)                             AS last_submission,
+             MIN(js.assigned_at)                              AS first_job
+      FROM subcontractors s
+      LEFT JOIN job_submissions js ON js.sub_id = s.id AND s.id != 0
+      LEFT JOIN subcontractor_jobs sj ON sj.id = js.job_id
+      WHERE s.id != 0
+      GROUP BY s.id, s.name, s.email, s.skills, s.status
+      ORDER BY avg_quality DESC, jobs_done DESC
+    `);
+    res.json({
+      performers: r.rows.map(p => ({
+        id:          p.id,
+        name:        p.name,
+        email:       p.email,
+        skills:      p.skills,
+        status:      p.status,
+        jobsDone:    parseInt(p.jobs_done||0),
+        avgQuality:  parseFloat(p.avg_quality||0),
+        totalEarned: parseFloat(p.total_earned||0),
+        paidJobs:    parseInt(p.paid_jobs||0),
+        onTimeRate:  parseFloat(p.on_time_rate||0),
+        lastSubmission: p.last_submission,
+        firstJob:    p.first_job,
+        tier: parseFloat(p.avg_quality||0) >= 90 ? 'Gold'
+            : parseFloat(p.avg_quality||0) >= 75 ? 'Silver' : 'Bronze',
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Serve React build in production ──────────────────────────────────────────

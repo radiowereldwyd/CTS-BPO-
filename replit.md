@@ -5,6 +5,39 @@
 - **Frontend:** React 18 CRA (port 5000 dev)
 - **Database:** Supabase PostgreSQL (pg)
 - **Email:** Gmail SMTP via nodemailer (GMAIL_APP_PASSWORD)
+- **PDF:** pdfkit (branded invoice generation)
+- **WhatsApp/SMS:** Twilio (optional — needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM)
+
+## New Features (April 2026)
+
+### 1. Analytics & Revenue Dashboard (`/analytics`)
+- Frontend: `frontend/src/components/AnalyticsDashboard.js` — recharts with 5 tabs
+- Backend: `GET /api/analytics` — revenue by month, jobs by service type, lead funnel, sub stats, activity
+- KPI cards: Total Revenue, Monthly Revenue, Total Jobs, Active Subs, Total Leads, Profit Margin
+
+### 2. PDF Invoice Generator
+- Module: `backend/src/modules/pdf-invoice.js`
+- Endpoint: `GET /api/client/invoice/:token/pdf` — downloads branded PDF invoice
+- Automatically included as a link in delivery emails
+
+### 3. Client Portal (`/client/portal/:token`)
+- Public route — no login needed, accessed via token in delivery email
+- Frontend: `frontend/src/components/ClientPortal.js`
+- Backend: `backend/src/routes/client-portal.js` → mounted at `/api/client`
+- Features: view all jobs, download completed work, download PDF invoice, upload source files
+- Delivery email now includes "View Client Portal" and "Download Invoice" buttons
+
+### 4. Subcontractor Performance Tracking
+- Backend: `GET /api/subcontractors/performance` — per-sub quality scores, on-time rate, earnings, tier
+- Frontend: New "⭐ Performance" tab in SubcontractorHub
+- Tier system: Gold (≥90%), Silver (75–89%), Bronze (<75%)
+- Visual leaderboard with quality score progress bars
+
+### 5. WhatsApp Notifications
+- Module: `backend/src/modules/whatsapp-notifier.js`
+- Gracefully stubs if Twilio not configured (just logs to console)
+- Functions: notifySubJobAssigned, notifySubPayoutReleased, notifyClientDelivery, notifyClientOverdue
+- Add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM as env secrets to activate
 
 ## Architecture
 - Backend serves React build from `frontend/build` in production

@@ -61,6 +61,8 @@ export default function SubcontractorHub({ token }) {
   const [recruitTargets, setRecruitTargets] = useState('');
   const [newJob, setNewJob] = useState({ sub_id: '', title: '', description: '', sub_payout: '', due_date: '' });
   const [reviewNote, setReviewNote] = useState({});
+  const [performance, setPerformance] = useState([]);
+  const [perfLoading, setPerfLoading] = useState(false);
 
   const auth = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -178,7 +180,24 @@ export default function SubcontractorHub({ token }) {
     { key: 'applications',  label: `📋 Applications${pendingApps ? ` (${pendingApps})` : ''}` },
     { key: 'subcontractors',label: '👥 Subcontractors' },
     { key: 'jobs',          label: '🗂 Job Assignments' },
+    { key: 'performance',   label: '⭐ Performance' },
   ];
+
+  async function loadPerformance() {
+    if (perfLoading) return;
+    setPerfLoading(true);
+    try {
+      const r = await axios.get(`${API}/api/subcontractors/performance`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      setPerformance(r.data.performers || []);
+    } catch (e) { flash('Could not load performance data: ' + (e.response?.data?.error || e.message), true); }
+    setPerfLoading(false);
+  }
+
+  // Load performance when that tab is first selected
+  function handleTabChange(key) {
+    setTab(key);
+    if (key === 'performance' && performance.length === 0) loadPerformance();
+  }
 
   return (
     <div style={{ padding: '24px 28px', maxWidth: 1200, margin: '0 auto' }}>
@@ -199,9 +218,9 @@ export default function SubcontractorHub({ token }) {
       {err && <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 16px', marginBottom: 16, color: '#991b1b', fontWeight: 600 }}>{err}</div>}
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '2px solid #e2e8f0', marginBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 4, borderBottom: '2px solid #e2e8f0', marginBottom: 24, flexWrap: 'wrap' }}>
         {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
+          <button key={t.key} onClick={() => handleTabChange(t.key)} style={{
             padding: '10px 20px', border: 'none', background: 'none', cursor: 'pointer',
             fontSize: 13, fontWeight: 600, color: tab === t.key ? '#6366f1' : '#64748b',
             borderBottom: tab === t.key ? '3px solid #6366f1' : '3px solid transparent',
@@ -587,6 +606,88 @@ export default function SubcontractorHub({ token }) {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PERFORMANCE TAB ── */}
+      {tab === 'performance' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h3 style={{ margin: 0, color: '#0f172a', fontSize: 16, fontWeight: 800 }}>⭐ Subcontractor Performance Leaderboard</h3>
+            <button onClick={loadPerformance} disabled={perfLoading} style={{ padding: '7px 16px', background: '#6366f1', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+              {perfLoading ? 'Loading…' : '↺ Refresh'}
+            </button>
+          </div>
+
+          {/* Tier legend */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+            {[
+              { tier: '⭐ Gold', desc: 'Quality ≥ 90%', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+              { tier: '🥈 Silver', desc: 'Quality 75–89%', color: '#94a3b8', bg: 'rgba(148,163,184,0.1)' },
+              { tier: '🥉 Bronze', desc: 'Quality < 75%', color: '#cd7f32', bg: 'rgba(205,127,50,0.1)' },
+            ].map(t => (
+              <div key={t.tier} style={{ background: t.bg, border: `1px solid ${t.color}40`, borderRadius: 8, padding: '6px 14px', fontSize: 12 }}>
+                <strong style={{ color: t.color }}>{t.tier}</strong> <span style={{ color: '#64748b' }}>{t.desc}</span>
+              </div>
+            ))}
+          </div>
+
+          {perfLoading ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Loading performance data…</div>
+          ) : performance.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+              No performance data yet — assign jobs to subcontractors to start tracking.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#1e3a5f', color: '#fff' }}>
+                    {['Rank','Name','Tier','Jobs Done','Avg Quality','On-Time %','Total Earned','Last Active'].map(h => (
+                      <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 700, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {performance.map((p, i) => {
+                    const tierColor = p.tier === 'Gold' ? '#f59e0b' : p.tier === 'Silver' ? '#94a3b8' : '#cd7f32';
+                    const tierLabel = p.tier === 'Gold' ? '⭐ Gold' : p.tier === 'Silver' ? '🥈 Silver' : '🥉 Bronze';
+                    const qualColor = p.avgQuality >= 85 ? '#10b981' : p.avgQuality >= 70 ? '#f59e0b' : '#ef4444';
+                    return (
+                      <tr key={p.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 800, color: '#6366f1', fontSize: 16 }}>#{i + 1}</td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <div style={{ fontWeight: 700, color: '#0f172a' }}>{p.name}</div>
+                          <div style={{ fontSize: 11, color: '#94a3b8' }}>{p.email}</div>
+                        </td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <span style={{ color: tierColor, fontWeight: 700, background: `${tierColor}18`, padding: '3px 10px', borderRadius: 8 }}>{tierLabel}</span>
+                        </td>
+                        <td style={{ padding: '10px 14px', fontWeight: 600, textAlign: 'center' }}>{p.jobsDone}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1, background: '#f1f5f9', borderRadius: 4, height: 8 }}>
+                              <div style={{ width: `${Math.min(p.avgQuality, 100)}%`, background: qualColor, borderRadius: 4, height: 8 }} />
+                            </div>
+                            <span style={{ fontWeight: 700, color: qualColor, minWidth: 38 }}>{p.avgQuality.toFixed(1)}%</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center', color: p.onTimeRate >= 80 ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
+                          {p.onTimeRate.toFixed(0)}%
+                        </td>
+                        <td style={{ padding: '10px 14px', color: '#10b981', fontWeight: 800 }}>
+                          {ZAR(p.totalEarned)}
+                        </td>
+                        <td style={{ padding: '10px 14px', color: '#94a3b8', fontSize: 12 }}>
+                          {p.lastSubmission ? new Date(p.lastSubmission).toLocaleDateString('en-ZA') : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

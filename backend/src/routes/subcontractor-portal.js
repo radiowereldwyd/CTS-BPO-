@@ -301,11 +301,26 @@ router.post('/jobs/:id/submit', requireSubcontractor, upload.single('workFile'),
         : (process.env.APP_URL || '');
 
       if (clientEmail) {
+        const portalLink = `${appBase}/client/portal/${deliveryToken}`;
         await emailOutreach.sendClientDelivery(
           clientEmail, clientName, job.title,
           `${appBase}/api/sub/client-confirm/${deliveryToken}`,
-          `${appBase}/api/sub/download/${deliveryToken}`
+          `${appBase}/api/sub/download/${deliveryToken}`,
+          portalLink
         ).catch(e => console.error('Delivery email error:', e.message));
+
+        // WhatsApp notification to client if phone available
+        try {
+          const wa = require('../modules/whatsapp-notifier');
+          if (wa.isConfigured()) {
+            const clientPhone = cr?.rows?.[0]?.phone || null;
+            if (clientPhone) {
+              await wa.notifyClientDelivery({
+                phone: clientPhone, clientName, jobTitle: job.title, confirmLink: portalLink,
+              }).catch(() => {});
+            }
+          }
+        } catch {}
       }
 
       // Schedule 48h auto-confirm

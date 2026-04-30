@@ -19,6 +19,8 @@ import ApplyPage from './components/ApplyPage';
 import SubcontractorLogin from './components/SubcontractorLogin';
 import SubcontractorPortal from './components/SubcontractorPortal';
 import CTSLogo from './components/CTSLogo';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
+import ClientPortal from './components/ClientPortal';
 import './App.css';
 
 function NavLink({ to, children }) {
@@ -53,6 +55,7 @@ function AdminShell({ user, token, onLogout }) {
           <NavLink to="/ai-services">🤖 AI Services</NavLink>
           <NavLink to="/subcontractors">🤝 Subcontractors</NavLink>
           <NavLink to="/ai-agent">🧠 AI Agent</NavLink>
+          <NavLink to="/analytics">📊 Analytics</NavLink>
         </nav>
         <div className="header-user">
           <Link to="/" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none', marginRight: 12 }}>← Public Site</Link>
@@ -77,6 +80,7 @@ function AdminShell({ user, token, onLogout }) {
           <Route path="/ai-services" element={<AIServices />} />
           <Route path="/subcontractors" element={<SubcontractorHub token={token} />} />
           <Route path="/ai-agent" element={<AIAgentDashboard token={token} />} />
+          <Route path="/analytics" element={<AnalyticsDashboard token={token} />} />
           <Route path="/login" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
@@ -148,6 +152,9 @@ function App() {
         {/* Always public */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/apply" element={<ApplyPage />} />
+
+        {/* Client portal — public, accessed via token link from delivery email */}
+        <Route path="/client/portal/:token" element={<ClientPortal />} />
 
         {/* Subcontractor login — always public */}
         <Route path="/subcontractor/login" element={

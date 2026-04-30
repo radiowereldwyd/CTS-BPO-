@@ -1094,8 +1094,14 @@ async function sendPortalSetupEmail(email, name, setupLink) {
 /* ─────────────────────────────────────────────────────────────────────────
    CLIENT DELIVERY — sent to the client with the completed work + confirm link
    ───────────────────────────────────────────────────────────────────────── */
-async function sendClientDelivery(email, clientName, jobTitle, confirmLink, downloadLink) {
+async function sendClientDelivery(email, clientName, jobTitle, confirmLink, downloadLink, portalLink) {
   const subject = `CTS BPO — Your Job is Complete: "${jobTitle}"`;
+  const portalBtn = portalLink
+    ? `<a href="${esc(portalLink)}" class="cta-btn" style="background:#1e3a5f">🌐 View Client Portal</a>`
+    : '';
+  const invoiceBtn = portalLink
+    ? `<a href="${esc(portalLink.replace('/client/portal/', '/api/client/invoice/') + '/pdf')}" class="cta-btn" style="background:#6366f1">🧾 Download Invoice</a>`
+    : '';
   const html = `
     ${portalBaseStyle()}
     <div class="container">
@@ -1110,8 +1116,15 @@ async function sendClientDelivery(email, clientName, jobTitle, confirmLink, down
         <div class="cta-block" style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
           <a href="${esc(downloadLink)}" class="cta-btn" style="background:#10b981">⬇ Download Completed Work</a>
           <a href="${esc(confirmLink)}" class="cta-btn">✅ Confirm Receipt</a>
+          ${portalBtn}
+          ${invoiceBtn}
         </div>
         <hr style="border-color:rgba(255,255,255,0.07);margin:28px 0">
+        ${portalLink ? `<div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:10px;padding:16px 20px;margin:20px 0">
+          <p style="margin:0 0 8px;color:#c7d2fe;font-size:13px;font-weight:700">🌐 Your Dedicated Client Portal</p>
+          <p style="margin:0;color:#94a3b8;font-size:12px">Access your Client Portal anytime to view all your jobs, download completed work, and retrieve invoices.</p>
+          <a href="${esc(portalLink)}" style="color:#6366f1;font-size:12px">${esc(portalLink)}</a>
+        </div>` : ''}
         <p style="color:#94a3b8;font-size:13px">
           Please confirm receipt by clicking the green button above. If we do not hear from you within <strong>48 hours</strong>, receipt will be automatically confirmed and payment released to the subcontractor.
         </p>
