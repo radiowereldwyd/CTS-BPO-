@@ -8,7 +8,12 @@ const subcontractorAssignment = require('./modules/subcontractor-assignment');
 const paymentGateway = require('./modules/payment-gateway');
 const auditLogger = require('./modules/audit-logger');
 const emailOutreach = require('./modules/email-outreach');
-const jobSearch = require('./modules/job-search');
+const jobSearch        = require('./modules/job-search');
+const googleTranslate  = require('./modules/google-translate');
+const googleSpeech     = require('./modules/google-speech');
+const googleNlp        = require('./modules/google-nlp');
+const documentAi       = require('./modules/document-ai');
+const gmailReader      = require('./modules/gmail-reader');
 const db = require('./db');
 const authRouter = require('./routes/auth');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
@@ -307,6 +312,92 @@ app.post('/api/jobs/send-application', requireAuth, async (req, res) => {
 // Email configuration status
 app.get('/api/jobs/email-status', requireAuth, (req, res) => {
   res.json({ configured: emailOutreach.isConfigured(), from: process.env.GMAIL_USER || '' });
+});
+
+// ─── Google Cloud AI Services ────────────────────────────────────────────────
+
+// Config status — which services are live
+app.get('/api/ai/status', requireAuth, (req, res) => {
+  res.json({
+    translation:   googleTranslate.isConfigured(),
+    speech:        googleSpeech.isConfigured(),
+    nlp:           googleNlp.isConfigured(),
+    documentAi:    documentAi.isConfigured(),
+    gmailReader:   gmailReader.isConfigured(),
+    emailOutreach: emailOutreach.isConfigured(),
+  });
+});
+
+// Translate text
+app.post('/api/ai/translate', requireAuth, async (req, res) => {
+  try {
+    const { text, targetLang, sourceLang } = req.body;
+    if (!text || !targetLang) return res.status(400).json({ error: 'text and targetLang are required' });
+    const result = await googleTranslate.translateText(text, targetLang, sourceLang);
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get supported languages
+app.get('/api/ai/translate/languages', requireAuth, async (req, res) => {
+  try {
+    const langs = await googleTranslate.getSupportedLanguages();
+    res.json(langs);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Detect language
+app.post('/api/ai/translate/detect', requireAuth, async (req, res) => {
+  try {
+    const result = await googleTranslate.detectLanguage(req.body.text || '');
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Transcribe audio (base64)
+app.post('/api/ai/transcribe', requireAuth, async (req, res) => {
+  try {
+    const { audioBase64, encoding, sampleRateHertz, languageCode } = req.body;
+    if (!audioBase64) return res.status(400).json({ error: 'audioBase64 is required' });
+    const result = await googleSpeech.transcribeAudio({ audioBase64, encoding, sampleRateHertz, languageCode });
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Analyse email reply sentiment + intent
+app.post('/api/ai/analyse-reply', requireAuth, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    const result = await googleNlp.analyseEmailReply(text);
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Process document (PDF / image) with Document AI
+app.post('/api/ai/document', requireAuth, async (req, res) => {
+  try {
+    const { base64Content, mimeType } = req.body;
+    if (!base64Content) return res.status(400).json({ error: 'base64Content is required' });
+    const result = await documentAi.processDocument(base64Content, mimeType || 'application/pdf');
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Gmail inbox — read unread replies
+app.get('/api/gmail/inbox', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await gmailReader.listUnreadEmails(20);
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Gmail inbox — auto-process replies, update lead statuses
+app.post('/api/gmail/process-replies', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await gmailReader.processInboxReplies();
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── Audit logs (admin only) ──────────────────────────────────────────────────
