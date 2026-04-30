@@ -221,6 +221,78 @@ app.post('/api/payments/initiate', requireAuth, async (req, res) => {
   }
 });
 
+// Ozow payment notification webhook — called by Ozow servers after payment (no auth, must verify hash)
+app.post('/api/payments/ozow/notify', async (req, res) => {
+  try {
+    const {
+      SiteCode = '', TransactionId = '', TransactionReference = '',
+      Amount = '', Status = '', Optional1 = '', Optional2 = '',
+      Optional3 = '', Optional4 = '', Optional5 = '',
+      CurrencyCode = 'ZAR', IsTest = '', Hash = '',
+    } = req.body;
+
+    // Verify Ozow hash: SHA512(concatenated_fields_lowercase + private_key_lowercase)
+    const privateKey = process.env.OZOW_PRIVATE_KEY || '';
+    const hashInput  = [SiteCode, TransactionId, TransactionReference, Amount, Status,
+      Optional1, Optional2, Optional3, Optional4, Optional5,
+      CurrencyCode, IsTest].join('').toLowerCase() + privateKey.toLowerCase();
+    const expected = require('crypto').createHash('sha512').update(hashInput).digest('hex');
+
+    if (Hash && Hash.toLowerCase() !== expected) {
+      await auditLogger.log('payment.ozow.invalid_hash', 'transaction', TransactionReference,
+        'Ozow hash mismatch — possible spoofed notification', null, 'error');
+      return res.status(400).send('Invalid hash');
+    }
+
+    const statusLower = Status.toLowerCase();
+    const dbStatus = statusLower === 'complete' ? 'succeeded'
+                   : statusLower === 'cancelled' ? 'cancelled' : 'failed';
+
+    if (db.isConnected()) {
+      try {
+        await db.query(
+          `INSERT INTO transactions (amount_zar, currency, reference, ozow_reference, status, paid_at)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [parseFloat(Amount) || 0, CurrencyCode, TransactionReference,
+           TransactionId, dbStatus, dbStatus === 'succeeded' ? new Date() : null]
+        );
+      } catch (dbErr) {
+        console.error('Ozow notify DB error:', dbErr.message);
+      }
+    }
+
+    await auditLogger.log(
+      `payment.ozow.${dbStatus}`, 'transaction', TransactionReference,
+      `Ozow ${Status}: R${Amount} | Ref: ${TransactionId} | Test: ${IsTest}`,
+      null, dbStatus === 'succeeded' ? 'info' : 'warning'
+    );
+
+    res.status(200).send('OK');
+  } catch (err) {
+    console.error('Ozow notify handler error:', err.message);
+    res.status(500).send('Error');
+  }
+});
+
+// Ozow config info for frontend (site code only, never the private key)
+app.get('/api/payments/ozow/config', requireAuth, (req, res) => {
+  const cfg = paymentGateway.getOzowConfig();
+  const appBase = process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : (process.env.APP_URL || '');
+  res.json({
+    siteCode: cfg.siteCode,
+    hasKey:   cfg.hasKey,
+    isTestMode: process.env.NODE_ENV !== 'production',
+    callbackUrls: {
+      success:  `${appBase}/payments?status=success`,
+      error:    `${appBase}/payments?status=error`,
+      cancel:   `${appBase}/payments?status=cancel`,
+      notify:   `${appBase}/api/payments/ozow/notify`,
+    },
+  });
+});
+
 // PayPal – create order (server-side, keeps secret off the browser)
 app.post('/api/payments/paypal/create-order', requireAuth, async (req, res) => {
   try {
