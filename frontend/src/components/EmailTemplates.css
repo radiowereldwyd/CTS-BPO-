@@ -324,6 +324,16 @@
   height: 200px;
 }
 
+.et-prev-error {
+  padding: 20px 24px;
+  color: #f87171;
+  font-size: 13px;
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.2);
+  margin: 16px;
+  border-radius: 8px;
+}
+
 .et-iframe-wrap {
   background: #cbd5e1;
   flex: 1;
