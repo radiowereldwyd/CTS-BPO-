@@ -61,7 +61,7 @@ export default function EmailTemplates() {
     setPrevLoading(true);
     setPrevError('');
     setPreview(null);
-    axios.get(`/api/email/templates/${key}/preview`, { headers: getHeaders() })
+    axios.get(`/api/email/templates/${key}/preview`)
       .then(r => setPreview(r.data))
       .catch(err => {
         const msg = err.response?.data?.error || err.message || 'Failed to load preview';

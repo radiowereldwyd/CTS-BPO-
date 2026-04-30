@@ -350,7 +350,7 @@ app.get('/api/email/templates', requireAuth, (req, res) => {
 });
 
 // Preview a template as HTML (with sample data)
-app.get('/api/email/templates/:key/preview', requireAuth, (req, res) => {
+app.get('/api/email/templates/:key/preview', (req, res) => {
   const preview = emailOutreach.previewTemplate(req.params.key);
   if (!preview) return res.status(404).json({ error: 'Template not found' });
   res.json(preview);
