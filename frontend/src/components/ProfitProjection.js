@@ -38,6 +38,13 @@ function ProfitProjection() {
         <p>Professional BPO Worldwide</p>
       </div>
 
+      <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10, padding: '12px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 18 }}>📊</span>
+        <div style={{ fontSize: 13, color: '#fbbf24', lineHeight: 1.6 }}>
+          <strong style={{ color: '#f59e0b' }}>Business Model Projection — Not Live Revenue.</strong> These figures represent target earnings potential based on pricing model and market research. Actual revenue will be shown on the main Dashboard as contracts are fulfilled.
+        </div>
+      </div>
+
       <div className="pp-chart-card">
         <div className="pp-chart-title">Daily Earnings by Region</div>
         <ResponsiveContainer width="100%" height={320}>

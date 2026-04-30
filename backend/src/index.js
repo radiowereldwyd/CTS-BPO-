@@ -124,14 +124,119 @@ app.get('/api/metrics', requireAuth, async (req, res) => {
 
 // Module status panel
 app.get('/api/status', requireAuth, async (req, res) => {
+  const now = new Date().toISOString();
+  const agent = autonomousAgent.getStatus();
+
+  // ── Pull real counts from DB ──────────────────────────────────────────────
+  let leadsTotal = 0, leadsOutreachSent = 0, emailsToday = 0;
+  let jobsOutstanding = 0, jobsTotal = 0;
+  let txnTotal = 0, txnRevenue = 0;
+  let auditEventsToday = 0;
+  let approvedSubs = 0, paidSubs = 0;
+
+  if (db.isConnected()) {
+    try {
+      const lr = await db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status != 'new') AS contacted FROM ai_leads`);
+      leadsTotal = parseInt(lr.rows[0]?.total) || 0;
+      leadsOutreachSent = parseInt(lr.rows[0]?.contacted) || 0;
+    } catch {}
+
+    try {
+      const er = await db.query(`SELECT COUNT(*) AS cnt FROM ai_activity_log WHERE action_type = 'email_sent' AND created_at > NOW() - INTERVAL '24 hours'`);
+      emailsToday = parseInt(er.rows[0]?.cnt) || 0;
+    } catch {}
+
+    try {
+      const jr = await db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='outstanding') AS outstanding FROM subcontractor_jobs`);
+      jobsTotal = parseInt(jr.rows[0]?.total) || 0;
+      jobsOutstanding = parseInt(jr.rows[0]?.outstanding) || 0;
+    } catch {}
+
+    try {
+      const tr = await db.query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(amount_zar),0) AS rev FROM transactions WHERE status='succeeded'`);
+      txnTotal = parseInt(tr.rows[0]?.cnt) || 0;
+      txnRevenue = parseFloat(tr.rows[0]?.rev) || 0;
+    } catch {}
+
+    try {
+      const ar = await db.query(`SELECT COUNT(*) AS cnt FROM audit_log WHERE created_at > NOW() - INTERVAL '24 hours'`);
+      auditEventsToday = parseInt(ar.rows[0]?.cnt) || 0;
+    } catch {
+      try {
+        const ar2 = await db.query(`SELECT COUNT(*) AS cnt FROM ai_activity_log WHERE created_at > NOW() - INTERVAL '24 hours'`);
+        auditEventsToday = parseInt(ar2.rows[0]?.cnt) || 0;
+      } catch {}
+    }
+
+    try {
+      const sr = await db.query(`SELECT COUNT(*) FILTER (WHERE status='approved') AS approved, COUNT(*) FILTER (WHERE status='approved' AND payment_confirmed=TRUE) AS paid FROM subcontractor_applications`);
+      approvedSubs = parseInt(sr.rows[0]?.approved) || 0;
+      paidSubs = parseInt(sr.rows[0]?.paid) || 0;
+    } catch {}
+  }
+
+  const agentRunning = agent.running;
+  const agentLastSearch = agent.lastLeadSearch;
+
   const modules = [
-    { module: 'AI Sourcing & Outreach', status: 'running', lastAction: 'Outreach campaign ready', updatedAt: new Date().toISOString() },
-    { module: 'AI Negotiation Engine', status: 'running', lastAction: 'Margin floor 15% active', updatedAt: new Date().toISOString() },
-    { module: 'AI Contract Manager', status: 'running', lastAction: 'Risk scoring active', updatedAt: new Date().toISOString() },
-    { module: 'AI Subcontractor Assignment', status: 'running', lastAction: 'Capacity scoring active', updatedAt: new Date().toISOString() },
-    { module: 'AI Payment Gateway', status: OZOW_STATUS(), lastAction: OZOW_STATUS() === 'running' ? 'Ozow connected' : 'Dev stub mode', updatedAt: new Date().toISOString() },
-    { module: 'AI Audit Trail Logger', status: db.isConnected() ? 'running' : 'running', lastAction: db.isConnected() ? 'Logging to PostgreSQL' : 'Logging to memory', updatedAt: new Date().toISOString() },
+    {
+      module: 'Autonomous AI Agent',
+      status: agentRunning ? 'running' : 'offline',
+      lastAction: agentRunning
+        ? `Leads found: ${agent.totalLeadsFound} · Emails sent: ${agent.totalEmailsSent} · Apps processed: ${agent.totalAppProcessed}`
+        : 'Agent not started',
+      updatedAt: agentLastSearch || now,
+    },
+    {
+      module: 'AI Sourcing & Outreach',
+      status: agentRunning ? 'running' : 'idle',
+      lastAction: leadsTotal > 0
+        ? `${leadsTotal} leads in DB · ${leadsOutreachSent} contacted · ${emailsToday} emails sent today`
+        : agentRunning ? 'Searching for leads — first run in progress' : 'No leads yet',
+      updatedAt: agent.lastLeadSearch || now,
+    },
+    {
+      module: 'AI Subcontractor Assignment',
+      status: agentRunning ? 'running' : 'idle',
+      lastAction: agent.totalContractsAssigned > 0
+        ? `${agent.totalContractsAssigned} contracts assigned · ${paidSubs} paid subs eligible · ${jobsOutstanding} jobs outstanding`
+        : paidSubs > 0 ? `${paidSubs} paid subs ready — awaiting outstanding jobs` : 'No paid subcontractors yet',
+      updatedAt: agent.lastContractAssign || now,
+    },
+    {
+      module: 'AI Contract Manager',
+      status: db.isConnected() ? 'running' : 'idle',
+      lastAction: jobsTotal > 0
+        ? `${jobsTotal} total jobs · ${jobsOutstanding} outstanding`
+        : 'No contracts created yet',
+      updatedAt: now,
+    },
+    {
+      module: 'AI Payment Gateway',
+      status: OZOW_STATUS(),
+      lastAction: txnTotal > 0
+        ? `${txnTotal} payments processed · R${txnRevenue.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} total received`
+        : process.env.OZOW_API_KEY ? 'Ozow connected — no payments yet' : 'Dev stub mode — no Ozow key',
+      updatedAt: now,
+    },
+    {
+      module: 'AI Audit Trail Logger',
+      status: db.isConnected() ? 'running' : 'idle',
+      lastAction: auditEventsToday > 0
+        ? `${auditEventsToday} events logged today`
+        : 'Logger active — no events yet today',
+      updatedAt: now,
+    },
+    {
+      module: 'Application Processing',
+      status: agentRunning ? 'running' : 'idle',
+      lastAction: agent.totalAppProcessed > 0
+        ? `${agent.totalAppProcessed} applications processed · ${approvedSubs} approved · ${paidSubs} paid`
+        : 'No applications received yet',
+      updatedAt: agent.lastAppCheck || now,
+    },
   ];
+
   res.json(modules);
 });
 
