@@ -18,6 +18,7 @@ const db         = require('../db');
 const auditLogger = require('./audit-logger');
 const emailOutreach = require('./email-outreach');
 const aiProcessor   = require('./ai-job-processor');
+const gmailReader   = require('./gmail-reader');
 
 const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 const APP_URL     = process.env.APP_URL || 'https://your-app.replit.app';
@@ -85,10 +86,13 @@ async function ensureTables() {
       followup2_sent_at TIMESTAMPTZ,
       response_at      TIMESTAMPTZ,
       notes            TEXT,
+      bounced_at       TIMESTAMPTZ,
       created_at       TIMESTAMPTZ DEFAULT NOW(),
       updated_at       TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Migration: add bounced_at if it doesn't exist yet
+  await db.query(`ALTER TABLE ai_leads ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMPTZ`).catch(() => {});
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -189,6 +193,17 @@ async function runLeadSearch() {
 // ── 2. Send Cold Outreach to Lead ─────────────────────────────────────────
 async function sendLeadOutreach(leadId, prospect) {
   try {
+    // Never contact a bounced address
+    if (prospect.email) {
+      const bounceCheck = await db.query(
+        `SELECT id FROM ai_leads WHERE LOWER(contact_email)=LOWER($1) AND bounced_at IS NOT NULL LIMIT 1`,
+        [prospect.email]
+      ).catch(() => ({ rows: [] }));
+      if (bounceCheck.rows.length > 0) {
+        await db.query(`UPDATE ai_leads SET status='bounced', bounced_at=NOW(), updated_at=NOW() WHERE id=$1 AND bounced_at IS NULL`, [leadId]).catch(() => {});
+        return null;
+      }
+    }
     const result = await emailOutreach.sendClientColdOutreach(prospect);
     await db.query(
       `UPDATE ai_leads SET status='outreach_sent', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
@@ -211,6 +226,7 @@ async function runFollowUpSequence() {
       AND outreach_sent_at < NOW() - INTERVAL '3 days'
       AND followup1_sent_at IS NULL
       AND contact_email IS NOT NULL
+      AND bounced_at IS NULL
     LIMIT 20
   `);
 
@@ -232,6 +248,7 @@ async function runFollowUpSequence() {
       AND followup1_sent_at < NOW() - INTERVAL '4 days'
       AND followup2_sent_at IS NULL
       AND contact_email IS NOT NULL
+      AND bounced_at IS NULL
     LIMIT 20
   `);
 
@@ -733,6 +750,13 @@ async function startAgent() {
   });
   setTimeout(() => runPaymentChase().catch(console.error), 25000);
 
+  // Bounce processing every 20 minutes — delete bounce emails and blacklist failed addresses
+  cron.schedule('*/20 * * * *', () => {
+    gmailReader.processBounces().catch(e => logActivity('bounce_process', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+  // Run once on startup after 30s
+  setTimeout(() => gmailReader.processBounces().catch(console.error), 30000);
+
   // Daily heartbeat log
   cron.schedule('0 8 * * *', () => {
     logActivity('heartbeat', `Daily check — leads: ${agentState.totalLeadsFound}, emails: ${agentState.totalEmailsSent}, apps: ${agentState.totalAppProcessed}, contracts: ${agentState.totalContractsAssigned}`);
@@ -748,7 +772,9 @@ async function triggerNow(task) {
     case 'contracts':    await assignContracts(); break;
     case 'ai_jobs':      await processAIJobs(); break;
     case 'payment_chase': await runPaymentChase(); break;
+    case 'bounce_check':  await gmailReader.processBounces(); break;
     case 'all':
+      await gmailReader.processBounces();
       await runLeadSearch();
       await processApplications();
       await assignContracts();

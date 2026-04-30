@@ -80,53 +80,98 @@ app.use('/api/sub', subPortalRouter);
 
 // ─── Protected routes (require JWT) ──────────────────────────────────────────
 
-// Dashboard metrics
+// Dashboard metrics — uses actual DB tables (ai_leads, subcontractor_applications, subcontractor_jobs, job_submissions)
 app.get('/api/metrics', requireAuth, async (req, res) => {
   try {
-    const [contracts, revenue, clients, leads, subcontractors, completedContracts] = await Promise.all([
-      db.query(`SELECT
-          COUNT(*) FILTER (WHERE status = 'active')    AS "activeContracts",
-          COUNT(*) FILTER (WHERE status = 'completed') AS "completedContracts",
-          COUNT(*) FILTER (WHERE status = 'completed' AND updated_at >= CURRENT_DATE) AS "completedToday"
-        FROM contracts`),
-      db.query(`SELECT
-          COALESCE(SUM(amount_zar) FILTER (WHERE status='succeeded'), 0) AS "totalZar",
-          COALESCE(SUM(amount_zar) FILTER (WHERE status='succeeded' AND EXTRACT(MONTH FROM paid_at)=EXTRACT(MONTH FROM NOW())), 0) AS "monthlyZar"
-        FROM transactions`),
-      db.query(`SELECT COUNT(*) AS total FROM clients`),
-      db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='responded') AS responded FROM job_leads`),
-      db.query(`SELECT COUNT(*) AS total FROM subcontractors`),
-      db.query(`SELECT COALESCE(AVG(success_rate),0) AS rate FROM contracts WHERE status='completed'`),
+    if (!db.isConnected()) {
+      return res.json({ activeContracts:0, completedToday:0, totalCompleted:0, totalClients:0, totalLeads:0, respondedLeads:0, totalSubcontractors:0, monthlyRevZar:0, totalRevZar:0, successRate:0, daily:'R 0', aiStatus:'running', uptime:'99.98%', live:false });
+    }
+
+    const [leadsR, subsR, jobsR, revenueR, bouncesR] = await Promise.all([
+      // Leads from ai_leads
+      db.query(`
+        SELECT
+          COUNT(*)                                                            AS total,
+          COUNT(*) FILTER (WHERE status IN ('responded','negotiating','followup1_sent','followup2_sent','outreach_sent')) AS outreached,
+          COUNT(*) FILTER (WHERE status IN ('responded','negotiating'))       AS responded,
+          COUNT(*) FILTER (WHERE status = 'bounced' OR bounced_at IS NOT NULL) AS bounced
+        FROM ai_leads
+      `).catch(() => ({ rows:[{ total:0, outreached:0, responded:0, bounced:0 }] })),
+
+      // Subcontractors from subcontractor_applications
+      db.query(`
+        SELECT
+          COUNT(*)                                                   AS total,
+          COUNT(*) FILTER (WHERE status = 'approved')               AS approved,
+          COUNT(*) FILTER (WHERE status = 'pending')                AS pending,
+          COUNT(*) FILTER (WHERE payment_confirmed = TRUE)          AS paid
+        FROM subcontractor_applications
+      `).catch(() => ({ rows:[{ total:0, approved:0, pending:0, paid:0 }] })),
+
+      // Jobs from subcontractor_jobs
+      db.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE status IN ('assigned','in_progress'))  AS active,
+          COUNT(*) FILTER (WHERE status IN ('delivered','confirmed','paid','verified')) AS completed,
+          COUNT(*) FILTER (WHERE status IN ('delivered','confirmed','paid') AND updated_at >= CURRENT_DATE) AS completed_today,
+          COALESCE(SUM(job_value) FILTER (WHERE status IN ('delivered','confirmed','paid','verified')),0) AS total_revenue,
+          COALESCE(SUM(job_value) FILTER (WHERE status IN ('delivered','confirmed','paid','verified')
+            AND EXTRACT(MONTH FROM updated_at)=EXTRACT(MONTH FROM NOW())
+            AND EXTRACT(YEAR FROM updated_at)=EXTRACT(YEAR FROM NOW())),0) AS monthly_revenue,
+          COALESCE(SUM(our_margin) FILTER (WHERE status IN ('delivered','confirmed','paid','verified')),0) AS total_margin
+        FROM subcontractor_jobs
+      `).catch(() => ({ rows:[{ active:0, completed:0, completed_today:0, total_revenue:0, monthly_revenue:0, total_margin:0 }] })),
+
+      // Revenue from job_submissions payout_status
+      db.query(`
+        SELECT
+          COALESCE(SUM(sj.job_value) FILTER (WHERE js.payout_status='paid'),0)  AS total_paid,
+          COALESCE(SUM(sj.sub_payout) FILTER (WHERE js.payout_status='paid'),0) AS total_payouts
+        FROM job_submissions js
+        JOIN subcontractor_jobs sj ON sj.id = js.job_id
+      `).catch(() => ({ rows:[{ total_paid:0, total_payouts:0 }] })),
+
+      // Bounced count
+      db.query(`SELECT COUNT(*) AS bounced FROM ai_leads WHERE bounced_at IS NOT NULL`)
+        .catch(() => ({ rows:[{ bounced:0 }] })),
     ]);
 
-    const activeContracts  = parseInt(contracts.rows[0].activeContracts, 10)  || 0;
-    const completedToday   = parseInt(contracts.rows[0].completedToday, 10)   || 0;
-    const totalCompleted   = parseInt(contracts.rows[0].completedContracts, 10) || 0;
-    const totalClients     = parseInt(clients.rows[0].total, 10)               || 0;
-    const totalLeads       = parseInt(leads.rows[0].total, 10)                 || 0;
-    const respondedLeads   = parseInt(leads.rows[0].responded, 10)             || 0;
-    const totalSubcontractors = parseInt(subcontractors.rows[0].total, 10)     || 0;
-    const monthlyRevZar    = parseFloat(revenue.rows[0].monthlyZar)            || 0;
-    const totalRevZar      = parseFloat(revenue.rows[0].totalZar)              || 0;
-    const successRatePct   = totalCompleted > 0 ? Math.round(parseFloat(completedContracts.rows[0].rate) * 100) : 0;
+    const leads   = leadsR.rows[0]   || {};
+    const subs    = subsR.rows[0]    || {};
+    const jobs    = jobsR.rows[0]    || {};
+    const rev     = revenueR.rows[0] || {};
+
+    const totalLeads       = parseInt(leads.total    || 0);
+    const respondedLeads   = parseInt(leads.responded || 0);
+    const bouncedLeads     = parseInt(leads.bounced  || 0);
+    const totalSubs        = parseInt(subs.total     || 0);
+    const approvedSubs     = parseInt(subs.approved  || 0);
+    const activeContracts  = parseInt(jobs.active    || 0);
+    const totalCompleted   = parseInt(jobs.completed || 0);
+    const completedToday   = parseInt(jobs.completed_today || 0);
+    const totalRevZar      = parseFloat(jobs.total_revenue  || rev.total_paid || 0);
+    const monthlyRevZar    = parseFloat(jobs.monthly_revenue || 0);
 
     res.json({
       activeContracts,
       completedToday,
       totalCompleted,
-      totalClients,
+      totalClients:   respondedLeads,
       totalLeads,
       respondedLeads,
-      totalSubcontractors,
+      bouncedLeads,
+      totalSubcontractors: totalSubs,
+      approvedSubs,
       monthlyRevZar,
       totalRevZar,
-      successRate: successRatePct,
+      successRate: totalCompleted > 0 ? Math.round((totalCompleted / Math.max(activeContracts + totalCompleted, 1)) * 100) : 0,
       daily: monthlyRevZar > 0 ? `R ${monthlyRevZar.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}` : 'R 0',
       aiStatus: 'running',
       uptime: '99.98%',
       live: true,
     });
   } catch (err) {
+    console.error('Metrics error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -689,7 +734,7 @@ app.get('/api/subcontractors', requireAuth, async (req, res) => {
 // ─── Subcontractor Hub ────────────────────────────────────────────────────────
 
 async function ensureSubcontractorTables() {
-  if (!db.isConnected()) return;
+  if (!db.pool) return; // pool is set synchronously; isConnected() is async and always false at startup
   await db.query(`
     CREATE TABLE IF NOT EXISTS subcontractor_applications (
       id                   SERIAL PRIMARY KEY,
@@ -784,7 +829,11 @@ async function ensureSubcontractorTables() {
   await db.query(`ALTER TABLE job_submissions ADD COLUMN IF NOT EXISTS client_reminder3_at TIMESTAMPTZ`).catch(() => {});
   await db.query(`ALTER TABLE job_submissions ADD COLUMN IF NOT EXISTS overdue_flagged_at  TIMESTAMPTZ`).catch(() => {});
 }
-ensureSubcontractorTables().catch(e => console.error('ensureSubcontractorTables:', e.message));
+// Run immediately (pool is ready synchronously), and retry once after 8s in case of any transient error
+ensureSubcontractorTables().catch(e => {
+  console.error('ensureSubcontractorTables (attempt 1):', e.message);
+  setTimeout(() => ensureSubcontractorTables().catch(e2 => console.error('ensureSubcontractorTables (attempt 2):', e2.message)), 8000);
+});
 
 // GET all subcontractor applications
 app.get('/api/subcontractors/applications', requireAuth, async (req, res) => {

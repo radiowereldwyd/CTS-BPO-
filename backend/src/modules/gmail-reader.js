@@ -1,21 +1,19 @@
 /**
  * Gmail Inbox Reader — IMAP with App Password
- * Reads incoming replies to CTS BPO outreach emails using Gmail IMAP.
- * Uses the existing GMAIL_USER + GMAIL_APP_PASSWORD — no OAuth required.
- * Auto-updates lead status based on NLP analysis of each reply.
+ * Reads incoming replies, detects bounce notifications, and blacklists failed addresses.
+ * Uses GMAIL_USER + GMAIL_APP_PASSWORD — no OAuth required.
  */
+
 const { ImapFlow } = require('imapflow');
-const nlp = require('./google-nlp');
+const nlp         = require('./google-nlp');
 const auditLogger = require('./audit-logger');
+const db          = require('../db');
 
 const GMAIL_USER     = process.env.GMAIL_USER         || '';
 const GMAIL_PASSWORD = process.env.GMAIL_APP_PASSWORD  || '';
 
 function isConfigured() { return !!(GMAIL_USER && GMAIL_PASSWORD); }
 
-/**
- * Create an authenticated IMAP client.
- */
 function createClient() {
   return new ImapFlow({
     host: 'imap.gmail.com',
@@ -26,14 +24,135 @@ function createClient() {
   });
 }
 
+// ── Bounce detection helpers ───────────────────────────────────────────────
+
+const BOUNCE_SENDERS = [
+  'mailer-daemon@',
+  'mailer-daemon@googlemail.com',
+  'postmaster@',
+  'mail-noreply@google.com',
+];
+
+const BOUNCE_SUBJECTS = [
+  'address not found',
+  'delivery status notification',
+  'delivery failure',
+  'undeliverable',
+  'mail delivery failed',
+  'mail delivery subsystem',
+  'returned mail',
+  'failure notice',
+  'undelivered mail returned',
+];
+
+function isBounceEmail(from, subject) {
+  const f = (from || '').toLowerCase();
+  const s = (subject || '').toLowerCase();
+  if (BOUNCE_SENDERS.some(b => f.includes(b))) return true;
+  if (BOUNCE_SUBJECTS.some(b => s.includes(b))) return true;
+  return false;
+}
+
+/**
+ * Extract the failed email address from a bounce notification body.
+ * Gmail bounces typically include one of:
+ *   Final-Recipient: rfc822; email@domain.com
+ *   Original-Recipient: rfc822; email@domain.com
+ *   or a line like "The email account email@domain.com does not exist"
+ */
+function extractBouncedEmail(body) {
+  if (!body) return null;
+
+  // RFC 3464 DSN headers (most reliable)
+  const rfc = body.match(/Final-Recipient:\s*rfc822;\s*([^\s\r\n]+)/i)
+           || body.match(/Original-Recipient:\s*rfc822;\s*([^\s\r\n]+)/i)
+           || body.match(/X-Failed-Recipients:\s*([^\s\r\n,]+)/i);
+  if (rfc) return rfc[1].trim().toLowerCase();
+
+  // Gmail plain-text fallback: "The email account that you tried to reach does not exist"
+  const gmailMatch = body.match(/tried to reach[^\n]*?([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i);
+  if (gmailMatch) return gmailMatch[1].trim().toLowerCase();
+
+  // Generic email address in bounce context
+  const genericMatch = body.match(/(?:does not exist|not found|invalid|no such user)[^@\n]*?([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})/i);
+  if (genericMatch) return genericMatch[1].trim().toLowerCase();
+
+  return null;
+}
+
+// ── Blacklist an email address in ai_leads ─────────────────────────────────
+
+async function blacklistEmail(email) {
+  if (!email || !db.pool) return;
+  try {
+    const r = await db.query(
+      `UPDATE ai_leads
+       SET status='bounced', bounced_at=NOW(), updated_at=NOW()
+       WHERE LOWER(contact_email) = LOWER($1)
+         AND bounced_at IS NULL
+       RETURNING id, company`,
+      [email]
+    );
+    if (r.rowCount > 0) {
+      const lead = r.rows[0];
+      await auditLogger.log('bounce.blacklisted', 'lead', lead.id,
+        `Bounced email blacklisted: ${email} (${lead.company || 'unknown'})`, null, 'warn');
+      console.log(`[BOUNCE] Blacklisted ${email} — will never be contacted again.`);
+      return { blacklisted: true, leadId: lead.id, email };
+    }
+    return { blacklisted: false, email };
+  } catch (e) {
+    console.error('[BOUNCE] Blacklist error:', e.message);
+    return { blacklisted: false, error: e.message };
+  }
+}
+
+// ── Delete a message from Gmail inbox ─────────────────────────────────────
+
+async function deleteMessage(uid) {
+  if (!isConfigured()) return;
+  const client = createClient();
+  try {
+    await client.connect();
+    await client.mailboxOpen('INBOX');
+    // In Gmail IMAP, messageDelete moves to Trash (expunge not permanent)
+    await client.messageDelete({ uid }, { uid: true });
+    await client.logout();
+    return { deleted: true, uid };
+  } catch (err) {
+    try { await client.logout(); } catch {}
+    console.error('[GMAIL] Delete error:', err.message);
+    return { deleted: false, error: err.message };
+  }
+}
+
+// ── Move message to [Gmail]/Trash explicitly ───────────────────────────────
+
+async function trashMessage(uid) {
+  if (!isConfigured()) return;
+  const client = createClient();
+  try {
+    await client.connect();
+    await client.mailboxOpen('INBOX');
+    // Copy to Trash then delete from inbox
+    await client.messageMove({ uid }, '[Gmail]/Trash', { uid: true }).catch(async () => {
+      // Some Gmail accounts use "Trash" not "[Gmail]/Trash"
+      await client.messageMove({ uid }, 'Trash', { uid: true }).catch(() => {});
+    });
+    await client.logout();
+    return { trashed: true, uid };
+  } catch (err) {
+    try { await client.logout(); } catch {}
+    return { trashed: false, error: err.message };
+  }
+}
+
 /**
  * List unread emails in the inbox.
- * @param {number} maxResults
- * @returns {{ emails: Array, total: number }}
  */
 async function listUnreadEmails(maxResults = 20) {
   if (!isConfigured()) {
-    return { simulated: true, emails: [], message: 'GMAIL_USER or GMAIL_APP_PASSWORD not set.' };
+    return { simulated: true, emails: [], message: 'GMAIL credentials not set.' };
   }
 
   const client = createClient();
@@ -43,7 +162,6 @@ async function listUnreadEmails(maxResults = 20) {
     await client.connect();
     await client.mailboxOpen('INBOX');
 
-    // Search for unseen messages
     const uids = await client.search({ seen: false }, { uid: true });
     const recentUids = uids.slice(-maxResults);
 
@@ -57,11 +175,9 @@ async function listUnreadEmails(maxResults = 20) {
     }, { uid: true })) {
       try {
         const source = msg.source?.toString('utf-8') || '';
-
-        // Extract plain text body
         let body = '';
         const bodyMatch = source.match(/\r\n\r\n([\s\S]*)/);
-        if (bodyMatch) body = bodyMatch[1].replace(/=\r\n/g, '').slice(0, 2000);
+        if (bodyMatch) body = bodyMatch[1].replace(/=\r\n/g, '').slice(0, 3000);
 
         emails.push({
           id:      msg.uid,
@@ -85,19 +201,103 @@ async function listUnreadEmails(maxResults = 20) {
 }
 
 /**
- * Analyse all unread replies with NLP and return a status update report.
- * Each email is analysed for sentiment and intent.
+ * Scan inbox for bounce (address-not-found) notifications.
+ * For each bounce found:
+ *   1. Extract the failed email address
+ *   2. Blacklist it in ai_leads (set status=bounced)
+ *   3. Delete / trash the bounce email from inbox
+ * Returns a summary of what was processed.
+ */
+async function processBounces() {
+  if (!isConfigured()) return { simulated: true, processed: 0, blacklisted: 0 };
+
+  const client = createClient();
+  let processed = 0;
+  let blacklisted = 0;
+  const bounces = [];
+
+  try {
+    await client.connect();
+    await client.mailboxOpen('INBOX');
+
+    // Search ALL unread messages (we'll filter bounces below)
+    const uids = await client.search({ seen: false }, { uid: true });
+    if (uids.length === 0) { await client.logout(); return { processed: 0, blacklisted: 0, bounces: [] }; }
+
+    const bounceUids = [];
+
+    for await (const msg of client.fetch(uids.slice(-50), {
+      envelope: true, source: true
+    }, { uid: true })) {
+      try {
+        const from    = msg.envelope?.from?.[0]?.address || '';
+        const subject = msg.envelope?.subject || '';
+
+        if (!isBounceEmail(from, subject)) continue;
+
+        const source  = msg.source?.toString('utf-8') || '';
+        let body = '';
+        const bodyMatch = source.match(/\r\n\r\n([\s\S]*)/);
+        if (bodyMatch) body = bodyMatch[1].replace(/=\r\n/g, '').slice(0, 4000);
+
+        const failedEmail = extractBouncedEmail(body) || extractBouncedEmail(source);
+        processed++;
+
+        if (failedEmail) {
+          const result = await blacklistEmail(failedEmail);
+          if (result?.blacklisted) blacklisted++;
+          bounces.push({ uid: msg.uid, from, subject, failedEmail, blacklisted: result?.blacklisted });
+        } else {
+          bounces.push({ uid: msg.uid, from, subject, failedEmail: null, blacklisted: false });
+        }
+
+        bounceUids.push(msg.uid);
+      } catch (msgErr) {
+        console.error('[BOUNCE] Message parse error:', msgErr.message);
+      }
+    }
+
+    // Mark bounce emails as read and delete them from inbox
+    if (bounceUids.length > 0) {
+      await client.messageFlagsAdd(bounceUids, ['\\Seen'], { uid: true }).catch(() => {});
+      await client.messageDelete(bounceUids, { uid: true }).catch(() => {});
+    }
+
+    await client.logout();
+
+    if (processed > 0) {
+      await auditLogger.log('bounce.processed', 'system', null,
+        `Processed ${processed} bounce(s), blacklisted ${blacklisted} address(es)`, null, 'info');
+      console.log(`[BOUNCE] ${processed} bounce emails processed, ${blacklisted} addresses blacklisted.`);
+    }
+
+    return { processed, blacklisted, bounces };
+  } catch (err) {
+    try { await client.logout(); } catch {}
+    console.error('[BOUNCE] processBounces error:', err.message);
+    return { processed, blacklisted, bounces, error: err.message };
+  }
+}
+
+/**
+ * Analyse all unread non-bounce replies with NLP.
  */
 async function processInboxReplies() {
   if (!isConfigured()) return { simulated: true, processed: 0, updates: [] };
 
-  const { emails, total } = await listUnreadEmails(20);
+  // First handle bounces
+  await processBounces().catch(e => console.error('[BOUNCE] Error:', e.message));
+
+  const { emails } = await listUnreadEmails(20);
   const updates = [];
 
   const intentColor = { interested: 'responded', 'needs-info': 'responded', rejected: 'rejected', 'out-of-office': 'contacted' };
 
   for (const email of emails) {
+    // Skip bounce notifications — already handled
+    if (isBounceEmail(email.from, email.subject)) continue;
     if (!email.body) continue;
+
     try {
       const analysis = await nlp.analyseEmailReply(email.body);
       const intent   = analysis.sentiment?.intent || 'unknown';
@@ -121,7 +321,7 @@ async function processInboxReplies() {
     }
   }
 
-  return { processed: emails.length, total, updates };
+  return { processed: emails.length, updates };
 }
 
 /**
@@ -141,4 +341,11 @@ async function markAsRead(uid) {
   }
 }
 
-module.exports = { listUnreadEmails, processInboxReplies, markAsRead, isConfigured };
+module.exports = {
+  listUnreadEmails,
+  processInboxReplies,
+  processBounces,
+  blacklistEmail,
+  markAsRead,
+  isConfigured,
+};

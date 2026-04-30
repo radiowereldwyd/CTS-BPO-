@@ -120,7 +120,10 @@ function Dashboard({ token }) {
               <div className="tile-value" style={{ color: 'var(--blue-glow)' }}>
                 {m.totalLeads ?? 0}
               </div>
-              <div className="tile-sub">Responded: {m.respondedLeads ?? 0}</div>
+              <div className="tile-sub">
+                Responded: {m.respondedLeads ?? 0}
+                {(m.bouncedLeads > 0) && <>&nbsp;|&nbsp;<span style={{color:'#ef4444'}}>Bounced: {m.bouncedLeads}</span></>}
+              </div>
             </div>
 
           </div>
