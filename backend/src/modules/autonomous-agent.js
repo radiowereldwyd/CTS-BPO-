@@ -256,7 +256,7 @@ async function processApplications() {
   } catch { return; } // Table doesn't exist yet
 
   const newApps = await db.query(`
-    SELECT id, full_name, email, location, tier_amount, services
+    SELECT id, name, email, location, platform_fee, services
     FROM subcontractor_applications
     WHERE status = 'pending'
       AND (notes IS NULL OR notes NOT LIKE '%acknowledged%')
@@ -266,10 +266,10 @@ async function processApplications() {
 
   for (const app of newApps.rows) {
     try {
-      await emailOutreach.sendSubcontractorAcknowledgment({ name: app.full_name, email: app.email, amount: app.tier_amount });
+      await emailOutreach.sendSubcontractorAcknowledgment({ name: app.name, email: app.email, amount: app.platform_fee });
       await db.query(`UPDATE subcontractor_applications SET notes = COALESCE(notes,'') || ' | acknowledged ' || NOW() WHERE id=$1`, [app.id]);
       agentState.totalAppProcessed++;
-      await logActivity('application_acknowledged', `Auto-acknowledged application from ${app.full_name} (${app.email})`, 'application', app.id);
+      await logActivity('application_acknowledged', `Auto-acknowledged application from ${app.name} (${app.email})`, 'application', app.id);
     } catch (e) {
       await logActivity('application_acknowledged', `Failed to ack ${app.email}: ${e.message}`, 'application', app.id, 'error');
     }
@@ -277,7 +277,7 @@ async function processApplications() {
 
   // Step B: Auto-approve applications that are 24h old and still pending
   const readyApps = await db.query(`
-    SELECT id, full_name, email, tier_amount, services
+    SELECT id, name, email, platform_fee, services
     FROM subcontractor_applications
     WHERE status = 'pending'
       AND created_at < NOW() - INTERVAL '24 hours'
@@ -286,10 +286,10 @@ async function processApplications() {
 
   for (const app of readyApps.rows) {
     try {
-      await db.query(`UPDATE subcontractor_applications SET status='approved', updated_at=NOW() WHERE id=$1`, [app.id]);
-      await emailOutreach.sendSubcontractorApproval({ name: app.full_name, email: app.email, amount: app.tier_amount, appUrl: APP_URL });
+      await db.query(`UPDATE subcontractor_applications SET status='approved', reviewed_at=NOW() WHERE id=$1`, [app.id]);
+      await emailOutreach.sendSubcontractorApproval({ name: app.name, email: app.email, amount: app.platform_fee, appUrl: APP_URL });
       agentState.totalAppProcessed++;
-      await logActivity('application_approved', `Auto-approved ${app.full_name} (${app.email}) — tier R${app.tier_amount}`, 'application', app.id);
+      await logActivity('application_approved', `Auto-approved ${app.name} (${app.email}) — platform fee R${app.platform_fee}`, 'application', app.id);
     } catch (e) {
       await logActivity('application_approved', `Failed approval for ${app.email}: ${e.message}`, 'application', app.id, 'error');
     }
@@ -318,32 +318,35 @@ async function assignContracts() {
 
   for (const job of jobs.rows) {
     try {
-      // Find best available approved subcontractor for this service type
+      // Find best available approved AND PAID subcontractor for this service type
+      // IMPORTANT: payment_confirmed must be TRUE — no payment, no contract
       let sub = null;
       if (job.service_type) {
         const subRes = await db.query(`
-          SELECT id, full_name, email FROM subcontractor_applications
+          SELECT id, name, email FROM subcontractor_applications
           WHERE status = 'approved'
+            AND payment_confirmed = TRUE
             AND services::text ILIKE $1
-          ORDER BY created_at DESC
+          ORDER BY payment_confirmed_at DESC
           LIMIT 1
         `, [`%${job.service_type}%`]);
         sub = subRes.rows[0] || null;
       }
 
       if (!sub) {
-        // Fallback: any approved sub
+        // Fallback: any approved + paid sub
         const fallback = await db.query(`
-          SELECT id, full_name, email FROM subcontractor_applications
+          SELECT id, name, email FROM subcontractor_applications
           WHERE status = 'approved'
-          ORDER BY created_at DESC LIMIT 1
+            AND payment_confirmed = TRUE
+          ORDER BY payment_confirmed_at DESC LIMIT 1
         `);
         sub = fallback.rows[0] || null;
       }
 
       if (sub) {
         await emailOutreach.sendContractAssignment({
-          name: sub.full_name, email: sub.email,
+          name: sub.name, email: sub.email,
           jobTitle: job.title, jobValue: job.job_value,
           dueDate: job.due_date, jobId: job.id, description: job.description,
         });

@@ -261,6 +261,25 @@ app.post('/api/payments/ozow/notify', async (req, res) => {
       } catch (dbErr) {
         console.error('Ozow notify DB error:', dbErr.message);
       }
+
+      // Auto-link payment to subcontractor application if reference is SUB-{id}
+      if (dbStatus === 'succeeded' && TransactionReference && TransactionReference.startsWith('SUB-')) {
+        try {
+          const subId = parseInt(TransactionReference.replace('SUB-', ''), 10);
+          if (subId) {
+            await db.query(
+              `UPDATE subcontractor_applications
+               SET payment_confirmed = TRUE, payment_confirmed_at = NOW(), payment_reference = $1
+               WHERE id = $2`,
+              [TransactionId, subId]
+            );
+            await auditLogger.log('payment.sub_confirmed', 'application', subId,
+              `Enrolment payment confirmed for application #${subId} via Ozow (${TransactionId})`, null, 'info');
+          }
+        } catch (linkErr) {
+          console.error('Ozow sub-link error:', linkErr.message);
+        }
+      }
     }
 
     await auditLogger.log(
@@ -579,9 +598,16 @@ async function ensureSubcontractorTables() {
       source               VARCHAR(50) DEFAULT 'email',
       created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       reviewed_at          TIMESTAMP,
-      reviewed_by          INTEGER
+      reviewed_by          INTEGER,
+      payment_confirmed    BOOLEAN DEFAULT FALSE,
+      payment_confirmed_at TIMESTAMP,
+      payment_reference    TEXT
     )
   `);
+  // Migration: add payment columns if they don't exist yet (safe to run multiple times)
+  await db.query(`ALTER TABLE subcontractor_applications ADD COLUMN IF NOT EXISTS payment_confirmed BOOLEAN DEFAULT FALSE`).catch(() => {});
+  await db.query(`ALTER TABLE subcontractor_applications ADD COLUMN IF NOT EXISTS payment_confirmed_at TIMESTAMP`).catch(() => {});
+  await db.query(`ALTER TABLE subcontractor_applications ADD COLUMN IF NOT EXISTS payment_reference TEXT`).catch(() => {});
   await db.query(`
     CREATE TABLE IF NOT EXISTS subcontractor_jobs (
       id               SERIAL PRIMARY KEY,
@@ -680,6 +706,23 @@ app.patch('/api/subcontractors/applications/:id', requireAuth, requireAdmin, asy
     await auditLogger.log('subcontractor.reviewed', 'application', parseInt(id),
       `Application ${id} ${status} by ${req.user.email}`, req.user.id, 'info');
     res.json({ success: true, status });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH mark subcontractor application payment as confirmed (admin)
+app.patch('/api/subcontractors/applications/:id/mark-paid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reference } = req.body;
+    if (!db.isConnected()) return res.json({ success: true, message: 'No DB' });
+    await db.query(`
+      UPDATE subcontractor_applications
+      SET payment_confirmed = TRUE, payment_confirmed_at = NOW(), payment_reference = $1
+      WHERE id = $2
+    `, [reference || 'manual', id]);
+    await auditLogger.log('payment.manual_confirm', 'application', parseInt(id),
+      `Payment manually confirmed for application #${id} by ${req.user.email}`, req.user.id, 'info');
+    res.json({ success: true, message: `Payment confirmed for application #${id}` });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

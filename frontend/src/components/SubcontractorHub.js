@@ -141,6 +141,16 @@ export default function SubcontractorHub({ token }) {
     setLoading(p => ({ ...p, [`job_${id}`]: false }));
   }
 
+  async function handleMarkPaid(id) {
+    setLoading(p => ({ ...p, [`paid_${id}`]: true }));
+    try {
+      await axios.patch(`${API}/api/subcontractors/applications/${id}/mark-paid`, { reference: 'manual' }, { headers: auth });
+      flash('Payment confirmed — subcontractor is now eligible to receive contracts.');
+      load();
+    } catch (e) { flash(e.response?.data?.error || 'Failed to confirm payment.', true); }
+    setLoading(p => ({ ...p, [`paid_${id}`]: false }));
+  }
+
   async function handleReminders() {
     setLoading(p => ({ ...p, remind: true }));
     try {
@@ -303,8 +313,12 @@ export default function SubcontractorHub({ token }) {
                         <span style={{ marginLeft: 12, fontSize: 13, color: '#64748b' }}>{a.email}</span>
                         {a.phone && <span style={{ marginLeft: 8, fontSize: 13, color: '#94a3b8' }}>{a.phone}</span>}
                       </div>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                         {badge(a.status)}
+                        {a.payment_confirmed
+                          ? <span style={{ background: '#d1fae5', color: '#065f46', fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 20 }}>💳 PAID</span>
+                          : <span style={{ background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 800, padding: '2px 10px', borderRadius: 20 }}>⏳ UNPAID</span>
+                        }
                         <span style={{ fontSize: 12, color: '#94a3b8' }}>#{a.id}</span>
                       </div>
                     </div>
@@ -351,6 +365,25 @@ export default function SubcontractorHub({ token }) {
                           style={{ padding: '8px 20px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                           ✗ Reject
                         </button>
+                      </div>
+                    )}
+                    {/* Mark as Paid — shown for approved subcontractors who haven't paid yet */}
+                    {a.status === 'approved' && !a.payment_confirmed && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 12, borderTop: '1px solid #f1f5f9', marginTop: 8 }}>
+                        <div style={{ flex: 1, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 14px', fontSize: 12, color: '#92400e' }}>
+                          ⚠️ <strong>Waiting for enrolment payment</strong> — the AI will not assign any contracts until payment is confirmed. Once paid, contracts will be assigned automatically.
+                        </div>
+                        <button
+                          onClick={() => handleMarkPaid(a.id)}
+                          disabled={loading[`paid_${a.id}`]}
+                          style={{ padding: '8px 18px', background: '#10b981', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          {loading[`paid_${a.id}`] ? '...' : '💳 Mark as Paid'}
+                        </button>
+                      </div>
+                    )}
+                    {a.status === 'approved' && a.payment_confirmed && (
+                      <div style={{ paddingTop: 8, marginTop: 4, fontSize: 12, color: '#065f46' }}>
+                        ✅ Payment confirmed {a.payment_confirmed_at ? `on ${new Date(a.payment_confirmed_at).toLocaleDateString('en-ZA')}` : ''} — eligible to receive contracts from the AI.
                       </div>
                     )}
                     {a.notes && <p style={{ margin: '8px 0 0', fontSize: 12, color: '#94a3b8' }}>Note: {a.notes}</p>}
