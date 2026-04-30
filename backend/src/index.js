@@ -18,6 +18,7 @@ const gmailReader      = require('./modules/gmail-reader');
 const db = require('./db');
 const authRouter = require('./routes/auth');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
+const autonomousAgent = require('./modules/autonomous-agent');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -915,6 +916,48 @@ app.get('/api/summary', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Autonomous AI Agent Routes ──────────────────────────────────────────────
+
+// GET /api/ai-agent/status — returns agent live state
+app.get('/api/ai-agent/status', requireAuth, (req, res) => {
+  res.json(autonomousAgent.getStatus());
+});
+
+// GET /api/ai-agent/activity — returns recent activity log
+app.get('/api/ai-agent/activity', requireAuth, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const result = await db.query(
+      `SELECT id, action_type, description, target_entity, target_id, status, details, created_at
+       FROM ai_activity_log
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json({ activities: result.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/ai-agent/leads — returns discovered leads
+app.get('/api/ai-agent/leads', requireAuth, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, title, company, source_url, domain, contact_email, job_type, status,
+              outreach_sent_at, followup1_sent_at, followup2_sent_at, created_at
+       FROM ai_leads ORDER BY created_at DESC LIMIT 100`
+    );
+    res.json({ leads: result.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/ai-agent/trigger/:task — manually trigger any agent task
+app.post('/api/ai-agent/trigger/:task', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await autonomousAgent.triggerNow(req.params.task);
+    res.json({ ok: true, message: `Task "${req.params.task}" triggered successfully.` });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 // ── Serve React build in production ──────────────────────────────────────────
 // Only activated when the frontend has been built (production / after `npm run build`)
 const buildDir = path.join(__dirname, '../../frontend/build');
@@ -928,6 +971,10 @@ if (require('fs').existsSync(buildDir)) {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`CTS BPO Backend running on port ${PORT}`);
   auditLogger.log('system.start', null, null, `Server started on port ${PORT}`, null, 'info');
+  // Start the autonomous AI agent
+  autonomousAgent.startAgent().catch(err => {
+    console.error('Autonomous agent failed to start:', err.message);
+  });
 });
 
 module.exports = app;

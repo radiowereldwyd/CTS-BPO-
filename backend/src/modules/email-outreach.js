@@ -862,9 +862,203 @@ async function sendSubcontractorReminder({ name, email, jobTitle, dueDate, jobId
   return { sent: false, simulated: true, to: email };
 }
 
+// ── Autonomous Agent Email Functions ─────────────────────────────────────────
+
+async function sendClientColdOutreach({ name, company, email, jobType }) {
+  const subject = `CTS BPO Solutions — Professional ${jobType ? jobType.replace(/-/g,' ') : 'BPO'} services for ${company || 'your business'}`;
+  const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.10);">
+  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:36px 44px;text-align:center;">
+    <img src="${LOGO_B64}" alt="CTS BPO" width="240" style="display:block;margin:0 auto 16px;max-width:240px;height:auto;">
+    <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800;">Professional BPO Services — Built for Your Business</h1>
+    <p style="margin:10px 0 0;color:#94a3b8;font-size:13px;">Your Worldwide Premier BPO Partner</p>
+  </td></tr>
+  <tr><td style="padding:36px 44px;">
+    <p style="margin:0 0 18px;font-size:15px;color:#1e293b;">Dear ${esc(company || name || 'Business Owner')},</p>
+    <div style="background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:0 10px 10px 0;padding:18px 22px;margin:0 0 20px;">
+      <p style="margin:0;font-size:14px;color:#0f172a;line-height:1.85;">
+        My name is Calvin from <strong>CTS BPO Solutions</strong>. We specialise in <strong>${jobType ? jobType.replace(/-/g,' ') : 'business process outsourcing'}</strong> and we help businesses like yours reduce operational overhead while maintaining world-class quality. We have a verified <strong style="color:#10b981;">98.6% quality success rate</strong> across 200+ active clients in South Africa, the UK and beyond.
+      </p>
+    </div>
+    <div style="background:#f0fdf4;border-left:4px solid #10b981;border-radius:0 10px 10px 0;padding:18px 22px;margin:0 0 28px;">
+      <p style="margin:0;font-size:14px;color:#0f172a;line-height:1.85;">
+        We handle <strong>data entry, transcription, translation, virtual assistance, customer support, finance processing, content moderation, document digitisation</strong> and more — all completed by our vetted remote professionals and AI-verified before delivery. Our turnaround is typically <strong>24–48 hours</strong>, and pricing is transparent with no hidden fees.
+      </p>
+    </div>
+    <p style="margin:0 0 28px;font-size:14px;color:#334155;line-height:1.8;">I would love the opportunity to discuss how we can support your operations. Would you be open to a quick 15-minute call this week?</p>
+    <div style="text-align:center;margin-bottom:28px;">
+      <a href="mailto:cts.bposolutions@gmail.com?subject=Enquiry: BPO Services" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;padding:14px 36px;border-radius:10px;font-weight:800;font-size:15px;text-decoration:none;box-shadow:0 4px 16px rgba(99,102,241,0.35);">Reply to This Email</a>
+    </div>
+    <p style="margin:0;font-size:13px;color:#64748b;">Kind regards,<br><strong style="color:#0f172a;">Calvin</strong><br>CTS BPO Solutions<br>cts.bposolutions@gmail.com</p>
+  </td></tr>
+  <tr><td style="background:#f8fafc;padding:16px 44px;text-align:center;border-top:1px solid #e2e8f0;">
+    <p style="margin:0;font-size:11px;color:#94a3b8;">If you prefer not to receive future communications, simply reply with "unsubscribe".</p>
+  </td></tr>
+</table></td></tr></table></body></html>`;
+
+  const t = getTransporter();
+  if (t) {
+    const info = await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
+    return { sent: true, to: email, messageId: info.messageId };
+  }
+  console.log('[EMAIL STUB] Cold outreach →', email);
+  return { sent: false, simulated: true, to: email };
+}
+
+async function sendClientFollowUp({ email, company, jobType, followUpNumber }) {
+  const day = followUpNumber === 1 ? 'three days' : 'a week';
+  const subject = `Following up — CTS BPO Services for ${company || 'your business'}`;
+  const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.10);">
+  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:32px 44px;text-align:center;">
+    <img src="${LOGO_B64}" alt="CTS BPO" width="200" style="display:block;margin:0 auto 14px;height:auto;">
+    <h1 style="margin:0;color:#fff;font-size:20px;font-weight:800;">Quick follow-up from CTS BPO</h1>
+  </td></tr>
+  <tr><td style="padding:36px 44px;">
+    <p style="margin:0 0 16px;font-size:14px;color:#1e293b;">Dear ${esc(company || 'Business Owner')},</p>
+    <p style="margin:0 0 18px;font-size:14px;color:#334155;line-height:1.8;">I reached out ${day} ago about our professional <strong>${jobType ? jobType.replace(/-/g,' ') : 'BPO'}</strong> services and wanted to follow up in case my previous email got buried. CTS BPO Solutions specialises in helping businesses reduce back-office costs while maintaining 98.6% quality accuracy.</p>
+    <p style="margin:0 0 28px;font-size:14px;color:#334155;line-height:1.8;">If you have any back-office work that needs to be done — even a small test project — we would love the opportunity to demonstrate our quality at no risk. Simply reply to this email and we will set up a quick call.</p>
+    <div style="text-align:center;">
+      <a href="mailto:cts.bposolutions@gmail.com?subject=BPO Services Enquiry" style="display:inline-block;background:#6366f1;color:#fff;padding:13px 32px;border-radius:10px;font-weight:800;font-size:14px;text-decoration:none;">Get in Touch</a>
+    </div>
+    <p style="margin:28px 0 0;font-size:13px;color:#64748b;">Warm regards,<br><strong style="color:#0f172a;">Calvin — CTS BPO Solutions</strong></p>
+  </td></tr>
+</table></td></tr></table></body></html>`;
+
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
+    return { sent: true, to: email };
+  }
+  console.log('[EMAIL STUB] Follow-up →', email, `(#${followUpNumber})`);
+  return { sent: false, simulated: true, to: email };
+}
+
+async function sendSubcontractorAcknowledgment({ name, email, amount }) {
+  const subject = 'Application Received — CTS BPO Solutions';
+  const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.10);">
+  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:36px 44px;text-align:center;">
+    <img src="${LOGO_B64}" alt="CTS BPO" width="240" style="display:block;margin:0 auto 16px;height:auto;">
+    <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800;">Application Received!</h1>
+  </td></tr>
+  <tr><td style="padding:36px 44px;">
+    <p style="margin:0 0 16px;font-size:15px;color:#1e293b;">Dear <strong>${esc(name)}</strong>,</p>
+    <div style="background:#f0fdf4;border-left:4px solid #10b981;border-radius:0 10px 10px 0;padding:18px 22px;margin:0 0 20px;">
+      <p style="margin:0;font-size:14px;color:#0f172a;line-height:1.85;">Your subcontractor application has been received and is now under review. Our team will assess your application within <strong>24 hours</strong>. If approved, you will receive a welcome email with your payment link to complete your R ${amount || '500'} enrolment and begin receiving contracts.</p>
+    </div>
+    <p style="margin:0;font-size:13px;color:#64748b;">Thank you for choosing CTS BPO Solutions.<br><strong style="color:#0f172a;">The CTS BPO Team</strong></p>
+  </td></tr>
+</table></td></tr></table></body></html>`;
+
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
+    return { sent: true, to: email };
+  }
+  console.log('[EMAIL STUB] Acknowledgment →', email);
+  return { sent: false, simulated: true, to: email };
+}
+
+async function sendSubcontractorApproval({ name, email, amount, appUrl }) {
+  const subject = '🎉 Approved — Complete Your Enrolment | CTS BPO Solutions';
+  const paymentUrl = appUrl || 'https://your-app.replit.app';
+  const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.10);">
+  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:36px 44px;text-align:center;">
+    <img src="${LOGO_B64}" alt="CTS BPO" width="240" style="display:block;margin:0 auto 16px;height:auto;">
+    <div style="display:inline-block;background:rgba(16,185,129,0.15);border:1px solid #10b981;border-radius:20px;padding:6px 20px;margin-bottom:14px;">
+      <span style="color:#10b981;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">APPLICATION APPROVED</span>
+    </div>
+    <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Welcome to CTS BPO Solutions!</h1>
+  </td></tr>
+  <tr><td style="padding:36px 44px;">
+    <p style="margin:0 0 16px;font-size:15px;color:#1e293b;">Dear <strong>${esc(name)}</strong>,</p>
+    <div style="background:#f0fdf4;border-left:4px solid #10b981;border-radius:0 10px 10px 0;padding:18px 22px;margin:0 0 20px;">
+      <p style="margin:0;font-size:14px;color:#0f172a;line-height:1.85;">Congratulations — your application has been <strong style="color:#10b981;">approved</strong>! To activate your account and start receiving contracts, please complete your enrolment by paying your chosen investment of <strong>R ${amount || '500'}</strong>. Once payment is confirmed, our AI will immediately begin allocating contracts worth <strong>R ${(amount || 500) * 2}</strong> to your account.</p>
+    </div>
+    <div style="text-align:center;margin:28px 0;">
+      <a href="${esc(paymentUrl)}" style="display:inline-block;background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:16px 40px;border-radius:10px;font-weight:800;font-size:16px;text-decoration:none;box-shadow:0 4px 20px rgba(16,185,129,0.35);">Complete Enrolment — R ${amount || 500}</a>
+    </div>
+    <p style="margin:0;font-size:13px;color:#64748b;">Welcome aboard!<br><strong style="color:#0f172a;">The CTS BPO Team</strong></p>
+  </td></tr>
+</table></td></tr></table></body></html>`;
+
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
+    return { sent: true, to: email };
+  }
+  console.log('[EMAIL STUB] Approval →', email);
+  return { sent: false, simulated: true, to: email };
+}
+
+async function sendContractAssignment({ name, email, jobTitle, jobValue, dueDate, jobId, description }) {
+  const subject = `New Contract Assigned — ${jobTitle} | CTS BPO Solutions`;
+  const dueDateStr = dueDate ? new Date(dueDate).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : 'TBC';
+  const html = `
+<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.10);">
+  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:36px 44px;text-align:center;">
+    <img src="${LOGO_B64}" alt="CTS BPO" width="240" style="display:block;margin:0 auto 16px;height:auto;">
+    <div style="display:inline-block;background:rgba(99,102,241,0.15);border:1px solid #6366f1;border-radius:20px;padding:6px 20px;margin-bottom:14px;">
+      <span style="color:#a5b4fc;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">NEW CONTRACT ASSIGNED</span>
+    </div>
+    <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800;">${esc(jobTitle)}</h1>
+  </td></tr>
+  <tr><td style="padding:36px 44px;">
+    <p style="margin:0 0 16px;font-size:15px;color:#1e293b;">Dear <strong>${esc(name)}</strong>,</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#334155;line-height:1.8;">A new contract has been assigned to you. Please review the details below and confirm receipt by replying to this email.</p>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:24px;">
+      <table width="100%" cellpadding="0" cellspacing="8">
+        <tr><td style="font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;padding-bottom:4px;">Contract Reference</td><td style="font-size:14px;color:#6366f1;font-weight:700;">JOB-${jobId || '0000'}</td></tr>
+        <tr><td style="font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;padding-bottom:4px;">Title</td><td style="font-size:14px;color:#0f172a;font-weight:600;">${esc(jobTitle)}</td></tr>
+        <tr><td style="font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;padding-bottom:4px;">Payout Value</td><td style="font-size:16px;color:#10b981;font-weight:900;">R ${jobValue ? parseFloat(jobValue).toFixed(2) : '0.00'}</td></tr>
+        <tr><td style="font-size:12px;color:#64748b;font-weight:700;text-transform:uppercase;padding-bottom:4px;">Due Date</td><td style="font-size:14px;color:#f59e0b;font-weight:700;">${dueDateStr}</td></tr>
+        ${description ? `<tr><td colspan="2" style="padding-top:12px;font-size:13px;color:#334155;line-height:1.7;">${esc(description)}</td></tr>` : ''}
+      </table>
+    </div>
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+      <p style="margin:0;font-size:13px;color:#7c2d12;line-height:1.7;"><strong>Important:</strong> Submit your completed work before the due date. Late or incomplete submissions may affect your standing and result in penalties as per the Subcontractor Agreement.</p>
+    </div>
+    <p style="margin:0;font-size:13px;color:#64748b;">Reply to this email to confirm receipt or ask questions.<br><strong style="color:#0f172a;">The CTS BPO Team</strong></p>
+  </td></tr>
+</table></td></tr></table></body></html>`;
+
+  const t = getTransporter();
+  if (t) {
+    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
+    return { sent: true, to: email };
+  }
+  console.log('[EMAIL STUB] Contract assignment →', email, jobTitle);
+  return { sent: false, simulated: true, to: email };
+}
+
 module.exports = {
   sendOutreachEmail, runCampaign, previewTemplate,
   sendSubcontractorRecruitment, sendSubcontractorReminder,
+  sendClientColdOutreach, sendClientFollowUp,
+  sendSubcontractorAcknowledgment, sendSubcontractorApproval,
+  sendContractAssignment,
   templates, TEMPLATE_META, VALID_TEMPLATES,
   isConfigured: () => !!(GMAIL_USER && GMAIL_APP_PASS),
 };

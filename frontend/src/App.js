@@ -13,6 +13,7 @@ import Payments from './components/Payments';
 import JobSearch from './components/JobSearch';
 import AIServices from './components/AIServices';
 import SubcontractorHub from './components/SubcontractorHub';
+import AIAgentDashboard from './components/AIAgentDashboard';
 import LandingPage from './components/LandingPage';
 import ApplyPage from './components/ApplyPage';
 import CTSLogo from './components/CTSLogo';
@@ -49,6 +50,7 @@ function AdminShell({ user, token, onLogout }) {
           <NavLink to="/job-search">🌐 Job Search</NavLink>
           <NavLink to="/ai-services">🤖 AI Services</NavLink>
           <NavLink to="/subcontractors">🤝 Subcontractors</NavLink>
+          <NavLink to="/ai-agent">🧠 AI Agent</NavLink>
         </nav>
         <div className="header-user">
           <Link to="/" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none', marginRight: 12 }}>← Public Site</Link>
@@ -72,6 +74,7 @@ function AdminShell({ user, token, onLogout }) {
           <Route path="/job-search" element={<JobSearch />} />
           <Route path="/ai-services" element={<AIServices />} />
           <Route path="/subcontractors" element={<SubcontractorHub token={token} />} />
+          <Route path="/ai-agent" element={<AIAgentDashboard token={token} />} />
           <Route path="/login" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

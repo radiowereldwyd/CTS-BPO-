@@ -12,6 +12,23 @@
 - All business logic in `backend/src/modules/`
 - Frontend routes in `frontend/src/App.js`
 
+## Autonomous AI Agent (`backend/src/modules/autonomous-agent.js`)
+Runs on boot, no human involvement required:
+- **Every 2 hours:** SerpAPI lead search (12 BPO queries) → auto cold-outreach email to every discovered lead
+- **Every 6 hours:** Day-3 and day-7 follow-up emails to non-responding leads
+- **Every 30 min:** Acknowledge new subcontractor applications; auto-approve applications > 24h old
+- **Every 1 hour:** Match outstanding jobs to approved subcontractors and notify via email
+- **Tables:** `ai_activity_log`, `ai_leads` (auto-created on startup)
+
+### Autonomous Agent API Routes
+- `GET /api/ai-agent/status` — live agent state (counts, timestamps)
+- `GET /api/ai-agent/activity` — full activity log
+- `GET /api/ai-agent/leads` — all discovered leads
+- `POST /api/ai-agent/trigger/:task` — force run (lead_search | followup | applications | contracts | all)
+
+### Email Functions (autonomous)
+`sendClientColdOutreach`, `sendClientFollowUp`, `sendSubcontractorAcknowledgment`, `sendSubcontractorApproval`, `sendContractAssignment` — all in `email-outreach.js`
+
 ## Key Routes (Backend)
 - `GET /api/metrics` — dashboard KPIs
 - `GET /api/summary` — comprehensive ops summary (clients, subs, contracts, jobs, revenue)
