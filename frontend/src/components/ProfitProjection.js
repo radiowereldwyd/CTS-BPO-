@@ -35,7 +35,7 @@ function ProfitProjection() {
     <div className="pp-page">
       <div className="pp-header">
         <h1>Global Profit Projection: Daily Earnings Breakdown</h1>
-        <p>AI-Driven BPO Worldwide</p>
+        <p>Professional BPO Worldwide</p>
       </div>
 
       <div className="pp-chart-card">

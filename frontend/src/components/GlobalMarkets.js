@@ -216,7 +216,7 @@ function GlobalMarkets() {
     <div className="gm-page">
       <div className="gm-header">
         <h1>Global Expansion Opportunities for CTS BPO</h1>
-        <p>AI-Driven BPO Reach Worldwide</p>
+        <p>Professional BPO Reach Worldwide</p>
       </div>
 
       <div className="gm-map-container">

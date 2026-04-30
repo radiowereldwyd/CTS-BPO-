@@ -7,7 +7,7 @@ export default function CTSLogo({ size = 'md', className = '' }) {
   return (
     <img
       src="/cts-bpo-logo.png"
-      alt="CTS BPO - AI-Driven Outsourcing"
+      alt="CTS BPO Solutions"
       className={className}
       style={{
         height: h + 'px',

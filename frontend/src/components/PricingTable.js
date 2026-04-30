@@ -55,7 +55,7 @@ function PricingTable() {
   return (
     <div className="pricing-table">
       <h2>Pricing</h2>
-      <p className="pricing-subtitle">Choose the plan that fits your BPO needs. All plans include AI-driven automation.</p>
+      <p className="pricing-subtitle">Choose the plan that fits your BPO needs. All plans include expert-managed delivery with automated quality scanning.</p>
       <div className="pricing-cards">
         {TIERS.map((tier) => (
           <div
