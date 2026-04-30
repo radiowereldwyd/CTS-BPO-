@@ -65,7 +65,7 @@ router.post('/login', async (req, res) => {
       clientId: user.client_id || null,
     };
 
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '8h' });
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
 
     await auditLogger.log('auth.login', 'user', user.id, `User ${user.email} logged in`, user.id, 'info');
 

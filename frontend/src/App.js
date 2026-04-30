@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import Dashboard from './components/Dashboard';
 import StatusPanel from './components/StatusPanel';
@@ -98,6 +99,21 @@ function App() {
   const [token, setToken]       = useState(null);
   const [subUser, setSubUser]   = useState(null);
   const [subToken, setSubToken] = useState(null);
+  const logoutRef = useRef(null);
+
+  // Global 401 interceptor — auto-logout on expired/invalid token
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      res => res,
+      err => {
+        if (err?.response?.status === 401 && logoutRef.current) {
+          logoutRef.current();
+        }
+        return Promise.reject(err);
+      }
+    );
+    return () => axios.interceptors.response.eject(interceptor);
+  }, []);
 
   useEffect(() => {
     // Admin session
@@ -131,6 +147,9 @@ function App() {
     setUser(null);
     setToken(null);
   }
+
+  // Keep logoutRef current so the axios interceptor can always call the latest version
+  logoutRef.current = handleAdminLogout;
 
   function handleSubLogin(loggedInUser, authToken) {
     setSubUser(loggedInUser);
