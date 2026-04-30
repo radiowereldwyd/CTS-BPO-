@@ -37,20 +37,93 @@ function esc(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── Brand assets (embedded / CDN) ─────────────────────────────────────────────
+
+// CTS BPO logo — inline SVG encoded as base64 so it renders in all email clients
+// without needing an externally hosted URL
+const LOGO_B64 = 'PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDQwMCAxMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgYXJpYS1sYWJlbD0iQ1RTIEJQTyDigJQgQUktRHJpdmVuIE91dHNvdXJjaW5nIj4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYmdHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzBhMTUzMCIgLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMWUzYThhIiAvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZ2xvYmVHcmFkIiBjeD0iNTAlIiBjeT0iNDAlIiByPSI2MCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjNjBhNWZhIiAvPgogICAgICA8c3RvcCBvZmZzZXQ9IjYwJSIgc3RvcC1jb2xvcj0iIzNiODJmNiIgLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxMDAlIiBzdG9wLWNvbG9yPSIjMWQ0ZWQ4IiAvPgogICAgPC9yYWRpYWxHcmFkaWVudD4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYXJyb3dHcmFkIiB4MT0iMCUiIHkxPSIxMDAlIiB4Mj0iMCUiIHkyPSIwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiNjYmQ1ZTEiIC8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzkzYzVmZCIgLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8cmFkaWFsR3JhZGllbnQgaWQ9InZpZ25ldHRlIiBjeD0iNTAlIiBjeT0iNTAlIiByPSI3MCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjMWUzYThhIiBzdG9wLW9wYWNpdHk9IjAiIC8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzBhMTUzMCIgc3RvcC1vcGFjaXR5PSIwLjYiIC8+CiAgICA8L3JhZGlhbEdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iYXJyb3dHbG93IiB4PSItMjAlIiB5PSItMjAlIiB3aWR0aD0iMTQwJSIgaGVpZ2h0PSIxNDAlIj4KICAgICAgPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMS41IiByZXN1bHQ9ImJsdXIiIC8+CiAgICAgIDxmZU1lcmdlPgogICAgICAgIDxmZU1lcmdlTm9kZSBpbj0iYmx1ciIgLz4KICAgICAgICA8ZmVNZXJnZU5vZGUgaW49IlNvdXJjZUdyYXBoaWMiIC8+CiAgICAgIDwvZmVNZXJnZT4KICAgIDwvZmlsdGVyPgogICAgPGNsaXBQYXRoIGlkPSJnbG9iZUNsaXAiPgogICAgICA8Y2lyY2xlIGN4PSI3MiIgY3k9IjYwIiByPSI0MiIgLz4KICAgIDwvY2xpcFBhdGg+CiAgPC9kZWZzPgoKICA8IS0tIEJhY2tncm91bmQgLS0+CiAgPHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIxMjAiIHJ4PSIxMiIgcnk9IjEyIiBmaWxsPSJ1cmwoI2JnR3JhZCkiIC8+CiAgPHJlY3Qgd2lkdGg9IjQwMCIgaGVpZ2h0PSIxMjAiIHJ4PSIxMiIgcnk9IjEyIiBmaWxsPSJ1cmwoI3ZpZ25ldHRlKSIgLz4KCiAgPCEtLSBHbG9iZSAtLT4KICA8Y2lyY2xlIGN4PSI3MiIgY3k9IjYwIiByPSI0MiIgZmlsbD0idXJsKCNnbG9iZUdyYWQpIiBvcGFjaXR5PSIwLjk1IiAvPgoKICA8IS0tIExhdGl0dWRlIGxpbmVzIGFuZCBjb250aW5lbnQgc2hhcGVzIC0tPgogIDxnIGNsaXAtcGF0aD0idXJsKCNnbG9iZUNsaXApIiBvcGFjaXR5PSIwLjU1Ij4KICAgIDxlbGxpcHNlIGN4PSI3MiIgY3k9IjYwIiByeD0iNDIiIHJ5PSIxMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOTNjNWZkIiBzdHJva2Utd2lkdGg9IjEiIC8+CiAgICA8ZWxsaXBzZSBjeD0iNzIiIGN5PSI2MCIgcng9IjQyIiByeT0iMjIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzkzYzVmZCIgc3Ryb2tlLXdpZHRoPSIwLjgiIC8+CiAgICA8ZWxsaXBzZSBjeD0iNzIiIGN5PSI2MCIgcng9IjQyIiByeT0iMzYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzkzYzVmZCIgc3Ryb2tlLXdpZHRoPSIwLjYiIC8+CiAgICA8bGluZSB4MT0iMzAiIHkxPSI2MCIgeDI9IjExNCIgeTI9IjYwIiBzdHJva2U9IiM5M2M1ZmQiIHN0cm9rZS13aWR0aD0iMS4yIiAvPgogICAgPGxpbmUgeDE9IjcyIiB5MT0iMTgiIHgyPSI3MiIgeTI9IjEwMiIgc3Ryb2tlPSIjOTNjNWZkIiBzdHJva2Utd2lkdGg9IjAuOCIgLz4KICAgIDxwYXRoIGQ9Ik01NSw0MiBRNjAsMzggNjcsNDIgUTcyLDQ2IDcwLDUyIFE2NSw1NiA1OCw1NCBRNTIsNTAgNTUsNDJaIiBmaWxsPSIjMWQ0ZWQ4IiBvcGFjaXR5PSIwLjciIC8+CiAgICA8cGF0aCBkPSJNNzgsNTIgUTg0LDQ4IDkwLDUyIFE5NCw1OCA5MCw2NCBRODQsNjYgNzgsNjIgUTc0LDU3IDc4LDUyWiIgZmlsbD0iIzFkNGVkOCIgb3BhY2l0eT0iMC42IiAvPgogICAgPHBhdGggZD0iTTU4LDY2IFE2Myw2MiA3MCw2NiBRNzMsNzIgNjgsNzYgUTYyLDc4IDU3LDc0IFE1Myw2OSA1OCw2NloiIGZpbGw9IiMxZDRlZDgiIG9wYWNpdHk9IjAuNSIgLz4KICA8L2c+CgogIDwhLS0gR2xvYmUgcmltIC0tPgogIDxjaXJjbGUgY3g9IjcyIiBjeT0iNjAiIHI9IjQyIiBmaWxsPSJub25lIiBzdHJva2U9IiM2MGE1ZmEiIHN0cm9rZS13aWR0aD0iMS41IiBvcGFjaXR5PSIwLjYiIC8+CiAgPGNpcmNsZSBjeD0iNzIiIGN5PSI2MCIgcj0iNDIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2NiZDVlMSIgc3Ryb2tlLXdpZHRoPSIwLjQiIG9wYWNpdHk9IjAuMyIgLz4KCiAgPCEtLSBMZWZ0IGFycm93IC0tPgogIDxnIGZpbHRlcj0idXJsKCNhcnJvd0dsb3cpIj4KICAgIDxsaW5lIHgxPSI1NCIgeTE9Ijc4IiB4Mj0iNTQiIHkyPSIzMiIgc3Ryb2tlPSJ1cmwoI2Fycm93R3JhZCkiIHN0cm9rZS13aWR0aD0iMy41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIC8+CiAgICA8cG9seWdvbiBwb2ludHM9IjU0LDIwIDQ4LDM0IDYwLDM0IiBmaWxsPSJ1cmwoI2Fycm93R3JhZCkiIC8+CiAgPC9nPgoKICA8IS0tIENlbnRlciBhcnJvdyAodGFsbGVzdCkgLS0+CiAgPGcgZmlsdGVyPSJ1cmwoI2Fycm93R2xvdykiPgogICAgPGxpbmUgeDE9IjcyIiB5MT0iODUiIHgyPSI3MiIgeTI9IjIwIiBzdHJva2U9InVybCgjYXJyb3dHcmFkKSIgc3Ryb2tlLXdpZHRoPSI0LjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgLz4KICAgIDxwb2x5Z29uIHBvaW50cz0iNzIsOCA2NCwyNCA4MCwyNCIgZmlsbD0idXJsKCNhcnJvd0dyYWQpIiAvPgogIDwvZz4KCiAgPCEtLSBSaWdodCBhcnJvdyAtLT4KICA8ZyBmaWx0ZXI9InVybCgjYXJyb3dHbG93KSI+CiAgICA8bGluZSB4MT0iOTAiIHkxPSI4MCIgeDI9IjkwIiB5Mj0iMzgiIHN0cm9rZT0idXJsKCNhcnJvd0dyYWQpIiBzdHJva2Utd2lkdGg9IjMuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiAvPgogICAgPHBvbHlnb24gcG9pbnRzPSI5MCwyNiA4NCw0MCA5Niw0MCIgZmlsbD0idXJsKCNhcnJvd0dyYWQpIiAvPgogIDwvZz4KCiAgPCEtLSBXb3JkbWFyayAtLT4KICA8dGV4dCB4PSIxMzYiIHk9IjY4IiBmb250LWZhbWlseT0iJ0ludGVyJywgJ1BvcHBpbnMnLCAnU2Vnb2UgVUknLCBzeXN0ZW0tdWksIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC13ZWlnaHQ9IjgwMCIgZm9udC1zaXplPSIzOCIgZmlsbD0iI2ZmZmZmZiIgbGV0dGVyLXNwYWNpbmc9IjIiPkNUUyBCUE88L3RleHQ+CgogIDwhLS0gVGFnbGluZSAtLT4KICA8dGV4dCB4PSIxMzgiIHk9Ijg3IiBmb250LWZhbWlseT0iJ0ludGVyJywgJ1BvcHBpbnMnLCAnU2Vnb2UgVUknLCBzeXN0ZW0tdWksIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC13ZWlnaHQ9IjUwMCIgZm9udC1zaXplPSIxMSIgZmlsbD0iI2NiZDVlMSIgbGV0dGVyLXNwYWNpbmc9IjMiPkFJLURSSVZFTiBPVVRTT1VSQ0lORzwvdGV4dD4KPC9zdmc+Cg==';
+
+// BPO photography — Pexels CDN (publicly accessible for email recipients)
+// Photo credit: Pexels (free to use)
+const PHOTO_HEADER = 'https://images.pexels.com/photos/5453808/pexels-photo-5453808.jpeg?auto=compress&cs=tinysrgb&w=1280';
+const PHOTO_FOOTER = 'https://images.pexels.com/photos/8866761/pexels-photo-8866761.jpeg?auto=compress&cs=tinysrgb&w=1280';
+
 // ── Shared header / footer builders ──────────────────────────────────────────
 
 const header = (tagline = 'AI-Driven Business Process Outsourcing') => `
-  <div style="background:linear-gradient(135deg,#0f172a,#1e3a8a);padding:28px 36px;text-align:center">
-    <h1 style="color:#fff;margin:0;font-size:28px;font-weight:900;letter-spacing:-1px">CTS BPO</h1>
-    <p style="color:#93c5fd;margin:6px 0 0;font-size:12px;text-transform:uppercase;letter-spacing:2px">${tagline}</p>
-  </div>`;
+  <!--[if mso]><v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:640px;height:180px;"><v:fill type="frame" src="${PHOTO_HEADER}" color="#0f172a" /><v:textbox inset="0,0,0,0"><![endif]-->
+  <div style="
+    background-image:url('${PHOTO_HEADER}');
+    background-size:cover;
+    background-position:center 30%;
+    background-color:#0f172a;
+    position:relative;
+    text-align:center;
+    padding:0;
+  ">
+    <!-- Dark gradient overlay for readability -->
+    <div style="
+      background:linear-gradient(135deg,rgba(10,21,48,0.88) 0%,rgba(30,58,138,0.80) 60%,rgba(10,21,48,0.88) 100%);
+      padding:32px 36px 28px;
+    ">
+      <!-- CTS BPO Logo (inline SVG — renders in all email clients) -->
+      <img
+        src="data:image/svg+xml;base64,${LOGO_B64}"
+        alt="CTS BPO — AI-Driven Outsourcing"
+        width="240"
+        height="72"
+        style="display:block;margin:0 auto 14px;max-width:240px;height:auto"
+      />
+      <!-- Divider -->
+      <div style="width:60px;height:2px;background:linear-gradient(90deg,transparent,#60a5fa,transparent);margin:0 auto 12px"></div>
+      <!-- Tagline -->
+      <p style="
+        color:#93c5fd;
+        margin:0;
+        font-size:11px;
+        text-transform:uppercase;
+        letter-spacing:3px;
+        font-family:'Segoe UI',Inter,Arial,sans-serif;
+        font-weight:600;
+      ">${tagline}</p>
+    </div>
+  </div>
+  <!--[if mso]></v:textbox></v:rect><![endif]-->`;
 
 const footer = () => `
-  <div style="background:#f1f5f9;padding:20px 36px;text-align:center;font-size:11px;color:#94a3b8;border-top:1px solid #e2e8f0">
-    <p style="margin:0 0 4px"><strong style="color:#475569">CTS BPO Solutions</strong> | South Africa (serving clients worldwide)</p>
-    <p style="margin:0">📧 ${REPLY_EMAIL}</p>
-    <p style="margin:8px 0 0;font-size:10px">To unsubscribe, reply with "unsubscribe" in the subject line.</p>
-  </div>`;
+  <!--[if mso]><v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:640px;height:130px;"><v:fill type="frame" src="${PHOTO_FOOTER}" color="#0f172a" /><v:textbox inset="0,0,0,0"><![endif]-->
+  <div style="
+    background-image:url('${PHOTO_FOOTER}');
+    background-size:cover;
+    background-position:center 60%;
+    background-color:#0f172a;
+    position:relative;
+  ">
+    <!-- Dark overlay -->
+    <div style="
+      background:linear-gradient(to bottom,rgba(10,21,48,0.92),rgba(15,23,42,0.97));
+      padding:24px 36px;
+      text-align:center;
+      font-family:'Segoe UI',Inter,Arial,sans-serif;
+    ">
+      <!-- Logo small -->
+      <img
+        src="data:image/svg+xml;base64,${LOGO_B64}"
+        alt="CTS BPO"
+        width="140"
+        height="42"
+        style="display:block;margin:0 auto 10px;max-width:140px;height:auto;opacity:0.85"
+      />
+      <p style="margin:0 0 4px;font-size:12px;color:#93c5fd;font-weight:600">CTS BPO Solutions · South Africa · Serving Clients Worldwide</p>
+      <p style="margin:0 0 8px;font-size:11px;color:#64748b">📧 ${REPLY_EMAIL}</p>
+      <div style="width:40px;height:1px;background:rgba(148,163,184,0.3);margin:10px auto"></div>
+      <p style="margin:0;font-size:10px;color:#334155">
+        © ${new Date().getFullYear()} CTS BPO Solutions. This email was sent because your organisation appeared to have a requirement we can fulfil.
+        <br>To unsubscribe, reply with <em>"unsubscribe"</em> in the subject line.
+      </p>
+    </div>
+  </div>
+  <!--[if mso]></v:textbox></v:rect><![endif]-->`;
 
 const wrapper = (content) => `
   <div style="font-family:'Segoe UI',Inter,Arial,sans-serif;max-width:640px;margin:0 auto;background:#fff;color:#1e293b;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08)">
