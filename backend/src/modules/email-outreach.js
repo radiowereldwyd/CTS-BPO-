@@ -579,47 +579,227 @@ const APPLICATION_URL = process.env.APP_URL
   : 'https://your-app.replit.app/apply';
 
 async function sendSubcontractorRecruitment({ name, email }) {
-  const subject = 'Work From Home Opportunity — CTS BPO Solutions';
+  const subject = 'Earn From Home — Double Your Investment with CTS BPO Solutions';
   const html = `
-<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;font-family:Arial,sans-serif;background:#f4f6f9;">
-<table width="640" align="center" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;margin:20px auto;">
-  <tr><td style="background:#0f172a;padding:32px 40px;text-align:center;">
-    <img src="${LOGO_B64}" alt="CTS BPO" style="height:80px;width:auto;margin-bottom:12px;"><br>
-    <span style="color:#38bdf8;font-size:13px;letter-spacing:2px;text-transform:uppercase;font-weight:600;">Work From Home Opportunity</span>
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:30px 0;">
+<tr><td align="center">
+<table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(15,23,42,0.15);">
+
+  <!-- HERO HEADER -->
+  <tr><td style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f3460 100%);padding:40px 48px;text-align:center;">
+    <img src="${LOGO_B64}" alt="CTS BPO Solutions" style="height:90px;width:auto;margin-bottom:16px;display:block;margin-left:auto;margin-right:auto;">
+    <div style="display:inline-block;background:rgba(56,189,248,0.15);border:1px solid #38bdf8;border-radius:20px;padding:6px 20px;margin-bottom:18px;">
+      <span style="color:#38bdf8;font-size:11px;letter-spacing:3px;text-transform:uppercase;font-weight:700;">Exclusive Partner Opportunity</span>
+    </div>
+    <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:800;line-height:1.25;">Work From Home.<br>Earn Double Your Investment.</h1>
+    <p style="margin:14px 0 0;color:#94a3b8;font-size:14px;">Join South Africa's fastest-growing BPO network</p>
   </td></tr>
-  <tr><td style="padding:36px 40px;">
-    <p style="font-size:16px;color:#1e293b;">Hi <strong>${esc(name)}</strong>,</p>
-    <p style="font-size:15px;color:#334155;line-height:1.7;">
-      We have an exciting opportunity for you to earn a consistent income working from the comfort of your home with <strong>CTS BPO Solutions</strong>.
+
+  <!-- GREETING -->
+  <tr><td style="padding:40px 48px 0;">
+    <p style="margin:0 0 20px;font-size:16px;color:#1e293b;line-height:1.6;">Dear <strong style="color:#0f172a;">${esc(name)}</strong>,</p>
+
+    <!-- MARKETING PARAGRAPH 1 -->
+    <p style="margin:0 0 18px;font-size:15px;color:#334155;line-height:1.8;">
+      <strong>CTS BPO Solutions</strong> is a South African business process outsourcing company with an established and rapidly growing client base spanning multiple industries — from finance and legal services to retail, healthcare and logistics. We currently service clients across South Africa, the United Kingdom and beyond, managing thousands of tasks every month with a verified <strong style="color:#10b981;">98.6% success rate</strong>. Our AI-powered matching engine continuously sources new contracts around the clock, meaning our pipeline of available work never runs dry. When you partner with us, you tap directly into that pipeline — no cold calling, no client hunting, no invoicing headaches. We do all of that for you.
     </p>
-    <p style="font-size:15px;color:#334155;line-height:1.7;">
-      We connect skilled individuals with professional business process tasks — including data entry, transcription, translation, virtual assistance, customer support, and more.
+
+    <!-- MARKETING PARAGRAPH 2 -->
+    <p style="margin:0 0 30px;font-size:15px;color:#334155;line-height:1.8;">
+      What sets CTS BPO apart is our <strong>double-return model</strong> — a first in the South African freelance market. We believe in rewarding reliability: when you invest your commitment with us and deliver quality work, we deliver <strong>twice your investment back to you</strong>. Our subcontractor network currently processes over R2.4 million in assignments monthly, and every single registered partner who maintains a clean delivery record continues to grow their earning tier with us. Whether you are supplementing your income or building a full-time home-based career, CTS BPO gives you the contracts, the clients, and the certainty — all you bring is your skills and your dedication.
     </p>
-    <div style="background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:6px;padding:20px 24px;margin:24px 0;">
-      <p style="margin:0 0 10px;font-weight:700;color:#0c4a6e;font-size:15px;">How It Works</p>
-      <ul style="margin:0;padding-left:18px;color:#334155;font-size:14px;line-height:2;">
-        <li>You tell us your desired monthly earning target</li>
-        <li>We supply you with professionally sourced work worth 1.5× your target</li>
-        <li>A small platform fee (50% of your target) is charged for job sourcing &amp; quality assurance</li>
-        <li>You deliver quality work on time — we handle client relationships &amp; billing</li>
-        <li>You get paid your agreed earnings each month</li>
-      </ul>
+
+    <!-- DIVIDER -->
+    <div style="border-top:2px solid #e2e8f0;margin:0 0 30px;"></div>
+
+    <!-- PAYMENT MODEL -->
+    <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:2px solid #86efac;border-radius:12px;padding:28px 32px;margin-bottom:28px;">
+      <h2 style="margin:0 0 6px;font-size:18px;color:#14532d;font-weight:800;">💸 How the Earnings Model Works</h2>
+      <p style="margin:0 0 20px;font-size:13px;color:#166534;">Simple. Transparent. Rewarding.</p>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td width="30%" style="text-align:center;background:#ffffff;border-radius:10px;padding:18px 10px;border:1px solid #bbf7d0;">
+            <div style="font-size:28px;margin-bottom:6px;">💳</div>
+            <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">You Invest</div>
+            <div style="font-size:22px;font-weight:800;color:#0f172a;">R 500</div>
+            <div style="font-size:11px;color:#94a3b8;">one-time enrolment fee</div>
+          </td>
+          <td width="10%" style="text-align:center;font-size:24px;color:#10b981;font-weight:900;">→</td>
+          <td width="30%" style="text-align:center;background:#ffffff;border-radius:10px;padding:18px 10px;border:1px solid #bbf7d0;">
+            <div style="font-size:28px;margin-bottom:6px;">📋</div>
+            <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">We Allocate</div>
+            <div style="font-size:22px;font-weight:800;color:#0ea5e9;">R 1,000</div>
+            <div style="font-size:11px;color:#94a3b8;">in contracts to complete</div>
+          </td>
+          <td width="10%" style="text-align:center;font-size:24px;color:#10b981;font-weight:900;">→</td>
+          <td width="30%" style="text-align:center;background:#ffffff;border-radius:10px;padding:18px 10px;border:2px solid #10b981;">
+            <div style="font-size:28px;margin-bottom:6px;">🏆</div>
+            <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:6px;">You Receive</div>
+            <div style="font-size:22px;font-weight:800;color:#16a34a;">R 1,000</div>
+            <div style="font-size:11px;color:#94a3b8;">on verified completion</div>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:18px 0 0;font-size:13px;color:#166534;text-align:center;font-style:italic;">
+        ✦ Invest more — earn more. Scale at your own pace. ✦
+      </p>
     </div>
-    <div style="background:#fef9c3;border-left:4px solid #eab308;border-radius:6px;padding:16px 24px;margin:20px 0;">
-      <p style="margin:0;font-size:14px;color:#713f12;"><strong>Important:</strong> Reliability is essential. Subcontractors who accept work and fail to deliver on time are subject to penalties as outlined in the application form. We maintain strict quality standards to protect our client relationships.</p>
+
+    <!-- ENROLMENT PROCESS -->
+    <h2 style="margin:0 0 16px;font-size:17px;color:#0f172a;font-weight:800;">📋 Enrolment Process</h2>
+    <table width="100%" cellpadding="0" cellspacing="12" style="margin-bottom:28px;">
+      <tr>
+        <td style="vertical-align:top;width:44px;">
+          <div style="width:36px;height:36px;background:#6366f1;border-radius:50%;text-align:center;line-height:36px;color:#fff;font-weight:800;font-size:15px;">1</div>
+        </td>
+        <td style="vertical-align:top;padding-left:12px;">
+          <strong style="color:#0f172a;font-size:14px;">Complete &amp; Submit Your Application</strong>
+          <p style="margin:4px 0 0;font-size:13px;color:#64748b;line-height:1.6;">Click the "Apply Now" button below. Fill in your personal details, choose your services, select your investment tier, and agree to the Subcontractor Terms.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="vertical-align:top;width:44px;padding-top:12px;">
+          <div style="width:36px;height:36px;background:#6366f1;border-radius:50%;text-align:center;line-height:36px;color:#fff;font-weight:800;font-size:15px;">2</div>
+        </td>
+        <td style="vertical-align:top;padding-left:12px;padding-top:12px;">
+          <strong style="color:#0f172a;font-size:14px;">Registration &amp; Approval</strong>
+          <p style="margin:4px 0 0;font-size:13px;color:#64748b;line-height:1.6;">Our team reviews your application within 24–48 hours. Once approved, you receive a welcome email with your payment link and unique subcontractor reference number.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="vertical-align:top;width:44px;padding-top:12px;">
+          <div style="width:36px;height:36px;background:#6366f1;border-radius:50%;text-align:center;line-height:36px;color:#fff;font-weight:800;font-size:15px;">3</div>
+        </td>
+        <td style="vertical-align:top;padding-left:12px;padding-top:12px;">
+          <strong style="color:#0f172a;font-size:14px;">Make Your Enrolment Payment</strong>
+          <p style="margin:4px 0 0;font-size:13px;color:#64748b;line-height:1.6;">Pay your chosen enrolment fee via EFT or online. This is your investment — you will receive exactly double this amount in completed contract earnings.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="vertical-align:top;width:44px;padding-top:12px;">
+          <div style="width:36px;height:36px;background:#10b981;border-radius:50%;text-align:center;line-height:36px;color:#fff;font-weight:800;font-size:15px;">4</div>
+        </td>
+        <td style="vertical-align:top;padding-left:12px;padding-top:12px;">
+          <strong style="color:#0f172a;font-size:14px;">Receive Contracts &amp; Start Earning</strong>
+          <p style="margin:4px 0 0;font-size:13px;color:#64748b;line-height:1.6;">Once payment is confirmed, our AI immediately allocates contracts to your value tier. Complete the work, submit it to us — we verify it, get paid by the client, and pay you. That's it.</p>
+        </td>
+      </tr>
+    </table>
+
+    <!-- SERVICES -->
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:28px 32px;margin-bottom:28px;">
+      <h2 style="margin:0 0 6px;font-size:17px;color:#0f172a;font-weight:800;">🛠 Services We Offer — Tick What You Can Do</h2>
+      <p style="margin:0 0 20px;font-size:13px;color:#64748b;">Select the services you are able to perform. You may select multiple.</p>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td width="50%" style="padding-bottom:12px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Data Entry &amp; Capture</td></tr>
+            </table>
+          </td>
+          <td width="50%" style="padding-bottom:12px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Transcription</td></tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-bottom:12px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Translation Services</td></tr>
+            </table>
+          </td>
+          <td style="padding-bottom:12px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Virtual Assistant</td></tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-bottom:12px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Customer Support</td></tr>
+            </table>
+          </td>
+          <td style="padding-bottom:12px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Finance &amp; Admin Support</td></tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-bottom:12px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Content Moderation</td></tr>
+            </table>
+          </td>
+          <td style="padding-bottom:12px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Reporting &amp; Analytics</td></tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding-bottom:4px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Document Processing</td></tr>
+            </table>
+          </td>
+          <td style="padding-bottom:4px;vertical-align:top;">
+            <table cellpadding="0" cellspacing="0">
+              <tr><td style="width:24px;vertical-align:top;padding-top:1px;"><div style="width:18px;height:18px;border:2px solid #6366f1;border-radius:4px;display:inline-block;"></div></td><td style="padding-left:10px;font-size:14px;color:#1e293b;font-weight:600;">Social Media Management</td></tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:16px 0 0;font-size:12px;color:#94a3b8;font-style:italic;">Click "Apply Now" below to tick your selections on our secure application form.</p>
     </div>
-    <p style="font-size:15px;color:#334155;line-height:1.7;"><strong>Available work types:</strong> Data Entry · Transcription · Translation · Virtual Assistant · Customer Support · Finance &amp; Admin · Content Moderation · Reporting</p>
-    <div style="text-align:center;margin:32px 0;">
-      <a href="${APPLICATION_URL}" style="background:#0f172a;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:6px;font-size:15px;font-weight:600;display:inline-block;">Apply Now — It's Free</a>
+
+    <!-- PENALTY NOTICE -->
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:18px 24px;margin-bottom:28px;">
+      <p style="margin:0;font-size:13px;color:#92400e;line-height:1.7;">
+        <strong>⚠️ Important — Please Read:</strong> By enrolling as a CTS BPO subcontractor you agree that reliability is non-negotiable. Accepting a contract and failing to deliver on time will result in <strong>financial penalties</strong> deducted from future earnings. Repeated non-delivery results in suspension. We maintain this standard to protect the quality our clients depend on — and to ensure every active partner gets paid every time.
+      </p>
     </div>
-    <p style="font-size:13px;color:#64748b;">If you have any questions, reply to this email and our team will assist you promptly.</p>
-    <p style="font-size:15px;color:#334155;">Warm regards,<br><strong>Calvin &amp; The CTS BPO Team</strong></p>
+
+    <!-- CTA -->
+    <div style="text-align:center;margin:32px 0 8px;">
+      <a href="${APPLICATION_URL}" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#ffffff;text-decoration:none;padding:18px 48px;border-radius:10px;font-size:16px;font-weight:800;letter-spacing:0.3px;box-shadow:0 4px 20px rgba(99,102,241,0.35);">
+        ✅ Complete My Application Now
+      </a>
+    </div>
+    <p style="text-align:center;margin:14px 0 32px;font-size:13px;color:#94a3b8;">Takes less than 3 minutes &nbsp;·&nbsp; No obligation until payment</p>
+
+    <p style="font-size:14px;color:#334155;line-height:1.7;">We look forward to welcoming you to the CTS BPO family.<br>If you have any questions before applying, simply reply to this email.</p>
+    <p style="font-size:15px;color:#0f172a;font-weight:700;margin-top:20px;">Warm regards,<br>Calvin<br><span style="font-size:13px;color:#64748b;font-weight:400;">Founder &amp; Director, CTS BPO Solutions</span></p>
   </td></tr>
-  <tr><td style="background:#0f172a;padding:20px 40px;text-align:center;">
-    <p style="color:#94a3b8;font-size:12px;margin:0;">CTS BPO Solutions &nbsp;|&nbsp; cts.bposolutions@gmail.com</p>
-    <p style="color:#64748b;font-size:11px;margin:6px 0 0;">You received this because you expressed interest in work-from-home opportunities. To unsubscribe reply STOP.</p>
+
+  <!-- FOOTER -->
+  <tr><td style="background:#0f172a;padding:28px 48px;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="vertical-align:middle;">
+          <img src="${LOGO_B64}" alt="CTS BPO" style="height:40px;width:auto;">
+        </td>
+        <td style="text-align:right;vertical-align:middle;">
+          <p style="color:#94a3b8;font-size:12px;margin:0;">cts.bposolutions@gmail.com</p>
+          <p style="color:#64748b;font-size:11px;margin:4px 0 0;">© ${new Date().getFullYear()} CTS BPO Solutions. All rights reserved.</p>
+        </td>
+      </tr>
+    </table>
+    <div style="border-top:1px solid #1e293b;margin:16px 0;"></div>
+    <p style="color:#475569;font-size:11px;margin:0;text-align:center;line-height:1.6;">You received this email because you indicated interest in work-from-home opportunities. To unsubscribe, reply with the word STOP.</p>
   </td></tr>
-</table></body></html>`;
+
+</table>
+</td></tr>
+</table>
+</body></html>`;
 
   const t = getTransporter();
   if (t) {

@@ -310,10 +310,10 @@ export default function SubcontractorHub({ token }) {
                     </div>
 
                     <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 12 }}>
-                      <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>Desired:</span> <strong style={{ color: '#0f172a' }}>{ZAR(de)}/mo</strong></div>
-                      <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>Platform fee:</span> <strong style={{ color: '#ef4444' }}>{ZAR(a.platform_fee)}</strong></div>
-                      <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>Job value allocated:</span> <strong style={{ color: '#0ea5e9' }}>{ZAR(a.job_value)}</strong></div>
-                      <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>Our margin:</span> <strong style={{ color: '#10b981' }}>{ZAR(a.our_margin)}</strong></div>
+                      <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>Enrolment fee (they pay):</span> <strong style={{ color: '#0f172a' }}>{ZAR(de)}</strong></div>
+                      <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>Contracts allocated (2×):</span> <strong style={{ color: '#0ea5e9' }}>{ZAR(a.job_value)}</strong></div>
+                      <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>Sub earns back:</span> <strong style={{ color: '#10b981' }}>{ZAR(a.job_value)}</strong></div>
+                      <div style={{ fontSize: 13 }}><span style={{ color: '#94a3b8' }}>Our margin:</span> <strong style={{ color: '#6366f1' }}>{ZAR(a.our_margin)}</strong></div>
                     </div>
 
                     {a.services?.length > 0 && (

@@ -13,6 +13,7 @@ import Payments from './components/Payments';
 import JobSearch from './components/JobSearch';
 import AIServices from './components/AIServices';
 import SubcontractorHub from './components/SubcontractorHub';
+import ApplyPage from './components/ApplyPage';
 import CTSLogo from './components/CTSLogo';
 import './App.css';
 
@@ -61,6 +62,7 @@ function App() {
       <Router>
         <div className="app">
           <Routes>
+            <Route path="/apply" element={<ApplyPage />} />
             <Route path="*" element={<LoginPage onLogin={handleLogin} />} />
           </Routes>
         </div>

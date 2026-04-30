@@ -627,9 +627,9 @@ app.post('/api/subcontractors/applications', async (req, res) => {
       return res.status(400).json({ error: 'name, email and desired_earnings are required' });
     }
     const de = parseFloat(desired_earnings) || 0;
-    const pf = Math.round(de * 0.5 * 100) / 100;
-    const jv = Math.round(de * 1.5 * 100) / 100;
-    const om = Math.round(de * 0.5 * 100) / 100;
+    const pf = Math.round(de * 100) / 100;       // platform_fee = enrolment fee paid by sub
+    const jv = Math.round(de * 2 * 100) / 100;  // job_value = 2× enrolment (what sub earns back)
+    const om = Math.round(de * 100) / 100;       // our_margin = the enrolment fee
 
     if (db.isConnected()) {
       const r = await db.query(`
