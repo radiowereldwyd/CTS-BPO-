@@ -28,56 +28,58 @@ const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 //   • Social Media         → Google Gemini AI
 //   • General BPO          → Google Gemini AI
 // ─────────────────────────────────────────────────────────────────────────────
+// ── NOTE ON SEARCH STRATEGY ───────────────────────────────────────────────────
+// These queries target companies that NEED to hire BPO services, NOT companies
+// that provide them. Key signals: "hiring", "need a company to", "looking to outsource",
+// industry sectors that typically outsource (law, healthcare, e-commerce, logistics).
+// We also exclude known BPO/outsourcing provider domains to avoid competitor results.
+const BPO_EXCLUDE = '-site:linkedin.com -site:indeed.com -site:glassdoor.com -site:upwork.com -site:fiverr.com -site:clutch.co -site:goodfirms.co';
+
 const BPO_QUERIES = [
-  // ── Translation ───────────────────────────────────────────────────────────
-  { query: '"translation services" "outsource" "quote" OR "provider" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'translation' },
-  { query: '"document translation" "outsourcing" "company" OR "service" -site:linkedin.com -site:indeed.com', type: 'translation' },
-  { query: '"certified translation" "outsource" "get a quote" -site:linkedin.com -site:indeed.com', type: 'translation' },
-  { query: '"multilingual translation" "outsourcing company" "contact us" -site:linkedin.com -site:indeed.com', type: 'translation' },
+  // ── Data Entry — companies that need it done, not providers ───────────────
+  { query: `"we need" OR "looking to outsource" "data entry" "contact" ${BPO_EXCLUDE}`, type: 'data-entry' },
+  { query: `"hire" "data entry" "remote team" OR "outsourced" "company" ${BPO_EXCLUDE}`, type: 'data-entry' },
+  { query: `"e-commerce" OR "retail" "data entry" "product listing" "outsource" "partner" ${BPO_EXCLUDE}`, type: 'data-entry' },
+  { query: `"law firm" OR "legal" "data entry" "outsource" "paralegal" OR "records" ${BPO_EXCLUDE}`, type: 'data-entry' },
+  { query: `"medical practice" OR "clinic" "data entry" "patient records" "outsource" ${BPO_EXCLUDE}`, type: 'data-entry' },
 
-  // ── Transcription ─────────────────────────────────────────────────────────
-  { query: '"transcription service" "outsource" "business" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'transcription' },
-  { query: '"audio transcription" "outsourcing" "quote" OR "provider" -site:linkedin.com -site:indeed.com', type: 'transcription' },
-  { query: '"video transcription" "outsource" "company" -site:linkedin.com -site:indeed.com', type: 'transcription' },
-  { query: '"legal transcription" OR "medical transcription" "outsource" "service" -site:linkedin.com -site:indeed.com', type: 'transcription' },
+  // ── Transcription — companies needing content transcribed ─────────────────
+  { query: `"podcast" OR "webinar" "transcription" "outsource" "affordable" OR "need" ${BPO_EXCLUDE}`, type: 'transcription' },
+  { query: `"law firm" OR "court reporter" "transcription" "outsource" "reliable" ${BPO_EXCLUDE}`, type: 'transcription' },
+  { query: `"insurance" OR "healthcare" "medical transcription" "partner" OR "outsource" ${BPO_EXCLUDE}`, type: 'transcription' },
+  { query: `"market research" "interview transcription" "outsource" OR "hire" ${BPO_EXCLUDE}`, type: 'transcription' },
 
-  // ── Document AI / Data Entry / Extraction / Digitisation ─────────────────
-  { query: '"document data extraction" "outsource" "company" OR "service" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'document-ai' },
-  { query: '"document processing" "outsourcing" "quote" OR "contact" -site:linkedin.com -site:indeed.com', type: 'document-ai' },
-  { query: '"invoice processing" "outsource" "service provider" -site:linkedin.com -site:indeed.com', type: 'invoice-processing' },
-  { query: '"OCR" "document extraction" "outsourcing company" "contact us" -site:linkedin.com -site:indeed.com', type: 'document-ai' },
-  { query: '"document digitization" "outsource" "service" -site:linkedin.com -site:indeed.com', type: 'document-digitization' },
+  // ── Translation — businesses needing content translated ───────────────────
+  { query: `"we need" "translation" "documents" "outsource" "partner" ${BPO_EXCLUDE}`, type: 'translation' },
+  { query: `"e-commerce" "product description" "translation" "outsource" "languages" ${BPO_EXCLUDE}`, type: 'translation' },
+  { query: `"global expansion" "translate" "website" OR "content" "outsourced team" ${BPO_EXCLUDE}`, type: 'translation' },
 
-  // ── Data Entry & Capture ──────────────────────────────────────────────────
-  { query: '"looking for" "data entry" "outsource" OR "service provider" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'data-entry' },
-  { query: '"need" "data capture" "company" OR "service" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
-  { query: '"BPO" "outsourcing" "data entry" "available" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
-  { query: 'data entry outsourcing company "contact us" OR "get a quote" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'data-entry' },
+  // ── Virtual Assistant — SMEs that want admin support ──────────────────────
+  { query: `"small business" "virtual assistant" "hire" "remote" "admin tasks" ${BPO_EXCLUDE}`, type: 'virtual-assistant' },
+  { query: `"startup" "virtual admin support" OR "executive assistant" "outsource" ${BPO_EXCLUDE}`, type: 'virtual-assistant' },
+  { query: `"real estate" "virtual assistant" "outsource" "property" OR "listings" ${BPO_EXCLUDE}`, type: 'virtual-assistant' },
 
-  // ── Content Moderation ────────────────────────────────────────────────────
-  { query: '"content moderation" "outsource" "company" -site:linkedin.com -site:indeed.com', type: 'content-moderation' },
-  { query: '"content review" "outsourcing" "service" -site:linkedin.com -site:indeed.com', type: 'content-moderation' },
+  // ── Finance / Bookkeeping — SMEs that need financial admin ────────────────
+  { query: `"small business" "bookkeeping" "outsource" "accounting" "affordable" ${BPO_EXCLUDE}`, type: 'finance-admin' },
+  { query: `"payroll" "outsource" "SME" OR "startup" "payroll processing" ${BPO_EXCLUDE}`, type: 'finance-admin' },
+  { query: `"accounts receivable" OR "accounts payable" "outsource" "team" "partner" ${BPO_EXCLUDE}`, type: 'finance-admin' },
 
-  // ── Virtual Administration ────────────────────────────────────────────────
-  { query: '"virtual assistant" "outsourcing company" "services" -site:linkedin.com -site:indeed.com', type: 'virtual-assistant' },
-  { query: '"virtual admin" "outsource" "company" "contact" -site:linkedin.com -site:indeed.com', type: 'virtual-assistant' },
+  // ── Customer Support — businesses that want outsourced support ────────────
+  { query: `"we outsource" OR "looking for" "customer support" "BPO" "partner" ${BPO_EXCLUDE}`, type: 'customer-support' },
+  { query: `"e-commerce" "customer service" "outsource" "team" "24/7" OR "after hours" ${BPO_EXCLUDE}`, type: 'customer-support' },
+  { query: `"SaaS" OR "software company" "customer support" "outsource" "scale" ${BPO_EXCLUDE}`, type: 'customer-support' },
 
-  // ── Finance / Invoice / Accounting ────────────────────────────────────────
-  { query: '"accounts payable" "outsource" "service provider" -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
-  { query: '"payroll processing" "outsource" "small business" -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
-  { query: '"bookkeeping" "outsource" "company" "contact us" -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
+  // ── Document Processing — industries that generate heavy paperwork ─────────
+  { query: `"insurance" OR "healthcare" "document processing" "outsource" "digitise" OR "scan" ${BPO_EXCLUDE}`, type: 'document-processing' },
+  { query: `"logistics" OR "freight" "invoice processing" "outsource" "partner" ${BPO_EXCLUDE}`, type: 'invoice-processing' },
+  { query: `"accounts payable" "invoice" "outsource" "processing" "company" ${BPO_EXCLUDE}`, type: 'invoice-processing' },
 
-  // ── Customer Support ──────────────────────────────────────────────────────
-  { query: '"customer service" "outsourcing" "BPO" "company" "contact" -site:linkedin.com -site:indeed.com', type: 'customer-support' },
-  { query: '"customer support" "outsource" "contact us" OR "get a quote" -site:linkedin.com -site:indeed.com', type: 'customer-support' },
+  // ── Content Moderation — platforms that need content reviewed ─────────────
+  { query: `"marketplace" OR "platform" "content moderation" "outsource" "team" ${BPO_EXCLUDE}`, type: 'content-moderation' },
 
-  // ── Social Media / Content ────────────────────────────────────────────────
-  { query: '"social media management" "outsource" "agency" -site:linkedin.com -site:indeed.com', type: 'social-media' },
-  { query: '"content creation" "outsource" "company" "get a quote" -site:linkedin.com -site:indeed.com', type: 'social-media' },
-
-  // ── General BPO ───────────────────────────────────────────────────────────
-  { query: 'BPO services "contact us" "get a quote" outsourcing -site:linkedin.com -site:indeed.com', type: 'general' },
-  { query: '"business process outsourcing" "South Africa" "contact us" -site:linkedin.com', type: 'general' },
+  // ── South African / African market opportunities ───────────────────────────
+  { query: `"South Africa" "BPO" "outsource" "contact centre" "partner" "quote" -site:linkedin.com`, type: 'general' },
+  { query: `"Johannesburg" OR "Cape Town" "outsource" "admin" OR "data entry" "company" -site:linkedin.com`, type: 'data-entry' },
 ];
 
 // Ensure job_leads table exists

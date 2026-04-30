@@ -44,7 +44,7 @@ function AdminShell({ user, token, onLogout }) {
           <NavLink to="/failed-contracts">Failed Contracts</NavLink>
           <NavLink to="/email-templates">Email Templates</NavLink>
           <NavLink to="/payments">Payments</NavLink>
-          <NavLink to="/job-search">🌐 Job Search</NavLink>
+          <NavLink to="/job-search">🌐 Client Prospector</NavLink>
           <NavLink to="/ai-services">🤖 AI Services</NavLink>
           <NavLink to="/subcontractors">🤝 Subcontractors</NavLink>
           <NavLink to="/ai-agent">🧠 AI Agent</NavLink>

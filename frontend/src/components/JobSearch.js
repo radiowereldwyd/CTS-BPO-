@@ -131,8 +131,8 @@ export default function JobSearch() {
   return (
     <div className="jobsearch-container">
       <div className="jobsearch-header">
-        <h1>🌐 AI Job Search Engine</h1>
-        <p>AI scans the web worldwide for BPO opportunities — data entry, translation, transcription, admin &amp; more</p>
+        <h1>🌐 AI Client Prospector</h1>
+        <p>Scans the web for businesses that <strong>need to hire</strong> BPO services — law firms, clinics, e-commerce companies, startups &amp; more. Click <strong>Apply</strong> to send them a CTS BPO pitch email.</p>
       </div>
 
       {/* Stats */}
@@ -173,7 +173,7 @@ export default function JobSearch() {
       {/* Controls */}
       <div className="js-controls">
         <button className="btn-scan" onClick={handleScan} disabled={scanning || loading}>
-          {scanning ? '⏳ Scanning worldwide...' : '🔍 Scan for BPO Jobs'}
+          {scanning ? '⏳ Scanning worldwide...' : '🔍 Scan for Clients'}
         </button>
         <select className="js-filter" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
           <option value="">All statuses</option>
