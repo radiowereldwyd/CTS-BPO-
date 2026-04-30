@@ -1,138 +1,144 @@
 /**
- * Gmail API — Inbox Reader
- * Reads incoming replies to CTS BPO outreach emails.
- * Auto-updates lead status based on reply content (using NLP analysis).
- * Requires: GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN
+ * Gmail Inbox Reader — IMAP with App Password
+ * Reads incoming replies to CTS BPO outreach emails using Gmail IMAP.
+ * Uses the existing GMAIL_USER + GMAIL_APP_PASSWORD — no OAuth required.
+ * Auto-updates lead status based on NLP analysis of each reply.
  */
-const axios = require('axios');
-const nlp   = require('./google-nlp');
-const jobSearch = require('./job-search');
+const { ImapFlow } = require('imapflow');
+const nlp = require('./google-nlp');
 const auditLogger = require('./audit-logger');
 
-const CLIENT_ID     = process.env.GMAIL_CLIENT_ID     || '';
-const CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
-const REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN || '';
+const GMAIL_USER     = process.env.GMAIL_USER         || '';
+const GMAIL_PASSWORD = process.env.GMAIL_APP_PASSWORD  || '';
 
-function isConfigured() { return !!(CLIENT_ID && CLIENT_SECRET && REFRESH_TOKEN); }
+function isConfigured() { return !!(GMAIL_USER && GMAIL_PASSWORD); }
 
 /**
- * Get a fresh OAuth2 access token using the refresh token.
+ * Create an authenticated IMAP client.
  */
-async function getAccessToken() {
-  const res = await axios.post('https://oauth2.googleapis.com/token', {
-    client_id:     CLIENT_ID,
-    client_secret: CLIENT_SECRET,
-    refresh_token: REFRESH_TOKEN,
-    grant_type:    'refresh_token',
-  }, { timeout: 10000 });
-  return res.data.access_token;
+function createClient() {
+  return new ImapFlow({
+    host: 'imap.gmail.com',
+    port: 993,
+    secure: true,
+    auth: { user: GMAIL_USER, pass: GMAIL_PASSWORD },
+    logger: false,
+  });
 }
 
 /**
- * List unread emails in the CTS BPO inbox (label: INBOX, unread).
+ * List unread emails in the inbox.
  * @param {number} maxResults
+ * @returns {{ emails: Array, total: number }}
  */
 async function listUnreadEmails(maxResults = 20) {
-  if (!isConfigured()) return { simulated: true, emails: [], message: 'Gmail OAuth not configured.' };
-
-  const token   = await getAccessToken();
-  const headers = { Authorization: `Bearer ${token}` };
-  const base    = 'https://gmail.googleapis.com/gmail/v1/users/me';
-
-  // List unread messages
-  const listRes = await axios.get(`${base}/messages`, {
-    headers, params: { q: 'is:unread in:inbox', maxResults }, timeout: 10000
-  });
-
-  const messages = listRes.data.messages || [];
-  const emails = [];
-
-  for (const msg of messages.slice(0, 10)) {
-    const detail = await axios.get(`${base}/messages/${msg.id}`, {
-      headers, params: { format: 'full' }, timeout: 10000
-    });
-    const payload = detail.data.payload;
-    const headers2 = payload.headers || [];
-    const get = (name) => headers2.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || '';
-
-    const from    = get('From');
-    const subject = get('Subject');
-    const date    = get('Date');
-
-    // Extract body
-    let body = '';
-    if (payload.body?.data) {
-      body = Buffer.from(payload.body.data, 'base64').toString('utf-8');
-    } else if (payload.parts) {
-      const textPart = payload.parts.find(p => p.mimeType === 'text/plain');
-      if (textPart?.body?.data) body = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
-    }
-
-    emails.push({ id: msg.id, from, subject, date, body: body.slice(0, 2000), threadId: detail.data.threadId });
+  if (!isConfigured()) {
+    return { simulated: true, emails: [], message: 'GMAIL_USER or GMAIL_APP_PASSWORD not set.' };
   }
 
-  return { emails, total: messages.length };
+  const client = createClient();
+  const emails = [];
+
+  try {
+    await client.connect();
+    await client.mailboxOpen('INBOX');
+
+    // Search for unseen messages
+    const uids = await client.search({ seen: false }, { uid: true });
+    const recentUids = uids.slice(-maxResults);
+
+    if (recentUids.length === 0) {
+      await client.logout();
+      return { emails: [], total: 0 };
+    }
+
+    for await (const msg of client.fetch(recentUids, {
+      envelope: true, bodyStructure: true, source: true
+    }, { uid: true })) {
+      try {
+        const source = msg.source?.toString('utf-8') || '';
+
+        // Extract plain text body
+        let body = '';
+        const bodyMatch = source.match(/\r\n\r\n([\s\S]*)/);
+        if (bodyMatch) body = bodyMatch[1].replace(/=\r\n/g, '').slice(0, 2000);
+
+        emails.push({
+          id:      msg.uid,
+          from:    msg.envelope?.from?.[0]?.address || '',
+          name:    msg.envelope?.from?.[0]?.name    || '',
+          subject: msg.envelope?.subject            || '',
+          date:    msg.envelope?.date?.toISOString() || '',
+          body:    body.trim(),
+        });
+      } catch (msgErr) {
+        console.error('Error reading message:', msgErr.message);
+      }
+    }
+
+    await client.logout();
+    return { emails, total: uids.length };
+  } catch (err) {
+    try { await client.logout(); } catch {}
+    throw err;
+  }
 }
 
 /**
- * Analyse all unread replies and auto-update lead statuses.
- * - Runs NLP on each reply to determine intent
- * - Updates matching lead status in DB
- * - Returns a report of all updates
+ * Analyse all unread replies with NLP and return a status update report.
+ * Each email is analysed for sentiment and intent.
  */
 async function processInboxReplies() {
   if (!isConfigured()) return { simulated: true, processed: 0, updates: [] };
 
-  const { emails } = await listUnreadEmails(20);
+  const { emails, total } = await listUnreadEmails(20);
   const updates = [];
+
+  const intentColor = { interested: 'responded', 'needs-info': 'responded', rejected: 'rejected', 'out-of-office': 'contacted' };
 
   for (const email of emails) {
     if (!email.body) continue;
     try {
       const analysis = await nlp.analyseEmailReply(email.body);
-      const intent   = analysis.sentiment.intent;
-
-      // Map intent to lead status
-      const statusMap = {
-        'interested':  'responded',
-        'needs-info':  'responded',
-        'rejected':    'rejected',
-        'out-of-office': 'contacted',
-      };
-      const newStatus = statusMap[intent];
-
-      // Try to match to a lead by sender email domain
-      const senderEmail = email.from.match(/<(.+)>/)?.[1] || email.from;
+      const intent   = analysis.sentiment?.intent || 'unknown';
+      const newStatus = intentColor[intent] || 'responded';
 
       updates.push({
-        email:    senderEmail,
-        subject:  email.subject,
+        email:     email.from,
+        name:      email.name,
+        subject:   email.subject,
         intent,
-        sentiment: analysis.sentiment.label,
-        score:    analysis.sentiment.score,
-        newStatus: newStatus || 'responded',
-        date:     email.date,
+        sentiment: analysis.sentiment?.label,
+        score:     analysis.sentiment?.score,
+        newStatus,
+        date:      email.date,
       });
 
       await auditLogger.log('gmail.reply', 'job_lead', null,
-        `Reply from ${senderEmail}: intent=${intent}, status→${newStatus}`, null, 'info');
+        `Reply from ${email.from}: intent=${intent} → status=${newStatus}`, null, 'info');
     } catch (err) {
-      console.error('Error processing reply:', err.message);
+      console.error('NLP error on reply:', err.message);
     }
   }
 
-  return { processed: emails.length, updates };
+  return { processed: emails.length, total, updates };
 }
 
 /**
- * Mark a message as read.
+ * Mark a message as read by UID.
  */
-async function markAsRead(messageId) {
+async function markAsRead(uid) {
   if (!isConfigured()) return;
-  const token = await getAccessToken();
-  await axios.post(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
-    removeLabelIds: ['UNREAD'],
-  }, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 });
+  const client = createClient();
+  try {
+    await client.connect();
+    await client.mailboxOpen('INBOX');
+    await client.messageFlagsAdd({ uid }, ['\\Seen'], { uid: true });
+    await client.logout();
+  } catch (err) {
+    try { await client.logout(); } catch {}
+    throw err;
+  }
 }
 
 module.exports = { listUnreadEmails, processInboxReplies, markAsRead, isConfigured };
