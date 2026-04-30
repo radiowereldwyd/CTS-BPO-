@@ -11,14 +11,22 @@ const auditLogger = require('./audit-logger');
 const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ACTIVE SERVICE TYPES — only search for jobs CTS BPO can currently fulfil:
-//   • Translation    (Google Cloud Translation API)
-//   • Transcription  (Google Speech-to-Text / audio/video → text)
-//   • Document AI    (Google Document AI — extraction, parsing, OCR)
+// ALL ACTIVE SERVICE TYPES — AI handles every category below autonomously:
 //
-// DO NOT add queries for: data entry, virtual assistance, finance admin,
-// content moderation, or customer support until subcontractors capable of
-// performing those services are enrolled and active.
+//  FULLY AUTOMATED (100% AI):
+//   • Translation          → Google Cloud Translation API
+//   • Transcription        → Google Cloud Speech-to-Text
+//   • Document AI          → Google Document AI (OCR, extraction)
+//   • Data Entry           → Google Document AI (form/table digitisation)
+//   • Invoice Processing   → Google Document AI (invoice entity extraction)
+//   • Content Moderation   → Google Cloud Vision Safe Search + Gemini
+//
+//  PARTIALLY AUTOMATED (AI produces professional draft):
+//   • Virtual Admin        → Google Gemini AI
+//   • Finance / Accounting → Document AI + Gemini analysis
+//   • Customer Support     → Google Gemini AI
+//   • Social Media         → Google Gemini AI
+//   • General BPO          → Google Gemini AI
 // ─────────────────────────────────────────────────────────────────────────────
 const BPO_QUERIES = [
   // ── Translation ───────────────────────────────────────────────────────────
@@ -33,11 +41,43 @@ const BPO_QUERIES = [
   { query: '"video transcription" "outsource" "company" -site:linkedin.com -site:indeed.com', type: 'transcription' },
   { query: '"legal transcription" OR "medical transcription" "outsource" "service" -site:linkedin.com -site:indeed.com', type: 'transcription' },
 
-  // ── Document AI / Extraction ──────────────────────────────────────────────
+  // ── Document AI / Data Entry / Extraction / Digitisation ─────────────────
   { query: '"document data extraction" "outsource" "company" OR "service" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'document-ai' },
   { query: '"document processing" "outsourcing" "quote" OR "contact" -site:linkedin.com -site:indeed.com', type: 'document-ai' },
-  { query: '"invoice processing" "outsource" "service provider" -site:linkedin.com -site:indeed.com', type: 'document-ai' },
+  { query: '"invoice processing" "outsource" "service provider" -site:linkedin.com -site:indeed.com', type: 'invoice-processing' },
   { query: '"OCR" "document extraction" "outsourcing company" "contact us" -site:linkedin.com -site:indeed.com', type: 'document-ai' },
+  { query: '"document digitization" "outsource" "service" -site:linkedin.com -site:indeed.com', type: 'document-digitization' },
+
+  // ── Data Entry & Capture ──────────────────────────────────────────────────
+  { query: '"looking for" "data entry" "outsource" OR "service provider" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'data-entry' },
+  { query: '"need" "data capture" "company" OR "service" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
+  { query: '"BPO" "outsourcing" "data entry" "available" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
+  { query: 'data entry outsourcing company "contact us" OR "get a quote" -site:linkedin.com -site:indeed.com -site:glassdoor.com', type: 'data-entry' },
+
+  // ── Content Moderation ────────────────────────────────────────────────────
+  { query: '"content moderation" "outsource" "company" -site:linkedin.com -site:indeed.com', type: 'content-moderation' },
+  { query: '"content review" "outsourcing" "service" -site:linkedin.com -site:indeed.com', type: 'content-moderation' },
+
+  // ── Virtual Administration ────────────────────────────────────────────────
+  { query: '"virtual assistant" "outsourcing company" "services" -site:linkedin.com -site:indeed.com', type: 'virtual-assistant' },
+  { query: '"virtual admin" "outsource" "company" "contact" -site:linkedin.com -site:indeed.com', type: 'virtual-assistant' },
+
+  // ── Finance / Invoice / Accounting ────────────────────────────────────────
+  { query: '"accounts payable" "outsource" "service provider" -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
+  { query: '"payroll processing" "outsource" "small business" -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
+  { query: '"bookkeeping" "outsource" "company" "contact us" -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
+
+  // ── Customer Support ──────────────────────────────────────────────────────
+  { query: '"customer service" "outsourcing" "BPO" "company" "contact" -site:linkedin.com -site:indeed.com', type: 'customer-support' },
+  { query: '"customer support" "outsource" "contact us" OR "get a quote" -site:linkedin.com -site:indeed.com', type: 'customer-support' },
+
+  // ── Social Media / Content ────────────────────────────────────────────────
+  { query: '"social media management" "outsource" "agency" -site:linkedin.com -site:indeed.com', type: 'social-media' },
+  { query: '"content creation" "outsource" "company" "get a quote" -site:linkedin.com -site:indeed.com', type: 'social-media' },
+
+  // ── General BPO ───────────────────────────────────────────────────────────
+  { query: 'BPO services "contact us" "get a quote" outsourcing -site:linkedin.com -site:indeed.com', type: 'general' },
+  { query: '"business process outsourcing" "South Africa" "contact us" -site:linkedin.com', type: 'general' },
 ];
 
 // Ensure job_leads table exists

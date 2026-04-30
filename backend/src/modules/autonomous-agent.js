@@ -11,12 +11,17 @@
 
 const cron       = require('node-cron');
 const axios      = require('axios');
+const fs         = require('fs');
+const path       = require('path');
+const { v4: uuidv4 } = require('uuid');
 const db         = require('../db');
 const auditLogger = require('./audit-logger');
 const emailOutreach = require('./email-outreach');
+const aiProcessor   = require('./ai-job-processor');
 
 const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 const APP_URL     = process.env.APP_URL || 'https://your-app.replit.app';
+const AI_WORKER_ID = 0; // sentinel: sub_id=0 means the AI Worker
 
 // ── BPO lead search queries ────────────────────────────────────────────────
 const LEAD_QUERIES = [
@@ -298,47 +303,58 @@ async function processApplications() {
   agentState.lastAppCheck = new Date().toISOString();
 }
 
-// ── 5. Auto-assign Outstanding Contracts ─────────────────────────────────
+// ── 5. Auto-assign Outstanding Contracts (AI-first, then human) ───────────
 async function assignContracts() {
-  let jobsTable = null;
-  try {
-    await db.query(`SELECT 1 FROM subcontractor_jobs LIMIT 1`);
-    jobsTable = 'subcontractor_jobs';
-  } catch { return; }
+  try { await db.query(`SELECT 1 FROM subcontractor_jobs LIMIT 1`); }
+  catch { return; }
 
-  // Find unassigned outstanding jobs
   const jobs = await db.query(`
-    SELECT j.id, j.title, j.service_type, j.job_value, j.due_date, j.subcontractor_id,
-           j.description
+    SELECT j.id, j.title, j.service_type, j.job_value, j.due_date, j.description, j.sub_payout
     FROM subcontractor_jobs j
     WHERE j.status = 'outstanding'
       AND (j.notes IS NULL OR j.notes NOT LIKE '%assigned%')
-    LIMIT 5
+    LIMIT 10
   `);
 
   for (const job of jobs.rows) {
     try {
-      // Find best available approved AND PAID subcontractor for this service type
-      // IMPORTANT: payment_confirmed must be TRUE — no payment, no contract
+      const jobType = (job.service_type || '').toLowerCase();
+
+      // ── Try AI first ────────────────────────────────────────────────────
+      if (aiProcessor.canHandle(jobType)) {
+        // Mark as assigned to AI Worker (sub_id = 0) and status 'assigned'
+        await db.query(
+          `UPDATE subcontractor_jobs
+           SET sub_id=$1, status='assigned',
+               notes = COALESCE(notes,'') || ' | assigned to AI Worker ' || NOW(),
+               updated_at = NOW()
+           WHERE id=$2`,
+          [AI_WORKER_ID, job.id]
+        );
+        agentState.totalContractsAssigned++;
+        await logActivity(
+          'contract_assigned',
+          `Job #${job.id} "${job.title}" [${jobType}] → AI Worker (auto-processing)`,
+          'job', job.id, 'success', { jobType, aiCapable: true }
+        );
+        continue; // AI will process in the next processAIJobs() cycle
+      }
+
+      // ── Fall back to human subcontractor ────────────────────────────────
       let sub = null;
       if (job.service_type) {
         const subRes = await db.query(`
           SELECT id, name, email FROM subcontractor_applications
-          WHERE status = 'approved'
-            AND payment_confirmed = TRUE
+          WHERE status = 'approved' AND payment_confirmed = TRUE
             AND services::text ILIKE $1
-          ORDER BY payment_confirmed_at DESC
-          LIMIT 1
+          ORDER BY payment_confirmed_at DESC LIMIT 1
         `, [`%${job.service_type}%`]);
         sub = subRes.rows[0] || null;
       }
-
       if (!sub) {
-        // Fallback: any approved + paid sub
         const fallback = await db.query(`
           SELECT id, name, email FROM subcontractor_applications
-          WHERE status = 'approved'
-            AND payment_confirmed = TRUE
+          WHERE status = 'approved' AND payment_confirmed = TRUE
           ORDER BY payment_confirmed_at DESC LIMIT 1
         `);
         sub = fallback.rows[0] || null;
@@ -350,11 +366,18 @@ async function assignContracts() {
           jobTitle: job.title, jobValue: job.job_value,
           dueDate: job.due_date, jobId: job.id, description: job.description,
         });
-        await db.query(`UPDATE subcontractor_jobs SET notes = COALESCE(notes,'') || ' | assigned to ' || $1 || ' ' || NOW() WHERE id=$2`, [sub.email, job.id]);
+        await db.query(
+          `UPDATE subcontractor_jobs
+           SET sub_id=$1, status='assigned',
+               notes = COALESCE(notes,'') || ' | assigned to ' || $2 || ' ' || NOW(),
+               updated_at = NOW()
+           WHERE id=$3`,
+          [sub.id, sub.email, job.id]
+        );
         agentState.totalContractsAssigned++;
-        await logActivity('contract_assigned', `Job #${job.id} "${job.title}" → ${sub.full_name} (${sub.email})`, 'job', job.id, 'success', { jobValue: job.job_value });
+        await logActivity('contract_assigned', `Job #${job.id} "${job.title}" → ${sub.name} (${sub.email})`, 'job', job.id, 'success', { jobValue: job.job_value });
       } else {
-        await logActivity('contract_assigned', `No available subcontractor for job #${job.id} "${job.title}"`, 'job', job.id, 'skipped');
+        await logActivity('contract_assigned', `No human sub available for job #${job.id} "${job.title}" [type=${jobType}] — will retry`, 'job', job.id, 'skipped');
       }
     } catch (e) {
       await logActivity('contract_assigned', `Failed to assign job #${job.id}: ${e.message}`, 'job', job.id, 'error');
@@ -362,6 +385,137 @@ async function assignContracts() {
   }
 
   agentState.lastContractAssign = new Date().toISOString();
+}
+
+// ── 6. Process AI Worker Jobs ─────────────────────────────────────────────
+async function processAIJobs() {
+  try { await db.query(`SELECT 1 FROM subcontractor_jobs LIMIT 1`); }
+  catch { return; }
+
+  // Find jobs assigned to the AI Worker that haven't been submitted yet
+  const jobs = await db.query(`
+    SELECT j.id, j.title, j.service_type, j.description, j.sub_payout,
+           j.contract_id, j.due_date
+    FROM subcontractor_jobs j
+    WHERE j.sub_id = $1
+      AND j.status = 'assigned'
+    LIMIT 5
+  `, [AI_WORKER_ID]);
+
+  if (jobs.rows.length === 0) return;
+
+  // Ensure uploads dir
+  const uploadDir = path.join(__dirname, '../../uploads/submissions');
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+  // Ensure job_submissions table
+  try {
+    await db.query(`SELECT 1 FROM job_submissions LIMIT 1`);
+  } catch { return; }
+
+  for (const job of jobs.rows) {
+    try {
+      const jobType = (job.service_type || 'general').toLowerCase();
+
+      await logActivity('ai_job_start', `AI processing job #${job.id} "${job.title}" [${jobType}]`, 'job', job.id, 'success');
+
+      // Run AI processor
+      const result = await aiProcessor.processJob({
+        jobType,
+        title:       job.title,
+        description: job.description,
+        filePath:    null, // No file for autonomous jobs; client can submit files via portal later
+        fileName:    null,
+      });
+
+      // Save deliverable to a text file
+      const outFileName = `ai_${Date.now()}_${uuidv4().slice(0, 8)}_job${job.id}.txt`;
+      const outFilePath = path.join(uploadDir, outFileName);
+      const fileContent = [
+        `CTS BPO AI Deliverable`,
+        `Job #${job.id}: ${job.title}`,
+        `Service type: ${job.service_type}`,
+        `Processed by: ${result.method}`,
+        `Quality level: ${result.quality}`,
+        `Processed at: ${new Date().toISOString()}`,
+        ``,
+        `${'─'.repeat(60)}`,
+        ``,
+        result.deliverable,
+      ].join('\n');
+
+      fs.writeFileSync(outFilePath, fileContent, 'utf8');
+      const fileSizeBytes = fs.statSync(outFilePath).size;
+
+      // Create job submission record
+      const deliveryToken = uuidv4();
+      const sr = await db.query(
+        `INSERT INTO job_submissions
+           (job_id, sub_application_id, file_name, file_path, file_size,
+            ai_quality_score, ai_quality_notes, status, delivery_token)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id`,
+        [
+          job.id, null,
+          outFileName, outFilePath, fileSizeBytes,
+          result.quality === 'full' ? 90 : result.quality === 'partial' ? 70 : 50,
+          `AI Worker processed via ${result.method}. Quality: ${result.quality}.`,
+          'approved',
+          deliveryToken,
+        ]
+      );
+
+      // Mark job as delivered
+      await db.query(
+        `UPDATE subcontractor_jobs
+         SET status='delivered', submitted_at=NOW(), verified_at=NOW(), updated_at=NOW()
+         WHERE id=$1`,
+        [job.id]
+      );
+      await db.query(
+        `UPDATE job_submissions SET status='delivered', delivered_at=NOW() WHERE id=$1`,
+        [sr.rows[0].id]
+      );
+
+      // Attempt to notify the client
+      let clientEmail = null;
+      let clientName  = 'Valued Client';
+      try {
+        const cr = await db.query(
+          `SELECT al.email, al.company_name
+           FROM ai_leads al
+           JOIN contracts c ON c.client_id = al.id::text::integer
+           WHERE c.id = $1`,
+          [job.contract_id]
+        ).catch(() => ({ rows: [] }));
+        if (cr.rows[0]) {
+          clientEmail = cr.rows[0].email;
+          clientName  = cr.rows[0].company_name || clientName;
+        }
+      } catch {}
+
+      if (clientEmail) {
+        const appBase = process.env.REPLIT_DEV_DOMAIN
+          ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+          : (APP_URL || '');
+        await emailOutreach.sendClientDelivery(
+          clientEmail, clientName, job.title,
+          `${appBase}/api/sub/client-confirm/${deliveryToken}`,
+          `${appBase}/api/sub/download/${sr.rows[0].id}`
+        ).catch(() => {});
+      }
+
+      await logActivity(
+        'ai_job_complete',
+        `AI completed job #${job.id} "${job.title}" via ${result.method} [${result.quality}]${clientEmail ? ` — delivered to ${clientEmail}` : ''}`,
+        'job', job.id, 'success',
+        { method: result.method, quality: result.quality, fileSizeBytes }
+      );
+
+    } catch (e) {
+      await logActivity('ai_job_error', `AI failed job #${job.id}: ${e.message}`, 'job', job.id, 'error');
+    }
+  }
 }
 
 // ── Start the agent ────────────────────────────────────────────────────────
@@ -377,6 +531,7 @@ async function startAgent() {
   setTimeout(() => runLeadSearch().catch(console.error), 5000);
   setTimeout(() => processApplications().catch(console.error), 10000);
   setTimeout(() => assignContracts().catch(console.error), 15000);
+  setTimeout(() => processAIJobs().catch(console.error), 20000);
 
   // ── Schedules ──
   // Lead search every 2 hours
@@ -399,6 +554,11 @@ async function startAgent() {
     assignContracts().catch(e => logActivity('contract_assign', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
+  // AI job processing every 15 minutes — processes jobs assigned to AI Worker
+  cron.schedule('*/15 * * * *', () => {
+    processAIJobs().catch(e => logActivity('ai_job_process', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
   // Daily heartbeat log
   cron.schedule('0 8 * * *', () => {
     logActivity('heartbeat', `Daily check — leads: ${agentState.totalLeadsFound}, emails: ${agentState.totalEmailsSent}, apps: ${agentState.totalAppProcessed}, contracts: ${agentState.totalContractsAssigned}`);
@@ -412,10 +572,12 @@ async function triggerNow(task) {
     case 'followup':     await runFollowUpSequence(); break;
     case 'applications': await processApplications(); break;
     case 'contracts':    await assignContracts(); break;
+    case 'ai_jobs':      await processAIJobs(); break;
     case 'all':
       await runLeadSearch();
       await processApplications();
       await assignContracts();
+      await processAIJobs();
       await runFollowUpSequence();
       break;
     default: throw new Error(`Unknown task: ${task}`);
@@ -427,4 +589,4 @@ function getStatus() {
   return { ...agentState };
 }
 
-module.exports = { startAgent, triggerNow, getStatus };
+module.exports = { startAgent, triggerNow, getStatus, processAIJobs };
