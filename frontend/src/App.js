@@ -101,7 +101,7 @@ function App() {
             <Route path="/profit-projection" element={<ProfitProjection />} />
             <Route path="/deployment-guide" element={<DeploymentGuide />} />
             <Route path="/email-templates" element={<EmailTemplates />} />
-            <Route path="/payments" element={<Payments token={token} />} />
+            <Route path="/payments" element={<Payments />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

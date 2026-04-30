@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import './Payments.css';
 
-const API_BASE = '';
+// Always read the freshest token directly from storage
+function getAuthHeaders() {
+  const token = localStorage.getItem('cts_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
-function Payments({ token }) {
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
-
+function Payments() {
   const [paymentData, setPaymentData] = useState({
     clientName: '', invoiceNumber: '', amount: '', description: '', currency: 'USD',
   });
@@ -17,30 +19,30 @@ function Payments({ token }) {
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const [activeGateway, setActiveGateway] = useState('paypal');
   const [loading, setLoading] = useState(false);
+  const [ozowLink, setOzowLink] = useState(null);
   const paypalRendered = useRef(false);
 
-  // Fetch config (PayPal client ID) and payment history from backend
   useEffect(() => {
-    async function loadConfig() {
-      try {
-        const res = await axios.get(`${API_BASE}/api/payments/config`, { headers: authHeaders });
-        setPaypalClientId(res.data.clientId);
-      } catch {
-        setPaypalClientId(null);
-      }
-    }
     loadConfig();
     loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, []);
+
+  async function loadConfig() {
+    try {
+      const res = await axios.get('/api/payments/config', { headers: getAuthHeaders() });
+      setPaypalClientId(res.data.clientId);
+    } catch (err) {
+      console.error('Could not load payment config:', err.message);
+    }
+  }
 
   async function loadHistory() {
     try {
-      const res = await axios.get(`${API_BASE}/api/audit-logs?eventType=payment`, { headers: authHeaders });
+      const res = await axios.get('/api/audit-logs?eventType=payment', { headers: getAuthHeaders() });
       const rows = Array.isArray(res.data) ? res.data : [];
       const mapped = rows.slice(0, 20).map((r, i) => ({
         id: r.id || i,
-        clientName: r.description?.match(/User (.+?) logged/)?.[1] || 'CTS Client',
+        clientName: 'CTS Client',
         invoiceNumber: `INV-${String(r.id || i).padStart(3, '0')}`,
         amount: 0,
         status: r.status === 'info' ? 'completed' : 'pending',
@@ -56,14 +58,12 @@ function Payments({ token }) {
 
   // Load PayPal SDK once we have the client ID
   useEffect(() => {
-    if (!paypalClientId || window.paypal) {
-      if (window.paypal) setSdkLoaded(true);
-      return;
-    }
+    if (!paypalClientId) return;
+    if (window.paypal) { setSdkLoaded(true); return; }
     const script = document.createElement('script');
     script.src = `https://www.paypal.com/sdk/js?client-id=${paypalClientId}&currency=USD&intent=capture`;
     script.async = true;
-    script.onload = () => setSdkLoaded(true);
+    script.onload  = () => setSdkLoaded(true);
     script.onerror = () => console.error('PayPal SDK failed to load');
     document.body.appendChild(script);
   }, [paypalClientId]);
@@ -79,18 +79,24 @@ function Payments({ token }) {
 
     window.paypal.Buttons({
       createOrder: async () => {
-        const res = await axios.post(`${API_BASE}/api/payments/paypal/create-order`, {
-          amount: parseFloat(paymentData.amount).toFixed(2),
-          currency: 'USD',
-          description: paymentData.description || `Invoice ${paymentData.invoiceNumber}`,
-          invoiceId: paymentData.invoiceNumber,
-        }, { headers: authHeaders });
-        return res.data.id;
+        try {
+          const res = await axios.post('/api/payments/paypal/create-order', {
+            amount: parseFloat(paymentData.amount).toFixed(2),
+            currency: 'USD',
+            description: paymentData.description || `Invoice ${paymentData.invoiceNumber}`,
+            invoiceId: paymentData.invoiceNumber,
+          }, { headers: getAuthHeaders() });
+          return res.data.id;
+        } catch (err) {
+          const msg = err.response?.data?.error || err.message;
+          setPaymentStatus({ type: 'error', message: `Order creation failed: ${msg}` });
+          throw err;
+        }
       },
       onApprove: async (data) => {
         try {
-          const res = await axios.post(`${API_BASE}/api/payments/paypal/capture-order`,
-            { orderId: data.orderID }, { headers: authHeaders });
+          const res = await axios.post('/api/payments/paypal/capture-order',
+            { orderId: data.orderID }, { headers: getAuthHeaders() });
           const capture = res.data;
           const newPayment = {
             id: Date.now(),
@@ -103,14 +109,13 @@ function Payments({ token }) {
             gateway: 'paypal',
           };
           setPaymentHistory(prev => [newPayment, ...prev]);
-          setPaymentStatus({ type: 'success', message: `Payment successful! $${paymentData.amount} received.`, transactionId: capture.id });
-          setTimeout(() => { setShowPaymentForm(false); setPaymentData({ clientName: '', invoiceNumber: '', amount: '', description: '', currency: 'USD' }); setPaymentStatus(null); paypalRendered.current = false; }, 4000);
+          setPaymentStatus({ type: 'success', message: `✅ Payment of $${paymentData.amount} received!`, transactionId: capture.id });
+          setTimeout(() => resetForm(), 4000);
         } catch (err) {
           setPaymentStatus({ type: 'error', message: 'Capture failed: ' + (err.response?.data?.error || err.message) });
         }
       },
-      onError: (err) => {
-        console.error('PayPal error:', err);
+      onError: () => {
         setPaymentStatus({ type: 'error', message: 'PayPal error. Please try again.' });
         paypalRendered.current = false;
       },
@@ -119,34 +124,33 @@ function Payments({ token }) {
         paypalRendered.current = false;
       },
     }).render('#paypal-button-container').catch(console.error);
-  }, [sdkLoaded, paymentData, authHeaders]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sdkLoaded, paymentData.amount, paymentData.clientName, paymentData.invoiceNumber, paymentData.description]);
 
   useEffect(() => {
     paypalRendered.current = false;
     if (showPaymentForm && activeGateway === 'paypal') {
-      setTimeout(renderPayPalButtons, 100);
+      setTimeout(renderPayPalButtons, 150);
     }
-  }, [paymentData.amount, paymentData.clientName, paymentData.invoiceNumber, showPaymentForm, activeGateway, renderPayPalButtons]);
+  }, [paymentData.amount, paymentData.clientName, paymentData.invoiceNumber,
+      showPaymentForm, activeGateway, renderPayPalButtons]);
 
-  // Ozow payment handler
   async function handleOzowPayment(e) {
     e.preventDefault();
     if (!paymentData.amount || !paymentData.clientName) return;
     setLoading(true);
     setPaymentStatus(null);
+    setOzowLink(null);
     try {
       const amountCents = Math.round(parseFloat(paymentData.amount) * 100);
-      const res = await axios.post(`${API_BASE}/api/payments/initiate`, {
+      const res = await axios.post('/api/payments/initiate', {
         contractId: paymentData.invoiceNumber || `CTS-${Date.now()}`,
         amount: amountCents,
         clientEmail: `${paymentData.clientName.toLowerCase().replace(/\s+/g, '.')}@client.com`,
         reference: paymentData.invoiceNumber,
-      }, { headers: authHeaders });
+      }, { headers: getAuthHeaders() });
 
       const result = res.data;
-      if (result.paymentUrl) {
-        window.open(result.paymentUrl, '_blank');
-      }
       const newPayment = {
         id: Date.now(),
         clientName: paymentData.clientName,
@@ -158,25 +162,34 @@ function Payments({ token }) {
         gateway: 'ozow',
       };
       setPaymentHistory(prev => [newPayment, ...prev]);
-      setPaymentStatus({ type: 'success', message: `Ozow payment initiated! Ref: ${result.paymentReference}`, transactionId: result.paymentReference });
-      setTimeout(() => { setShowPaymentForm(false); setPaymentData({ clientName: '', invoiceNumber: '', amount: '', description: '', currency: 'USD' }); setPaymentStatus(null); }, 4000);
+
+      if (result.paymentUrl) {
+        // Show clickable link — don't use window.open (blocked by popups)
+        setOzowLink(result.paymentUrl);
+        setPaymentStatus({ type: 'success', message: `✅ Ozow payment request created! Click the link below to complete payment.`, transactionId: result.paymentReference });
+      } else {
+        setPaymentStatus({ type: 'success', message: `✅ Ozow payment initiated in test mode. Ref: ${result.paymentReference}`, transactionId: result.paymentReference });
+        setTimeout(() => resetForm(), 4000);
+      }
     } catch (err) {
-      setPaymentStatus({ type: 'error', message: err.response?.data?.error || 'Ozow payment failed.' });
+      const msg = err.response?.data?.error || err.message;
+      setPaymentStatus({ type: 'error', message: `Ozow error: ${msg}` });
     } finally {
       setLoading(false);
     }
   }
 
-  const handleInputChange = (e) => {
-    paypalRendered.current = false;
-    setPaymentData(prev => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleCancel = () => {
+  function resetForm() {
     setShowPaymentForm(false);
     setPaymentData({ clientName: '', invoiceNumber: '', amount: '', description: '', currency: 'USD' });
     setPaymentStatus(null);
+    setOzowLink(null);
     paypalRendered.current = false;
+  }
+
+  const handleInputChange = (e) => {
+    paypalRendered.current = false;
+    setPaymentData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
   const totalRevenue = paymentHistory.filter(p => p.status === 'completed').reduce((s, p) => s + p.amount, 0);
@@ -218,15 +231,15 @@ function Payments({ token }) {
           <div className="stat-icon">{paypalClientId ? '🟢' : '🟡'}</div>
           <div className="stat-content">
             <h3>PayPal Status</h3>
-            <p className="stat-value">{paypalClientId ? 'LIVE' : 'CONFIG'}</p>
-            <span className="stat-label">{paypalClientId ? 'Sandbox Connected' : 'Loading...'}</span>
+            <p className="stat-value">{paypalClientId ? 'READY' : 'LOADING'}</p>
+            <span className="stat-label">{paypalClientId ? 'Sandbox Connected' : 'Connecting...'}</span>
           </div>
         </div>
       </div>
 
       <div className="payment-actions">
         {!showPaymentForm && (
-          <button className="btn-new-payment" onClick={() => { setShowPaymentForm(true); setPaymentStatus(null); }}>
+          <button className="btn-new-payment" onClick={() => { setShowPaymentForm(true); setPaymentStatus(null); setOzowLink(null); }}>
             ➕ New Payment
           </button>
         )}
@@ -237,18 +250,13 @@ function Payments({ token }) {
           <div className="payment-form">
             <h2>Create New Payment</h2>
 
-            {/* Gateway Selector */}
             <div className="gateway-selector">
-              <button
-                className={`gateway-btn ${activeGateway === 'paypal' ? 'active' : ''}`}
-                onClick={() => { setActiveGateway('paypal'); paypalRendered.current = false; }}
-              >
+              <button className={`gateway-btn ${activeGateway === 'paypal' ? 'active' : ''}`}
+                onClick={() => { setActiveGateway('paypal'); paypalRendered.current = false; setPaymentStatus(null); setOzowLink(null); }}>
                 💵 PayPal (USD)
               </button>
-              <button
-                className={`gateway-btn ${activeGateway === 'ozow' ? 'active' : ''}`}
-                onClick={() => setActiveGateway('ozow')}
-              >
+              <button className={`gateway-btn ${activeGateway === 'ozow' ? 'active' : ''}`}
+                onClick={() => { setActiveGateway('ozow'); setPaymentStatus(null); setOzowLink(null); }}>
                 🏦 Ozow (ZAR)
               </button>
             </div>
@@ -256,48 +264,57 @@ function Payments({ token }) {
             {paymentStatus && (
               <div className={`payment-status ${paymentStatus.type}`}>
                 <p>{paymentStatus.message}</p>
-                {paymentStatus.transactionId && <small>Transaction ID: {paymentStatus.transactionId}</small>}
+                {paymentStatus.transactionId && <small>Ref: {paymentStatus.transactionId}</small>}
               </div>
             )}
 
-            <form onSubmit={activeGateway === 'ozow' ? handleOzowPayment : (e) => e.preventDefault()}>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Client Name:</label>
-                  <input type="text" name="clientName" value={paymentData.clientName}
-                    onChange={handleInputChange} placeholder="e.g., John Doe" required />
-                </div>
-                <div className="form-group">
-                  <label>Invoice Number:</label>
-                  <input type="text" name="invoiceNumber" value={paymentData.invoiceNumber}
-                    onChange={handleInputChange} placeholder="e.g., INV-001" required />
-                </div>
+            {ozowLink && (
+              <div className="ozow-link-box">
+                <p>Click below to complete your Ozow payment:</p>
+                <a href={ozowLink} target="_blank" rel="noopener noreferrer" className="btn-ozow-link">
+                  🏦 Open Ozow Payment Page
+                </a>
+                <button className="btn-cancel" style={{ marginTop: 10 }} onClick={resetForm}>Done</button>
               </div>
+            )}
 
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Amount ({activeGateway === 'ozow' ? 'ZAR' : 'USD'}):</label>
-                  <input type="number" name="amount" value={paymentData.amount}
-                    onChange={handleInputChange} placeholder="e.g., 100.00" step="0.01" min="0.01" required />
-                </div>
-                <div className="form-group">
-                  <label>Gateway:</label>
-                  <div className="currency-display">
-                    {activeGateway === 'paypal' ? '💵 PayPal – USD' : '🏦 Ozow – ZAR'}
+            {!ozowLink && (
+              <form onSubmit={activeGateway === 'ozow' ? handleOzowPayment : (e) => e.preventDefault()}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Client Name:</label>
+                    <input type="text" name="clientName" value={paymentData.clientName}
+                      onChange={handleInputChange} placeholder="e.g., John Doe" required />
+                  </div>
+                  <div className="form-group">
+                    <label>Invoice Number:</label>
+                    <input type="text" name="invoiceNumber" value={paymentData.invoiceNumber}
+                      onChange={handleInputChange} placeholder="e.g., INV-001" required />
                   </div>
                 </div>
-              </div>
 
-              <div className="form-group">
-                <label>Description:</label>
-                <textarea name="description" value={paymentData.description}
-                  onChange={handleInputChange} placeholder="e.g., Data Entry Services – May 2026" rows="2" />
-              </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Amount ({activeGateway === 'ozow' ? 'ZAR' : 'USD'}):</label>
+                    <input type="number" name="amount" value={paymentData.amount}
+                      onChange={handleInputChange} placeholder="e.g., 100.00" step="0.01" min="0.01" required />
+                  </div>
+                  <div className="form-group">
+                    <label>Gateway:</label>
+                    <div className="currency-display">
+                      {activeGateway === 'paypal' ? '💵 PayPal – USD' : '🏦 Ozow – ZAR'}
+                    </div>
+                  </div>
+                </div>
 
-              {/* PayPal Buttons */}
-              {activeGateway === 'paypal' && (
-                <>
-                  {paymentData.amount && paymentData.clientName && paymentData.invoiceNumber ? (
+                <div className="form-group">
+                  <label>Description:</label>
+                  <textarea name="description" value={paymentData.description}
+                    onChange={handleInputChange} placeholder="e.g., Data Entry Services – May 2026" rows="2" />
+                </div>
+
+                {activeGateway === 'paypal' && (
+                  paymentData.amount && paymentData.clientName && paymentData.invoiceNumber ? (
                     <div className="paypal-button-wrapper">
                       <div className="payment-summary">
                         <p><strong>{paymentData.clientName}</strong> pays <strong className="amount">${parseFloat(paymentData.amount || 0).toFixed(2)} USD</strong></p>
@@ -307,19 +324,18 @@ function Payments({ token }) {
                     </div>
                   ) : (
                     <div className="form-warning">⚠️ Fill in Client Name, Invoice Number, and Amount to show PayPal button</div>
-                  )}
-                </>
-              )}
+                  )
+                )}
 
-              {/* Ozow Submit */}
-              {activeGateway === 'ozow' && (
-                <button type="submit" className="btn-ozow" disabled={loading || !paymentData.amount || !paymentData.clientName}>
-                  {loading ? '⏳ Processing...' : '🏦 Pay via Ozow (ZAR)'}
-                </button>
-              )}
-            </form>
+                {activeGateway === 'ozow' && (
+                  <button type="submit" className="btn-ozow" disabled={loading || !paymentData.amount || !paymentData.clientName}>
+                    {loading ? '⏳ Processing...' : '🏦 Pay via Ozow (ZAR)'}
+                  </button>
+                )}
 
-            <button className="btn-cancel" onClick={handleCancel}>✕ Cancel</button>
+                <button type="button" className="btn-cancel" onClick={resetForm}>✕ Cancel</button>
+              </form>
+            )}
           </div>
         </div>
       )}
@@ -360,10 +376,10 @@ function Payments({ token }) {
       <div className="payment-help">
         <h3>🧪 Sandbox / Test Mode</h3>
         <ul>
-          <li>✅ <strong>PayPal:</strong> Uses your real Sandbox Client ID — no real money charged</li>
-          <li>✅ <strong>Ozow:</strong> Site code <strong>CTS-CTS-001</strong> — test mode active</li>
-          <li>✅ All transactions are logged to your database</li>
-          <li>✅ Switch to production by setting NODE_ENV=production on deploy</li>
+          <li>✅ <strong>PayPal:</strong> Sandbox connected — use your PayPal test buyer account</li>
+          <li>✅ <strong>Ozow:</strong> Site code <strong>CTS-CTS-001</strong> — test EFT payments</li>
+          <li>✅ All transactions are saved to the database automatically</li>
+          <li>✅ Switch to live by setting NODE_ENV=production on deploy</li>
         </ul>
       </div>
     </div>

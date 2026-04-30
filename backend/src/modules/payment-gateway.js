@@ -3,12 +3,13 @@
  */
 
 const axios = require('axios');
+const crypto = require('crypto');
 const auditLogger = require('./audit-logger');
 const db = require('../db');
 
-const OZOW_API_URL  = process.env.OZOW_API_URL    || 'https://api.ozow.com';
-const OZOW_API_KEY  = process.env.OZOW_API_KEY    || '';
-const OZOW_SITE_CODE = process.env.OZOW_SITE_CODE || '';
+const OZOW_API_URL    = process.env.OZOW_API_URL     || 'https://pay.ozow.com';
+const OZOW_API_KEY    = process.env.OZOW_API_KEY     || '';
+const OZOW_SITE_CODE  = process.env.OZOW_SITE_CODE   || '';
 const OZOW_PRIVATE_KEY = process.env.OZOW_PRIVATE_KEY || '';
 
 const PAYPAL_CLIENT_ID     = process.env.PAYPAL_CLIENT_ID     || '';
@@ -21,6 +22,12 @@ const MAX_RETRIES = 3;
 
 /* ─── Ozow ──────────────────────────────────────────────────────────────── */
 
+function buildOzowHash(fields) {
+  // Ozow hash = SHA512 of concatenated values (lowercase) + private key
+  const values = Object.values(fields).join('').toLowerCase();
+  return crypto.createHash('sha512').update(values + OZOW_PRIVATE_KEY.toLowerCase()).digest('hex');
+}
+
 async function initiatePayment({ contractId, amount, clientEmail, reference }) {
   if (!contractId || !amount || !clientEmail) {
     throw new Error('contractId, amount, and clientEmail are required');
@@ -32,9 +39,9 @@ async function initiatePayment({ contractId, amount, clientEmail, reference }) {
   let lastError;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const result = await callOzowAPI({ contractId, amount, clientEmail, reference, attempt });
+      const result = await callOzowAPI({ contractId, amount, clientEmail, reference });
       await auditLogger.log('payment.succeeded', 'contract', contractId,
-        `Ozow payment confirmed. Ref: ${result.paymentReference}`, null, 'info');
+        `Ozow payment initiated. Ref: ${result.paymentReference}`, null, 'info');
 
       if (db.isConnected()) {
         try {
@@ -53,44 +60,83 @@ async function initiatePayment({ contractId, amount, clientEmail, reference }) {
       await auditLogger.log('payment.failed', 'contract', contractId,
         `Ozow attempt ${attempt} failed: ${err.message}`, null,
         attempt < MAX_RETRIES ? 'warning' : 'error');
+      if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 1000));
     }
   }
   throw new Error(`Ozow payment failed after ${MAX_RETRIES} attempts: ${lastError.message}`);
 }
 
 async function callOzowAPI({ contractId, amount, clientEmail, reference }) {
+  const transactionRef = reference || `CTS-${contractId}-${Date.now()}`;
+  const amountStr = (amount / 100).toFixed(2);
+  const appDomain = process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : (process.env.APP_URL || 'https://ctsbpo.com');
+
   if (OZOW_API_KEY) {
-    const payload = {
+    const fields = {
       SiteCode: OZOW_SITE_CODE,
       CountryCode: 'ZA',
       CurrencyCode: 'ZAR',
-      Amount: (amount / 100).toFixed(2),
-      TransactionReference: reference || `CTS-${contractId}-${Date.now()}`,
+      Amount: amountStr,
+      TransactionReference: transactionRef,
       BankReference: `CTS-${contractId}`,
+      Optional1: clientEmail,
       Customer: clientEmail,
-      IsTest: process.env.NODE_ENV !== 'production',
+      IsTest: process.env.NODE_ENV !== 'production' ? 'true' : 'false',
+      SuccessUrl: `${appDomain}/payments?status=success`,
+      ErrorUrl: `${appDomain}/payments?status=error`,
+      CancelUrl: `${appDomain}/payments?status=cancel`,
+      NotifyUrl: `${appDomain}/api/payments/ozow/notify`,
     };
 
-    const response = await axios.post(`${OZOW_API_URL}/v1/payment`, payload, {
-      headers: { 'ApiKey': OZOW_API_KEY, 'Content-Type': 'application/json' },
-      timeout: 10000,
-    });
+    fields.HashCheck = buildOzowHash(fields);
 
+    let response;
+    try {
+      response = await axios.post(`${OZOW_API_URL}/v1/paymentrequest`, fields, {
+        headers: {
+          'ApiKey': OZOW_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        timeout: 15000,
+      });
+    } catch (axiosErr) {
+      const status = axiosErr.response?.status;
+      const body   = axiosErr.response?.data;
+      if (status === 500) {
+        throw new Error(
+          'Ozow returned a server error (500). Your site code may not be active yet — ' +
+          'log in to merchant.ozow.com, confirm your site "' + OZOW_SITE_CODE +
+          '" is approved, or contact Ozow support.'
+        );
+      }
+      throw new Error(`Ozow API error (${status}): ${JSON.stringify(body) || axiosErr.message}`);
+    }
+
+    const data = response.data;
     return {
-      success: true, contractId, amount, currency: 'ZAR', clientEmail,
-      paymentReference: response.data.PaymentRequestId || payload.TransactionReference,
-      paymentUrl: response.data.Url,
+      success: true,
+      contractId,
+      amount,
+      currency: 'ZAR',
+      clientEmail,
+      paymentReference: data.PaymentRequestId || transactionRef,
+      paymentUrl: data.Url || data.url || null,
       paidAt: new Date().toISOString(),
     };
   }
 
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('OZOW_API_KEY is not configured');
-  }
-
+  // Stub when no API key
   return {
-    success: true, contractId, amount, currency: 'ZAR', clientEmail,
-    paymentReference: reference || `CTS-${contractId}-${Date.now()}`,
+    success: true,
+    contractId,
+    amount,
+    currency: 'ZAR',
+    clientEmail,
+    paymentReference: transactionRef,
+    paymentUrl: null,
     paidAt: new Date().toISOString(),
   };
 }
