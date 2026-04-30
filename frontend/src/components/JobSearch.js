@@ -7,7 +7,7 @@ function getAuthHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-const STATUS_OPTIONS = ['new', 'contacted', 'responded', 'in-progress', 'completed'];
+const STATUS_OPTIONS = ['new', 'contacted', 'followup1_sent', 'followup2_sent', 'responded', 'in-progress', 'completed', 'bounced'];
 const TYPE_OPTIONS   = ['data-entry', 'translation', 'transcription', 'virtual-assistant', 'finance-admin', 'customer-support', 'content-moderation', 'general'];
 
 export default function JobSearch() {

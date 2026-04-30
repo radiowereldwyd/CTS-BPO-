@@ -15,6 +15,16 @@ const ACTION_ICONS = {
   application_process:     '⚙️',
   heartbeat:               '💓',
   error:                   '❌',
+  prospect_scan:           '🌐',
+  prospect_outreach:       '📤',
+  prospect_followup:       '🔁',
+  bounce_process:          '🚫',
+  payment_chase:           '💰',
+  payment_auto_release:    '💸',
+  ai_job_start:            '🤖',
+  ai_job_complete:         '✔️',
+  ai_job_error:            '⚠️',
+  outreach_sent:           '📨',
 };
 
 const STATUS_COLORS = {

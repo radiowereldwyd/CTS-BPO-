@@ -19,6 +19,7 @@ const auditLogger = require('./audit-logger');
 const emailOutreach = require('./email-outreach');
 const aiProcessor   = require('./ai-job-processor');
 const gmailReader   = require('./gmail-reader');
+const jobSearch     = require('./job-search');
 
 const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 const APP_URL     = process.env.APP_URL || 'https://your-app.replit.app';
@@ -93,6 +94,11 @@ async function ensureTables() {
   `);
   // Migration: add bounced_at if it doesn't exist yet
   await db.query(`ALTER TABLE ai_leads ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMPTZ`).catch(() => {});
+
+  // Ensure job_leads follow-up tracking columns exist
+  await jobSearch.ensureTable();
+  await db.query(`ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS followup1_sent_at TIMESTAMPTZ`).catch(() => {});
+  await db.query(`ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS followup2_sent_at TIMESTAMPTZ`).catch(() => {});
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -717,6 +723,150 @@ async function runPaymentChase() {
   agentState.lastPaymentChase = new Date().toISOString();
 }
 
+// ── 7. Scan for Client Prospects (job_leads) ──────────────────────────────
+// Uses the improved BPO_QUERIES from job-search.js to find businesses that
+// NEED BPO services (law firms, clinics, e-commerce, startups, etc.)
+async function runJobLeadScan() {
+  if (!SERPAPI_KEY) {
+    await logActivity('prospect_scan', 'Skipped — SERPAPI_KEY not configured', null, null, 'skipped');
+    return;
+  }
+  try {
+    const result = await jobSearch.scanForJobs(); // runs first 5 queries by default
+    await logActivity(
+      'prospect_scan',
+      `Client prospect scan complete — ${result.total} new leads found`,
+      null, null, result.errors.length > 0 ? 'warning' : 'success',
+      { total: result.total, errors: result.errors.length }
+    );
+  } catch (err) {
+    await logActivity('prospect_scan', `Scan error: ${err.message}`, null, null, 'error');
+  }
+}
+
+// ── 8. Send Cold Outreach to New Job Leads ────────────────────────────────
+// Picks up to 10 uncontacted job_leads that have a contact_email and sends
+// them a CTS BPO cold-outreach pitch email.
+async function runJobLeadOutreach() {
+  const newLeads = await db.query(`
+    SELECT id, title, company, contact_email, contact_name, job_type, source_url
+    FROM job_leads
+    WHERE status = 'new'
+      AND contact_email IS NOT NULL
+      AND contact_email != ''
+    ORDER BY created_at ASC
+    LIMIT 10
+  `).catch(() => ({ rows: [] }));
+
+  if (newLeads.rows.length === 0) return;
+
+  let sent = 0;
+  for (const lead of newLeads.rows) {
+    try {
+      // Bounce guard: skip if this email is already blacklisted in ai_leads
+      const bounced = await db.query(
+        `SELECT id FROM ai_leads WHERE LOWER(contact_email)=LOWER($1) AND bounced_at IS NOT NULL LIMIT 1`,
+        [lead.contact_email]
+      ).catch(() => ({ rows: [] }));
+      if (bounced.rows.length > 0) {
+        await db.query(`UPDATE job_leads SET status='bounced', updated_at=NOW() WHERE id=$1`, [lead.id]);
+        continue;
+      }
+
+      await emailOutreach.sendClientColdOutreach({
+        email:   lead.contact_email,
+        name:    lead.contact_name || lead.company || 'there',
+        company: lead.company || 'your organisation',
+        jobType: lead.job_type || 'business process outsourcing',
+      });
+
+      await db.query(
+        `UPDATE job_leads SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
+        [lead.id]
+      );
+      sent++;
+      await logActivity('prospect_outreach', `Cold pitch sent → ${lead.contact_email} [${lead.job_type}]`, 'job_lead', lead.id, 'success', { company: lead.company, jobType: lead.job_type });
+    } catch (err) {
+      await logActivity('prospect_outreach', `Failed to send to ${lead.contact_email}: ${err.message}`, 'job_lead', lead.id, 'error');
+    }
+  }
+
+  if (sent > 0) {
+    await logActivity('prospect_outreach', `Sent ${sent} cold pitch email(s) to client prospects`);
+    agentState.totalEmailsSent += sent;
+  }
+}
+
+// ── 9. Follow-up Sequence for Job Leads ───────────────────────────────────
+// Day 3: first follow-up on contacted leads with no response yet
+// Day 7: second and final follow-up
+async function runJobLeadFollowUps() {
+  // Day-3 follow-up
+  const day3 = await db.query(`
+    SELECT id, contact_email, contact_name, company, job_type
+    FROM job_leads
+    WHERE status = 'contacted'
+      AND outreach_sent_at < NOW() - INTERVAL '3 days'
+      AND followup1_sent_at IS NULL
+      AND contact_email IS NOT NULL
+    LIMIT 15
+  `).catch(() => ({ rows: [] }));
+
+  for (const lead of day3.rows) {
+    try {
+      await emailOutreach.sendClientFollowUp({
+        email:         lead.contact_email,
+        company:       lead.company || lead.contact_name || 'there',
+        jobType:       lead.job_type || 'business process outsourcing',
+        followUpNumber: 1,
+      });
+      await db.query(
+        `UPDATE job_leads SET followup1_sent_at=NOW(), status='followup1_sent', updated_at=NOW() WHERE id=$1`,
+        [lead.id]
+      );
+      agentState.totalEmailsSent++;
+      await logActivity('prospect_followup', `Day-3 follow-up → ${lead.contact_email} (${lead.company})`, 'job_lead', lead.id);
+    } catch (err) {
+      await logActivity('prospect_followup', `Day-3 follow-up failed for ${lead.contact_email}: ${err.message}`, 'job_lead', lead.id, 'error');
+    }
+  }
+
+  // Day-7 follow-up
+  const day7 = await db.query(`
+    SELECT id, contact_email, contact_name, company, job_type
+    FROM job_leads
+    WHERE status = 'followup1_sent'
+      AND followup1_sent_at < NOW() - INTERVAL '4 days'
+      AND followup2_sent_at IS NULL
+      AND contact_email IS NOT NULL
+    LIMIT 15
+  `).catch(() => ({ rows: [] }));
+
+  for (const lead of day7.rows) {
+    try {
+      await emailOutreach.sendClientFollowUp({
+        email:         lead.contact_email,
+        company:       lead.company || lead.contact_name || 'there',
+        jobType:       lead.job_type || 'business process outsourcing',
+        followUpNumber: 2,
+      });
+      await db.query(
+        `UPDATE job_leads SET followup2_sent_at=NOW(), status='followup2_sent', updated_at=NOW() WHERE id=$1`,
+        [lead.id]
+      );
+      agentState.totalEmailsSent++;
+      await logActivity('prospect_followup', `Day-7 follow-up → ${lead.contact_email} (${lead.company})`, 'job_lead', lead.id);
+    } catch (err) {
+      await logActivity('prospect_followup', `Day-7 follow-up failed for ${lead.contact_email}: ${err.message}`, 'job_lead', lead.id, 'error');
+    }
+  }
+
+  const total = day3.rows.length + day7.rows.length;
+  if (total > 0) {
+    await logActivity('prospect_followup', `Sent ${total} prospect follow-up(s) (day3: ${day3.rows.length}, day7: ${day7.rows.length})`);
+  }
+}
+
 // ── Start the agent ────────────────────────────────────────────────────────
 async function startAgent() {
   await ensureTables();
@@ -731,16 +881,32 @@ async function startAgent() {
   setTimeout(() => processApplications().catch(console.error), 10000);
   setTimeout(() => assignContracts().catch(console.error), 15000);
   setTimeout(() => processAIJobs().catch(console.error), 20000);
+  setTimeout(() => runJobLeadOutreach().catch(console.error), 35000);
 
   // ── Schedules ──
-  // Lead search every 2 hours
+  // Lead search every 2 hours (ai_leads — agent's own SerpAPI queries)
   cron.schedule('0 */2 * * *', () => {
     runLeadSearch().catch(e => logActivity('lead_search', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
-  // Follow-up emails every 6 hours
+  // Client prospect scan every 3 hours (job_leads — improved buyer-targeted queries)
+  cron.schedule('0 */3 * * *', () => {
+    runJobLeadScan().catch(e => logActivity('prospect_scan', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
+  // Auto-outreach to new job_leads every 2 hours (offset by 1h from lead search)
+  cron.schedule('30 */2 * * *', () => {
+    runJobLeadOutreach().catch(e => logActivity('prospect_outreach', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
+  // Follow-up emails every 6 hours (ai_leads)
   cron.schedule('0 */6 * * *', () => {
     runFollowUpSequence().catch(e => logActivity('followup_sequence', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
+  // Follow-up emails every 6 hours (job_leads — prospect follow-ups)
+  cron.schedule('0 1,7,13,19 * * *', () => {
+    runJobLeadFollowUps().catch(e => logActivity('prospect_followup', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
   // Application processing every 30 minutes
@@ -780,20 +946,26 @@ async function startAgent() {
 // ── Manual trigger (admin API) ─────────────────────────────────────────────
 async function triggerNow(task) {
   switch (task) {
-    case 'lead_search':  await runLeadSearch(); break;
-    case 'followup':     await runFollowUpSequence(); break;
-    case 'applications': await processApplications(); break;
-    case 'contracts':    await assignContracts(); break;
-    case 'ai_jobs':      await processAIJobs(); break;
-    case 'payment_chase': await runPaymentChase(); break;
-    case 'bounce_check':  await gmailReader.processBounces(); break;
+    case 'lead_search':       await runLeadSearch(); break;
+    case 'followup':          await runFollowUpSequence(); break;
+    case 'applications':      await processApplications(); break;
+    case 'contracts':         await assignContracts(); break;
+    case 'ai_jobs':           await processAIJobs(); break;
+    case 'payment_chase':     await runPaymentChase(); break;
+    case 'bounce_check':      await gmailReader.processBounces(); break;
+    case 'prospect_scan':     await runJobLeadScan(); break;
+    case 'prospect_outreach': await runJobLeadOutreach(); break;
+    case 'prospect_followup': await runJobLeadFollowUps(); break;
     case 'all':
       await gmailReader.processBounces();
       await runLeadSearch();
+      await runJobLeadScan();
+      await runJobLeadOutreach();
       await processApplications();
       await assignContracts();
       await processAIJobs();
       await runFollowUpSequence();
+      await runJobLeadFollowUps();
       await runPaymentChase();
       break;
     default: throw new Error(`Unknown task: ${task}`);
