@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './EmailTemplates.css';
 
-const API = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+const API = '';
 
 function getHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('token')}` };
