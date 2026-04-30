@@ -320,16 +320,30 @@ async function processApplications() {
   agentState.lastAppCheck = new Date().toISOString();
 }
 
+// ── Helper: derive job type keyword from title ─────────────────────────────
+function deriveJobType(title = '') {
+  const t = title.toLowerCase();
+  if (t.includes('data entry') || t.includes('data-entry')) return 'data-entry';
+  if (t.includes('transcript'))  return 'transcription';
+  if (t.includes('translat'))    return 'translation';
+  if (t.includes('virtual assistant') || t.includes('va ')) return 'virtual-assistant';
+  if (t.includes('finance') || t.includes('accounting') || t.includes('bookkeep')) return 'finance-admin';
+  if (t.includes('moderat'))     return 'content-moderation';
+  if (t.includes('customer') || t.includes('support')) return 'customer-support';
+  if (t.includes('document') || t.includes('pdf'))     return 'document-processing';
+  if (t.includes('social') || t.includes('media'))     return 'social-media';
+  return 'general';
+}
+
 // ── 5. Auto-assign Outstanding Contracts (AI-first, then human) ───────────
 async function assignContracts() {
   try { await db.query(`SELECT 1 FROM subcontractor_jobs LIMIT 1`); }
   catch { return; }
 
   const jobs = await db.query(`
-    SELECT j.id, j.title, j.service_type, j.job_value, j.due_date, j.description, j.sub_payout
+    SELECT j.id, j.title, j.job_value, j.due_date, j.description, j.sub_payout
     FROM subcontractor_jobs j
     WHERE j.status = 'outstanding'
-      AND (j.notes IS NULL OR j.notes NOT LIKE '%assigned%')
       AND NOT EXISTS (
         SELECT 1 FROM job_submissions js2
         JOIN subcontractor_jobs sj2 ON sj2.id = js2.job_id
@@ -343,7 +357,7 @@ async function assignContracts() {
 
   for (const job of jobs.rows) {
     try {
-      const jobType = (job.service_type || '').toLowerCase();
+      const jobType = deriveJobType(job.title);
 
       // ── Try AI first ────────────────────────────────────────────────────
       if (aiProcessor.canHandle(jobType)) {
@@ -367,13 +381,13 @@ async function assignContracts() {
 
       // ── Fall back to human subcontractor ────────────────────────────────
       let sub = null;
-      if (job.service_type) {
+      if (jobType && jobType !== 'general') {
         const subRes = await db.query(`
           SELECT id, name, email FROM subcontractor_applications
           WHERE status = 'approved' AND payment_confirmed = TRUE
             AND services::text ILIKE $1
           ORDER BY payment_confirmed_at DESC LIMIT 1
-        `, [`%${job.service_type}%`]);
+        `, [`%${jobType}%`]);
         sub = subRes.rows[0] || null;
       }
       if (!sub) {
@@ -419,7 +433,7 @@ async function processAIJobs() {
 
   // Find jobs assigned to the AI Worker that haven't been submitted yet
   const jobs = await db.query(`
-    SELECT j.id, j.title, j.service_type, j.description, j.sub_payout,
+    SELECT j.id, j.title, j.description, j.sub_payout,
            j.contract_id, j.due_date
     FROM subcontractor_jobs j
     WHERE j.sub_id = $1
@@ -440,7 +454,7 @@ async function processAIJobs() {
 
   for (const job of jobs.rows) {
     try {
-      const jobType = (job.service_type || 'general').toLowerCase();
+      const jobType = deriveJobType(job.title);
 
       await logActivity('ai_job_start', `AI processing job #${job.id} "${job.title}" [${jobType}]`, 'job', job.id, 'success');
 
@@ -459,7 +473,7 @@ async function processAIJobs() {
       const fileContent = [
         `CTS BPO AI Deliverable`,
         `Job #${job.id}: ${job.title}`,
-        `Service type: ${job.service_type}`,
+        `Service type: ${jobType}`,
         `Processed by: ${result.method}`,
         `Quality level: ${result.quality}`,
         `Processed at: ${new Date().toISOString()}`,

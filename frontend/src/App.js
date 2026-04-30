@@ -4,10 +4,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } f
 import Dashboard from './components/Dashboard';
 import StatusPanel from './components/StatusPanel';
 import FailedContracts from './components/FailedContracts';
-import PricingTable from './components/PricingTable';
-import GlobalMarkets from './components/GlobalMarkets';
-import ProfitProjection from './components/ProfitProjection';
-import DeploymentGuide from './components/DeploymentGuide';
 import EmailTemplates from './components/EmailTemplates';
 import LoginPage from './components/LoginPage';
 import Payments from './components/Payments';
@@ -46,10 +42,6 @@ function AdminShell({ user, token, onLogout }) {
           <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/status">Status</NavLink>
           <NavLink to="/failed-contracts">Failed Contracts</NavLink>
-          <NavLink to="/pricing">Pricing</NavLink>
-          <NavLink to="/global-markets">Global Markets</NavLink>
-          <NavLink to="/profit-projection">Profit Projection</NavLink>
-          <NavLink to="/deployment-guide">Deployment Guide</NavLink>
           <NavLink to="/email-templates">Email Templates</NavLink>
           <NavLink to="/payments">Payments</NavLink>
           <NavLink to="/job-search">🌐 Job Search</NavLink>
@@ -71,10 +63,6 @@ function AdminShell({ user, token, onLogout }) {
           <Route path="/dashboard" element={<Dashboard token={token} />} />
           <Route path="/status" element={<StatusPanel token={token} />} />
           <Route path="/failed-contracts" element={<FailedContracts token={token} />} />
-          <Route path="/pricing" element={<PricingTable />} />
-          <Route path="/global-markets" element={<GlobalMarkets />} />
-          <Route path="/profit-projection" element={<ProfitProjection token={token} />} />
-          <Route path="/deployment-guide" element={<DeploymentGuide />} />
           <Route path="/email-templates" element={<EmailTemplates />} />
           <Route path="/payments" element={<Payments />} />
           <Route path="/job-search" element={<JobSearch />} />

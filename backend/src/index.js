@@ -1232,17 +1232,17 @@ app.get('/api/analytics', requireAuth, async (req, res) => {
         GROUP BY DATE_TRUNC('month', COALESCE(js.delivered_at, sj.created_at))
         ORDER BY month_dt ASC
       `),
-      // Jobs by service type
+      // Jobs by type (derive from title keyword or job_type on ai_leads)
       db.query(`
-        SELECT COALESCE(service_type,'Other') AS type,
-               COUNT(*)                        AS count,
-               COALESCE(SUM(job_value),0)      AS total_value,
-               COALESCE(AVG(job_value),0)      AS avg_value
+        SELECT COALESCE(NULLIF(TRIM(title),''),'Other') AS type,
+               COUNT(*)                       AS count,
+               COALESCE(SUM(job_value),0)     AS total_value,
+               COALESCE(AVG(job_value),0)     AS avg_value
         FROM subcontractor_jobs
-        GROUP BY service_type
+        GROUP BY TRIM(title)
         ORDER BY count DESC
         LIMIT 10
-      `),
+      `).catch(() => ({ rows:[] })),
       // Lead funnel
       db.query(`
         SELECT
@@ -1252,13 +1252,14 @@ app.get('/api/analytics', requireAuth, async (req, res) => {
           COUNT(*) FILTER (WHERE status IN ('contracted','active'))     AS contracted
         FROM ai_leads
       `).catch(() => ({ rows:[{ total:0, outreached:0, responded:0, contracted:0 }] })),
-      // Subcontractor total
-      db.query(`SELECT COUNT(*) AS total FROM subcontractors`),
-      // Avg quality + on-time
+      // Subcontractor total (from approved applications)
+      db.query(`SELECT COUNT(*) AS total FROM subcontractor_applications WHERE status='approved'`)
+        .catch(() => ({ rows:[{ total:0 }] })),
+      // Avg quality + active count (use success_rate from subcontractors, or applications)
       db.query(`
         SELECT
-          COALESCE(AVG(ai_quality_score),0)   AS avg_quality,
-          COUNT(*) FILTER (WHERE status='active') AS active
+          COALESCE(AVG(success_rate),0)              AS avg_quality,
+          COUNT(*) FILTER (WHERE status='active')    AS active
         FROM subcontractors
       `).catch(() => ({ rows:[{ avg_quality:0, active:0 }] })),
       // Total paid out to subs
@@ -1268,20 +1269,19 @@ app.get('/api/analytics', requireAuth, async (req, res) => {
         JOIN subcontractor_jobs sj ON sj.id = js.job_id
         WHERE js.payout_status = 'paid'
       `).catch(() => ({ rows:[{ total_paid:0 }] })),
-      // Top performers
+      // Top performers — join via subcontractor_applications (sub_application_id)
       db.query(`
-        SELECT s.name, s.id,
+        SELECT sa.name, sa.id,
                COUNT(js.id)                      AS jobs_done,
                COALESCE(AVG(js.ai_quality_score),0) AS avg_quality,
                COALESCE(SUM(sj.sub_payout),0)   AS total_earned,
                COALESCE(AVG(CASE WHEN sj.due_date IS NULL THEN NULL
                                  WHEN js.submitted_at <= sj.due_date THEN 100 ELSE 0 END),0) AS on_time_rate
-        FROM subcontractors s
-        JOIN job_submissions js ON js.sub_id = s.id
+        FROM subcontractor_applications sa
+        JOIN job_submissions js ON js.sub_application_id = sa.id
         JOIN subcontractor_jobs sj ON sj.id = js.job_id
         WHERE js.status IN ('submitted','delivered','confirmed','paid')
-          AND s.id != 0
-        GROUP BY s.id, s.name
+        GROUP BY sa.id, sa.name
         ORDER BY avg_quality DESC, jobs_done DESC
         LIMIT 20
       `).catch(() => ({ rows:[] })),
@@ -1393,7 +1393,9 @@ app.get('/api/subcontractors/performance', requireAuth, async (req, res) => {
   try {
     if (!db.isConnected()) return res.json({ performers: [] });
     const r = await db.query(`
-      SELECT s.id, s.name, s.email, s.skills, s.status,
+      SELECT sa.id, sa.name, sa.email,
+             sa.services                                      AS skills,
+             sa.status,
              COUNT(js.id)                                     AS jobs_done,
              COALESCE(AVG(js.ai_quality_score), 0)            AS avg_quality,
              COALESCE(SUM(sj.sub_payout)
@@ -1404,12 +1406,12 @@ app.get('/api/subcontractors/performance', requireAuth, async (req, res) => {
                WHEN js.submitted_at IS NOT NULL AND js.submitted_at <= sj.due_date THEN 100
                ELSE 0 END), 0)                                AS on_time_rate,
              MAX(js.submitted_at)                             AS last_submission,
-             MIN(js.assigned_at)                              AS first_job
-      FROM subcontractors s
-      LEFT JOIN job_submissions js ON js.sub_id = s.id AND s.id != 0
+             MIN(js.submitted_at)                             AS first_job
+      FROM subcontractor_applications sa
+      LEFT JOIN job_submissions js ON js.sub_application_id = sa.id
       LEFT JOIN subcontractor_jobs sj ON sj.id = js.job_id
-      WHERE s.id != 0
-      GROUP BY s.id, s.name, s.email, s.skills, s.status
+      WHERE sa.status IN ('approved','active')
+      GROUP BY sa.id, sa.name, sa.email, sa.services, sa.status
       ORDER BY avg_quality DESC, jobs_done DESC
     `);
     res.json({
