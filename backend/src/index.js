@@ -1398,7 +1398,7 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     try { diskStats = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../../data/outreach-stats.json'), 'utf8')); } catch {}
     const today = new Date().toDateString();
 
-    const CAPS = { mailerlite: 1000, gmail: 500, sendgrid: 100, mailjet: 299, mailgun: 99 };
+    const CAPS = { mailerlite: 399, gmail: 500, sendgrid: 100, mailjet: 299, mailgun: 99 };
     function providerStats(name, configured, account, extra = {}) {
       const key    = name.toLowerCase();
       const active = outreachStats.mode === key;
