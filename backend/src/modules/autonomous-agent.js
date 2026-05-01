@@ -38,10 +38,19 @@ function loadOutreachStats() {
 
 function saveOutreachStats(stats) {
   try {
+    // Preserve existing per-provider buckets from disk, then update active provider
+    let existing = {};
+    try { existing = JSON.parse(fs.readFileSync(OUTREACH_STATS_FILE, 'utf8')); } catch {}
+    const provider = emailOutreach.getSenderMode ? emailOutreach.getSenderMode() : (emailOutreach.getDailyStats?.()?.mode || 'gmail');
     fs.writeFileSync(OUTREACH_STATS_FILE, JSON.stringify({
+      ...existing,
+      // Legacy flat fields (for backward compat)
       sentToday:   stats.sentToday,
       todayDate:   stats.todayDate,
+      provider,
       savedAt:     new Date().toISOString(),
+      // Per-provider bucket
+      [provider]: { sentToday: stats.sentToday, todayDate: stats.todayDate },
     }, null, 2), 'utf8');
   } catch { /* silently skip */ }
 }

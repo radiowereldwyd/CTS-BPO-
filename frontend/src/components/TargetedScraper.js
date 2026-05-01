@@ -391,12 +391,12 @@ export default function TargetedScraper({ token }) {
             </div>
           )}
 
-          {/* Gmail limit warning */}
-          {emailStats?.providers?.[0]?.sentToday >= 450 && (
-            <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, background: '#fffbeb', color: '#92400e', fontSize: 13 }}>
-              ⚠️ Gmail is near its daily limit ({emailStats.providers[0].sentToday}/500). Sending may fail — emails will queue automatically from tomorrow.
+          {/* Active provider near-limit warning */}
+          {emailStats?.providers?.filter(p => p.active && p.stopAt && p.sentToday >= p.stopAt * 0.9).map(p => (
+            <div key={p.name} style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, background: '#fffbeb', color: '#92400e', fontSize: 13 }}>
+              ⚠️ {p.name} is near its daily limit ({p.sentToday}/{p.dailyCap}). The system will stop at {p.stopAt} (99%) and resume tomorrow.
             </div>
-          )}
+          ))}
 
           <button onClick={handleSend} disabled={sending || !selected.size}
             style={{ ...btnPrimary, background: selected.size ? '#16a34a' : '#94a3b8', minWidth: 220 }}>

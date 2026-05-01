@@ -1376,18 +1376,19 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
 
     const GMAIL_OK  = !!(process.env.GMAIL_USER && (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g,'').length >= 16);
     const SG_OK     = !!process.env.SENDGRID_API_KEY;
+    const MJ_OK     = !!(process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY);
     const MG_OK     = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
 
-    const CAPS = { gmail: 500, sendgrid: 100, mailgun: 9999 };
+    const CAPS = { gmail: 500, sendgrid: 100, mailjet: 200, mailgun: 9999 };
     function providerStats(name, configured, account, extra = {}) {
-      const key     = name.toLowerCase();
-      const active  = outreachStats.mode === key;
-      const cap     = CAPS[key] || null;
-      const stopAt  = cap ? Math.floor(cap * 0.99) : null;
+      const key    = name.toLowerCase();
+      const active = outreachStats.mode === key;
+      const cap    = CAPS[key] || null;
+      const stopAt = cap ? Math.floor(cap * 0.99) : null;
       return {
         name, configured, active,
-        sentToday:  configured && active ? outreachStats.sent : 0,
-        dailyCap:   cap === 9999 ? null : cap,
+        sentToday: configured && active ? outreachStats.sent : 0,
+        dailyCap:  cap === 9999 ? null : cap,
         stopAt,
         account,
         ...extra,
@@ -1397,8 +1398,8 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     res.json({
       providers: [
         providerStats('Gmail',    GMAIL_OK, process.env.GMAIL_USER || null, { circuit }),
+        providerStats('Mailjet',  MJ_OK,    MJ_OK ? 'cts.cybersolutions@gmail.com' : null),
         providerStats('SendGrid', SG_OK,    SG_OK ? 'Connected' : null),
-        providerStats('Mailgun',  MG_OK,    process.env.MAILGUN_DOMAIN || null),
       ],
       allTime:  parseInt(totalSent.rows[0].total) || 0,
       todayDb:  parseInt(todaySent.rows[0].total)  || 0,

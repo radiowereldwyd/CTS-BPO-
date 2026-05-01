@@ -15,34 +15,49 @@ const SMTP_PORT       = parseInt(process.env.SMTP_PORT  || '587', 10);
 const SENDGRID_KEY    = process.env.SENDGRID_API_KEY    || '';
 const MAILGUN_KEY     = process.env.MAILGUN_API_KEY     || '';
 const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN      || '';
+const MAILJET_API_KEY = process.env.MAILJET_API_KEY     || '';
+const MAILJET_SEC_KEY = process.env.MAILJET_SECRET_KEY  || '';
 const FROM_NAME       = 'Calvin Thomas';
 const FROM_EMAIL      = process.env.FROM_EMAIL || GMAIL_USER || 'cts.bposolutions@gmail.com';
-const REPLY_EMAIL     = 'cts.bposolutions@gmail.com';
+const REPLY_EMAIL     = 'cts.cybersolutions@gmail.com';
 const WEBSITE         = 'cts.bposolutions@gmail.com';
 
 // Rate limit: ms between sends. Default 200ms (5/sec). Set EMAIL_RATE_MS=50 for SendGrid paid plans.
 const EMAIL_RATE_MS   = parseInt(process.env.EMAIL_RATE_MS || '200', 10);
 
-// Per-provider daily caps (99% threshold = stop before Gmail's hard 500 limit)
-const PROVIDER_CAPS = { gmail: 500, sendgrid: 100, mailgun: 9999 };
+// Per-provider daily caps (99% threshold = stop before hard limits)
+// Mailjet free: 200/day  |  Gmail: 500/day  |  SendGrid free: 100/day
+const PROVIDER_CAPS = { mailjet: 200, gmail: 500, sendgrid: 100, mailgun: 9999 };
 function getProviderCap() { return PROVIDER_CAPS[getSenderMode()] || 500; }
 function getStopAt()      { return Math.floor(getProviderCap() * 0.99); }   // 99% rule
 
 let dailySentCount = 0;
 let dailyResetDate = new Date().toDateString();
 
-// Load persisted send count so restarts don't reset the counter mid-day
+// Load persisted send count per provider — so restarts don't reset mid-day,
+// but switching providers starts fresh for that provider.
 (function loadPersistedCount() {
   try {
-    const fs   = require('fs');
-    const path = require('path');
-    const file = path.join(__dirname, '../../data/outreach-stats.json');
+    const fs      = require('fs');
+    const path    = require('path');
+    const file    = path.join(__dirname, '../../data/outreach-stats.json');
+    const mode    = getSenderMode();
     if (fs.existsSync(file)) {
-      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-      if (data.todayDate === new Date().toDateString()) {
+      const data  = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const today = new Date().toDateString();
+      // Per-provider bucket (new format) — fall back to legacy global only for matching provider
+      const bucket = data[mode];
+      if (bucket && bucket.todayDate === today) {
+        dailySentCount = bucket.sentToday || 0;
+        dailyResetDate = today;
+        console.log(`[EMAIL] Restored ${mode} daily sent count: ${dailySentCount}`);
+      } else if (!bucket && data.todayDate === today && mode === (data.provider || 'gmail')) {
+        // Legacy format — only restore if same provider
         dailySentCount = data.sentToday || 0;
-        dailyResetDate = data.todayDate;
-        console.log(`[EMAIL] Restored daily sent count from disk: ${dailySentCount}`);
+        dailyResetDate = today;
+        console.log(`[EMAIL] Restored legacy sent count for ${mode}: ${dailySentCount}`);
+      } else {
+        console.log(`[EMAIL] Provider switched to ${mode} — starting fresh at 0`);
       }
     }
   } catch (e) { /* ignore */ }
@@ -60,9 +75,10 @@ function dailyCapReached() {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Sender detection ────────────────────────────────────────────────────────
+// ── Sender detection — priority: SendGrid > Mailjet > Mailgun > Gmail ────────
 function getSenderMode() {
   if (SENDGRID_KEY)                     return 'sendgrid';
+  if (MAILJET_API_KEY && MAILJET_SEC_KEY) return 'mailjet';
   if (MAILGUN_KEY && MAILGUN_DOMAIN)    return 'mailgun';
   if (GMAIL_USER && GMAIL_APP_PASS)     return 'gmail';
   return null;
@@ -94,7 +110,7 @@ function getTransporter() {
 // ── Core send function — routes to correct provider ─────────────────────────
 async function sendMail({ to, subject, html, text, replyTo }) {
   if (dailyCapReached()) {
-    console.warn(`[EMAIL] Daily cap of ${MAX_DAILY_EMAILS} reached — skipping send to ${to}`);
+    console.warn(`[EMAIL] 99% cap (${getStopAt()}/${getProviderCap()}) reached — skipping send to ${to}`);
     return { skipped: true, reason: 'daily_cap' };
   }
 
@@ -118,6 +134,22 @@ async function sendMail({ to, subject, html, text, replyTo }) {
         content,
       }, {
         headers: { Authorization: `Bearer ${SENDGRID_KEY}`, 'Content-Type': 'application/json' },
+        timeout: 10000,
+      });
+
+    } else if (mode === 'mailjet') {
+      await axios.post('https://api.mailjet.com/v3.1/send', {
+        Messages: [{
+          From:     { Email: FROM_EMAIL, Name: FROM_NAME },
+          To:       [{ Email: to }],
+          ReplyTo:  { Email: replyTo || REPLY_EMAIL },
+          Subject:  subject,
+          HTMLPart: html,
+          ...(text ? { TextPart: text } : {}),
+        }],
+      }, {
+        auth:    { username: MAILJET_API_KEY, password: MAILJET_SEC_KEY },
+        headers: { 'Content-Type': 'application/json' },
         timeout: 10000,
       });
 
