@@ -27,7 +27,7 @@ const EMAIL_RATE_MS   = parseInt(process.env.EMAIL_RATE_MS || '200', 10);
 
 // Per-provider daily caps (99% threshold = stop before hard limits)
 // Mailjet free: 200/day  |  Gmail: 500/day  |  SendGrid free: 100/day
-const PROVIDER_CAPS = { mailjet: 200, gmail: 500, sendgrid: 100, mailgun: 9999 };
+const PROVIDER_CAPS = { mailjet: 299, gmail: 500, sendgrid: 100, mailgun: 99 };
 function getProviderCap() { return PROVIDER_CAPS[getSenderMode()] || 500; }
 function getStopAt()      { return Math.floor(getProviderCap() * 0.99); }   // 99% rule
 

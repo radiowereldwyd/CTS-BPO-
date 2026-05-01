@@ -1,8 +1,8 @@
 {
-  "sentToday": 377,
+  "sentToday": 382,
   "todayDate": "Fri May 01 2026",
-  "savedAt": "2026-05-01T11:06:50.919Z",
-  "provider": "mailjet",
+  "savedAt": "2026-05-01T11:07:49.647Z",
+  "provider": "mailgun",
   "gmail": {
     "sentToday": 343,
     "todayDate": "Fri May 01 2026"
