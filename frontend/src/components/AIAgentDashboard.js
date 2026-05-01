@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const API = process.env.REACT_APP_API_URL || '';
 
@@ -138,67 +138,83 @@ function FeedItem({ item }) {
 }
 
 export default function AIAgentDashboard({ token }) {
-  const [live, setLive]           = useState(null);
+  const [live, setLive]             = useState(null);
   const [activities, setActivities] = useState([]);
-  const [activeTab, setActiveTab] = useState('ops');
+  const [activeTab, setActiveTab]   = useState('ops');
   const [triggering, setTriggering] = useState('');
   const [triggerMsg, setTriggerMsg] = useState('');
-  const [loading, setLoading]     = useState(true);
+  const [loading, setLoading]       = useState(true);
   const [emailStats, setEmailStats] = useState(null);
-  const feedRef = useRef(null);
-  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const feedRef  = useRef(null);
+  const tokenRef = useRef(token);
+  useEffect(() => { tokenRef.current = token; }, [token]);
 
-  const fetchLive = useCallback(async () => {
+  // Always-current fetch helpers — defined as refs so intervals never need restarting
+  const doFetchLive = async () => {
     try {
+      const h = { Authorization: `Bearer ${tokenRef.current}` };
       const data = await fetch(`${API}/api/ai-agent/live`, { headers: h }).then(r => r.json());
       setLive(data);
       setLoading(false);
+      setLastRefresh(new Date());
     } catch {}
-  }, [token]);
-
-  const fetchActivity = useCallback(async () => {
+  };
+  const doFetchActivity = async () => {
     try {
+      const h = { Authorization: `Bearer ${tokenRef.current}` };
       const data = await fetch(`${API}/api/ai-agent/activity?limit=40`, { headers: h }).then(r => r.json());
       setActivities(data.activities || []);
     } catch {}
-  }, [token]);
-
-  const fetchEmailStats = useCallback(async () => {
+  };
+  const doFetchEmailStats = async () => {
     try {
+      const h = { Authorization: `Bearer ${tokenRef.current}` };
       const data = await fetch(`${API}/api/email-stats`, { headers: h }).then(r => r.json());
       setEmailStats(data);
     } catch {}
-  }, [token]);
+  };
+
+  // Store latest versions in refs so the interval callbacks always call the current function
+  const liveRef       = useRef(doFetchLive);
+  const activityRef   = useRef(doFetchActivity);
+  const emailStatsRef = useRef(doFetchEmailStats);
+  liveRef.current       = doFetchLive;
+  activityRef.current   = doFetchActivity;
+  emailStatsRef.current = doFetchEmailStats;
+
+  // Set up intervals ONCE on mount — never cleared until unmount
+  useEffect(() => {
+    liveRef.current();
+    activityRef.current();
+    emailStatsRef.current();
+    const iv1 = setInterval(() => liveRef.current(),       15000);
+    const iv2 = setInterval(() => activityRef.current(),   15000);
+    const iv3 = setInterval(() => emailStatsRef.current(), 15000);
+    return () => { clearInterval(iv1); clearInterval(iv2); clearInterval(iv3); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function toggleEmailPause() {
     const newPaused = !emailStats?.paused;
     try {
+      const h = { Authorization: `Bearer ${tokenRef.current}`, 'Content-Type': 'application/json' };
       await fetch(`${API}/api/email-pause`, {
         method: 'POST', headers: h,
         body: JSON.stringify({ paused: newPaused }),
       });
-      fetchEmailStats();
+      doFetchEmailStats();
     } catch {}
   }
-
-  useEffect(() => {
-    fetchLive();
-    fetchActivity();
-    fetchEmailStats();
-    const iv1 = setInterval(fetchLive, 15000);
-    const iv2 = setInterval(fetchActivity, 15000);
-    const iv3 = setInterval(fetchEmailStats, 15000);
-    return () => { clearInterval(iv1); clearInterval(iv2); clearInterval(iv3); };
-  }, [fetchLive, fetchActivity, fetchEmailStats]);
 
   async function trigger(task) {
     setTriggering(task);
     setTriggerMsg('');
     try {
+      const h = { Authorization: `Bearer ${tokenRef.current}` };
       const r = await fetch(`${API}/api/ai-agent/trigger/${task}`, { method: 'POST', headers: h });
       const data = await r.json();
       setTriggerMsg(data.message || data.error || 'Done');
-      setTimeout(() => { fetchLive(); fetchActivity(); setTriggerMsg(''); }, 2000);
+      setTimeout(() => { liveRef.current(); activityRef.current(); setTriggerMsg(''); }, 2000);
     } catch (e) {
       setTriggerMsg('Error: ' + e.message);
     } finally {
@@ -262,6 +278,11 @@ export default function AIAgentDashboard({ token }) {
                 {isOnline ? 'ONLINE — All systems running' : 'OFFLINE'}
               </span>
               {live?.startedAt && <span style={{ fontSize: 11, color: '#64748b' }}>· since {timeAgo(live.startedAt)}</span>}
+              {lastRefresh && (
+                <span style={{ fontSize: 10, color: '#475569', marginLeft: 6, fontFamily: 'monospace' }}>
+                  ↻ {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -646,17 +667,22 @@ export default function AIAgentDashboard({ token }) {
 function ScrapedContactsPanel({ token, live }) {
   const [data, setData] = useState({ stats: null, contacts: [] });
   const [loading, setLoading] = useState(true);
-  const h = { Authorization: `Bearer ${token}` };
+  const tokenRef = useRef(token);
+  useEffect(() => { tokenRef.current = token; }, [token]);
 
-  useEffect(() => {
+  const doFetch = () => {
+    const h = { Authorization: `Bearer ${tokenRef.current}` };
     fetch(`${API}/api/ai-agent/scraped-contacts`, { headers: h })
       .then(r => r.json()).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
-    const iv = setInterval(() => {
-      fetch(`${API}/api/ai-agent/scraped-contacts`, { headers: h })
-        .then(r => r.json()).then(d => setData(d)).catch(() => {});
-    }, 15000);
+  };
+  const fetchRef = useRef(doFetch);
+  fetchRef.current = doFetch;
+
+  useEffect(() => {
+    fetchRef.current();
+    const iv = setInterval(() => fetchRef.current(), 15000);
     return () => clearInterval(iv);
-  }, [token]);
+  }, []);
 
   const s = data.stats || {};
   const contacts = data.contacts || [];
