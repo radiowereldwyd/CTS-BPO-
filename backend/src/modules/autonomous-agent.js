@@ -71,6 +71,7 @@ const AI_WORKER_ID = 0; // sentinel: sub_id=0 means the AI Worker
 
 // ── BPO lead search queries ────────────────────────────────────────────────
 const LEAD_QUERIES = [
+  // ── Original operator-rich queries ──────────────────────────────────────
   { q: '"outsource" "data entry" "contact us" OR "get a quote" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
   { q: '"transcription service" "outsource" OR "BPO" "company" "quote" -site:linkedin.com', type: 'transcription' },
   { q: '"translation services" "outsource" "provider" "get quote" -site:linkedin.com', type: 'translation' },
@@ -83,6 +84,32 @@ const LEAD_QUERIES = [
   { q: 'BPO services South Africa "contact us" "get a quote" -site:linkedin.com -site:indeed.com', type: 'general' },
   { q: '"document digitization" "outsource" "service" -site:linkedin.com', type: 'document-processing' },
   { q: '"social media management" "outsource" "agency" -site:linkedin.com', type: 'social-media' },
+
+  // ── New SA-targeted & service-specific queries ───────────────────────────
+  { q: 'data entry outsourcing companies South Africa "contact" OR "quote" -site:linkedin.com', type: 'data-entry' },
+  { q: 'document translation BPO providers "get a quote" OR "contact us" -site:linkedin.com', type: 'translation' },
+  { q: 'audio transcription outsourcing firms "contact" OR "free quote" -site:linkedin.com', type: 'transcription' },
+  { q: 'virtual assistant services South Africa "hire" OR "contact us" -site:linkedin.com', type: 'virtual-assistant' },
+  { q: 'finance invoice processing outsourcing "contact" OR "get quote" -site:linkedin.com', type: 'finance-admin' },
+  { q: 'content moderation outsourcing companies "contact us" OR "quote" -site:linkedin.com', type: 'content-moderation' },
+
+  // ── Competitor-displacement queries (find clients of rival BPO firms) ────
+  { q: 'Helpware alternative BPO "contact us" "data entry" OR "transcription"', type: 'data-entry' },
+  { q: 'SunTec alternative "outsourcing" "South Africa" OR "affordable" -site:linkedin.com', type: 'general' },
+  { q: '"ARDEM" alternative "invoice processing" OR "data capture" "contact"', type: 'finance-admin' },
+  { q: '"OBI Services" alternative "transcription" OR "data entry" "quote"', type: 'transcription' },
+  { q: 'oWorkers alternative "data labeling" OR "data entry" "get quote"', type: 'data-entry' },
+  { q: '"Perfect Data Entry" alternative "outsource" "company" "contact"', type: 'data-entry' },
+  { q: '"virtual assistant" "South Africa" "affordable" "BPO" "contact us"', type: 'virtual-assistant' },
+  { q: '"content moderation" "South Africa" "outsource" "contact" "quote"', type: 'content-moderation' },
+];
+
+// ── Known competitor domains (for intel & displacement outreach) ───────────
+const COMPETITOR_DOMAINS = [
+  'helpware.com', 'softtek.com', 'suntecindia.com', 'uniquesdata.com',
+  'labelyourdata.com', 'oworkers.com', 'perfectdataentry.com', 'tabservice.com',
+  'techspeed.com', 'insigniaresources.com', 'obiservices.com',
+  'unity-connect.com', 'remotecoworker.com', 'ardem.com',
 ];
 
 // Agent state (in-memory, survives between cron ticks)
