@@ -1392,16 +1392,30 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     const MJ_OK     = !!(process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY);
     const MG_OK     = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
 
-    const CAPS = { gmail: 500, sendgrid: 100, mailjet: 200, mailgun: 9999 };
+    // Load per-provider disk counts (for inactive providers)
+    let diskStats = {};
+    try { diskStats = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../../data/outreach-stats.json'), 'utf8')); } catch {}
+    const today = new Date().toDateString();
+
+    const CAPS = { gmail: 500, sendgrid: 100, mailjet: 200, mailgun: null };
     function providerStats(name, configured, account, extra = {}) {
       const key    = name.toLowerCase();
       const active = outreachStats.mode === key;
-      const cap    = CAPS[key] || null;
+      const cap    = CAPS[key];
       const stopAt = cap ? Math.floor(cap * 0.99) : null;
+      // Use live count for active provider; disk count for inactive
+      let sentToday = 0;
+      if (configured) {
+        if (active) {
+          sentToday = outreachStats.sent || 0;
+        } else if (diskStats[key] && diskStats[key].todayDate === today) {
+          sentToday = diskStats[key].sentToday || 0;
+        }
+      }
       return {
         name, configured, active,
-        sentToday: configured && active ? outreachStats.sent : 0,
-        dailyCap:  cap === 9999 ? null : cap,
+        sentToday,
+        dailyCap: cap,
         stopAt,
         account,
         ...extra,
@@ -1411,9 +1425,10 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     res.json({
       paused:  emailOutreach.isEmailPaused(),
       providers: [
+        providerStats('Mailgun',  MG_OK,    MG_OK  ? process.env.MAILGUN_DOMAIN : null),
+        providerStats('Mailjet',  MJ_OK,    MJ_OK  ? 'cts.cybersolutions@gmail.com' : null),
+        providerStats('SendGrid', SG_OK,    SG_OK  ? 'Connected' : null),
         providerStats('Gmail',    GMAIL_OK, process.env.GMAIL_USER || null, { circuit }),
-        providerStats('Mailjet',  MJ_OK,    MJ_OK ? 'cts.cybersolutions@gmail.com' : null),
-        providerStats('SendGrid', SG_OK,    SG_OK ? 'Connected' : null),
       ],
       allTime:  parseInt(totalSent.rows[0].total) || 0,
       todayDb:  parseInt(todaySent.rows[0].total)  || 0,

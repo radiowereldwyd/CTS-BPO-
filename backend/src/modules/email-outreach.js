@@ -109,12 +109,13 @@ function isEmailPaused() { return emailPaused; }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Sender detection — priority: SendGrid > Mailjet > Mailgun > Gmail ────────
+// ── Sender detection — priority: Mailgun > Mailjet > SendGrid > Gmail ────────
+// Mailgun first: no daily cap, high deliverability, already configured
 function getSenderMode() {
-  if (SENDGRID_KEY)                     return 'sendgrid';
+  if (MAILGUN_KEY && MAILGUN_DOMAIN)      return 'mailgun';
   if (MAILJET_API_KEY && MAILJET_SEC_KEY) return 'mailjet';
-  if (MAILGUN_KEY && MAILGUN_DOMAIN)    return 'mailgun';
-  if (GMAIL_USER && GMAIL_APP_PASS)     return 'gmail';
+  if (SENDGRID_KEY)                       return 'sendgrid';
+  if (GMAIL_USER && GMAIL_APP_PASS)       return 'gmail';
   return null;
 }
 
