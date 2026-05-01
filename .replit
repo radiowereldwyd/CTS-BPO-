@@ -56,7 +56,7 @@ externalPort = 80
 [userenv]
 
 [userenv.shared]
-GMAIL_USER = "cts.bposolutions@gmail.com"
+GMAIL_USER = "cts.cybersolutions@gmail.com"
 
 [deployment]
 deploymentTarget = "autoscale"
