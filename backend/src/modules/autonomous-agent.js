@@ -458,15 +458,18 @@ async function sendLeadOutreach(leadId, prospect) {
 async function runAiLeadOutreach() {
   if (!circuitCheck()) return;
 
-  // DISTINCT ON domain so we never email the same company twice
+  // DISTINCT ON domain — newest leads first (Clutch/OA scrapes go to head of queue)
   const newLeads = await db.query(`
-    SELECT DISTINCT ON (domain) id, contact_email, company, domain, job_type
-    FROM ai_leads
-    WHERE status = 'new'
-      AND contact_email IS NOT NULL
-      AND bounced_at IS NULL
-      AND domain IS NOT NULL
-    ORDER BY domain, created_at ASC
+    SELECT * FROM (
+      SELECT DISTINCT ON (domain) id, contact_email, company, domain, job_type, created_at
+      FROM ai_leads
+      WHERE status = 'new'
+        AND contact_email IS NOT NULL
+        AND bounced_at IS NULL
+        AND domain IS NOT NULL
+      ORDER BY domain, created_at DESC
+    ) newest
+    ORDER BY created_at DESC
     LIMIT 10
   `).catch(() => ({ rows: [] }));
 
@@ -535,19 +538,23 @@ async function runScrapedContactsOutreach() {
   if (!circuitCheck()) return;
   // Pick ONE representative contact per domain (prefer info@ then contact@)
   // Only look at domains not yet outreached
+  // Newest domains first — contacts from latest Clutch/OA scrapes go to head of queue
   const rows = await db.query(`
-    SELECT DISTINCT ON (domain)
-      id, company, email, domain, business_type, city, country, source, snippet, query_used
-    FROM scraped_contacts
-    WHERE status = 'new'
-      AND email IS NOT NULL
-      AND bounced_at IS NULL
-      AND domain IS NOT NULL
-    ORDER BY domain,
-      CASE WHEN email LIKE 'info@%' THEN 0
-           WHEN email LIKE 'contact@%' THEN 1
-           ELSE 2 END,
-      created_at ASC
+    SELECT * FROM (
+      SELECT DISTINCT ON (domain)
+        id, company, email, domain, business_type, city, country, source, snippet, query_used, created_at
+      FROM scraped_contacts
+      WHERE status = 'new'
+        AND email IS NOT NULL
+        AND bounced_at IS NULL
+        AND domain IS NOT NULL
+      ORDER BY domain,
+        CASE WHEN email LIKE 'info@%' THEN 0
+             WHEN email LIKE 'contact@%' THEN 1
+             ELSE 2 END,
+        created_at DESC
+    ) newest
+    ORDER BY created_at DESC
     LIMIT 20
   `).catch(() => ({ rows: [] }));
 
