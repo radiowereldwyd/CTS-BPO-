@@ -73,6 +73,40 @@ function dailyCapReached() {
   return dailySentCount >= getStopAt();   // stop at 99% of provider cap
 }
 
+// ── Global email pause flag ───────────────────────────────────────────────────
+// Persisted to disk so it survives restarts. Starts PAUSED until explicitly enabled.
+const PAUSE_FILE = require('path').join(__dirname, '../../data/email-pause.json');
+let emailPaused = true;   // default: paused
+
+(function loadPauseState() {
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(PAUSE_FILE)) {
+      const d = JSON.parse(fs.readFileSync(PAUSE_FILE, 'utf8'));
+      emailPaused = !!d.paused;
+      console.log(`[EMAIL] Pause state loaded: ${emailPaused ? '⏸ PAUSED' : '▶ ACTIVE'}`);
+    } else {
+      savePauseState();   // write default (paused)
+      console.log('[EMAIL] No pause file found — defaulting to ⏸ PAUSED');
+    }
+  } catch (e) { /* keep default */ }
+})();
+
+function savePauseState() {
+  try {
+    const fs = require('fs');
+    fs.writeFileSync(PAUSE_FILE, JSON.stringify({ paused: emailPaused, updatedAt: new Date().toISOString() }, null, 2));
+  } catch {}
+}
+
+function setEmailPaused(val) {
+  emailPaused = !!val;
+  savePauseState();
+  console.log(`[EMAIL] Outreach ${emailPaused ? '⏸ PAUSED' : '▶ RESUMED'} by admin`);
+}
+
+function isEmailPaused() { return emailPaused; }
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Sender detection — priority: SendGrid > Mailjet > Mailgun > Gmail ────────
@@ -109,6 +143,10 @@ function getTransporter() {
 
 // ── Core send function — routes to correct provider ─────────────────────────
 async function sendMail({ to, subject, html, text, replyTo }) {
+  if (isEmailPaused()) {
+    console.log(`[EMAIL] ⏸ Outreach paused — skipping send to ${to}`);
+    return { skipped: true, reason: 'paused' };
+  }
   if (dailyCapReached()) {
     console.warn(`[EMAIL] 99% cap (${getStopAt()}/${getProviderCap()}) reached — skipping send to ${to}`);
     return { skipped: true, reason: 'daily_cap' };
@@ -1547,5 +1585,7 @@ module.exports = {
   templates, TEMPLATE_META, VALID_TEMPLATES,
   isConfigured,
   getSenderMode,
-  getDailyStats: () => { checkDailyReset(); const mode = getSenderMode(); return { sent: dailySentCount, cap: getProviderCap(), stopAt: getStopAt(), mode }; },
+  isEmailPaused,
+  setEmailPaused,
+  getDailyStats: () => { checkDailyReset(); const mode = getSenderMode(); return { sent: dailySentCount, cap: getProviderCap(), stopAt: getStopAt(), mode, paused: emailPaused }; },
 };

@@ -170,6 +170,17 @@ export default function AIAgentDashboard({ token }) {
     } catch {}
   }, [token]);
 
+  async function toggleEmailPause() {
+    const newPaused = !emailStats?.paused;
+    try {
+      await fetch(`${API}/api/email-pause`, {
+        method: 'POST', headers: h,
+        body: JSON.stringify({ paused: newPaused }),
+      });
+      fetchEmailStats();
+    } catch {}
+  }
+
   useEffect(() => {
     fetchLive();
     fetchActivity();
@@ -413,10 +424,43 @@ export default function AIAgentDashboard({ token }) {
 
           {/* ── Email Agent Status — 15s live ──────────────────────────────── */}
           <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-              📧 Email Agents
-              <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'none', letterSpacing: 0 }}>↻ 15s live</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 8 }}>
+                📧 Email Agents
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'none', letterSpacing: 0 }}>↻ 15s live</span>
+              </div>
+
+              {/* Master pause / resume toggle */}
+              <button onClick={toggleEmailPause} style={{
+                marginLeft: 'auto',
+                padding: '8px 20px',
+                borderRadius: 8,
+                border: 'none',
+                fontWeight: 800,
+                fontSize: 13,
+                cursor: 'pointer',
+                background: emailStats?.paused ? '#16a34a' : '#dc2626',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: emailStats?.paused ? '0 0 0 3px #bbf7d030' : '0 0 0 3px #fecaca30',
+              }}>
+                {emailStats?.paused ? '▶ Resume Email Sending' : '⏸ Pause Email Sending'}
+              </button>
             </div>
+
+            {/* Global pause banner */}
+            {emailStats?.paused && (
+              <div style={{ marginBottom: 12, padding: '12px 18px', background: '#fef2f2', border: '2px solid #fca5a5', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 22 }}>⏸</span>
+                <div>
+                  <div style={{ fontWeight: 800, color: '#991b1b', fontSize: 14 }}>All email outreach is PAUSED</div>
+                  <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 2 }}>No emails are being sent. Click "Resume Email Sending" above to re-activate all outreach pipelines.</div>
+                </div>
+              </div>
+            )}
+            
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
               {(emailStats?.providers || [
                 { name: 'Gmail',    configured: false },

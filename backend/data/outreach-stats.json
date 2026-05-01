@@ -1,10 +1,14 @@
 {
-  "sentToday": 364,
+  "sentToday": 343,
   "todayDate": "Fri May 01 2026",
-  "savedAt": "2026-05-01T10:51:19.039Z",
+  "savedAt": "2026-05-01T11:00:00.000Z",
   "provider": "mailjet",
+  "gmail": {
+    "sentToday": 343,
+    "todayDate": "Fri May 01 2026"
+  },
   "mailjet": {
-    "sentToday": 364,
+    "sentToday": 0,
     "todayDate": "Fri May 01 2026"
   }
 }

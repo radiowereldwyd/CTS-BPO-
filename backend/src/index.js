@@ -1354,6 +1354,19 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/email-pause — return current pause state
+app.get('/api/email-pause', requireAuth, (req, res) => {
+  res.json({ paused: emailOutreach.isEmailPaused() });
+});
+
+// POST /api/email-pause — set pause state { paused: true|false }
+app.post('/api/email-pause', requireAuth, (req, res) => {
+  const { paused } = req.body;
+  if (typeof paused !== 'boolean') return res.status(400).json({ error: 'paused must be boolean' });
+  emailOutreach.setEmailPaused(paused);
+  res.json({ ok: true, paused });
+});
+
 // GET /api/email-stats — live email provider status + daily send counts
 app.get('/api/email-stats', requireAuth, async (req, res) => {
   try {
@@ -1396,6 +1409,7 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     }
 
     res.json({
+      paused:  emailOutreach.isEmailPaused(),
       providers: [
         providerStats('Gmail',    GMAIL_OK, process.env.GMAIL_USER || null, { circuit }),
         providerStats('Mailjet',  MJ_OK,    MJ_OK ? 'cts.cybersolutions@gmail.com' : null),
