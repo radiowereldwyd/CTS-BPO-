@@ -100,13 +100,25 @@ const emailCircuit = {
   pausedUntil: null,
 };
 
-function circuitTrip(errMsg) {
+function circuitTrip(errMsg, pauseMs) {
+  // Daily-limit errors trip immediately on 1st failure; auth errors need 2
+  const isDailyLimit = /5\.4\.5|sending limit|Daily user/i.test(errMsg || '');
   emailCircuit.failures++;
-  if (emailCircuit.failures >= 2 && !emailCircuit.open) {
-    emailCircuit.open        = true;
-    emailCircuit.pausedUntil = Date.now() + CIRCUIT_PAUSE_MS;
-    console.warn(`🚫 [EMAIL CIRCUIT] Tripped after ${emailCircuit.failures} auth failures — pausing ALL outreach for 1 hour`);
-    logActivity('email_circuit', `Gmail auth circuit tripped — pausing outreach for 1 hour`, null, null, 'error').catch(() => {});
+  const threshold = isDailyLimit ? 1 : 2;
+  if (emailCircuit.failures >= threshold && !emailCircuit.open) {
+    // Daily limit: pause until 01:00 UTC tomorrow so quota resets
+    if (isDailyLimit) {
+      const tomorrow = new Date();
+      tomorrow.setUTCHours(25, 0, 0, 0); // next day 01:00 UTC
+      emailCircuit.pausedUntil = tomorrow.getTime();
+      console.warn(`🚫 [EMAIL CIRCUIT] Daily Gmail limit hit — pausing outreach until 01:00 UTC tomorrow`);
+      logActivity('email_circuit', `Gmail daily limit reached — pausing until 01:00 UTC tomorrow`, null, null, 'error').catch(() => {});
+    } else {
+      emailCircuit.pausedUntil = Date.now() + (pauseMs || CIRCUIT_PAUSE_MS);
+      console.warn(`🚫 [EMAIL CIRCUIT] Tripped after ${emailCircuit.failures} auth failures — pausing ALL outreach for 1 hour`);
+      logActivity('email_circuit', `Gmail auth circuit tripped — pausing outreach for 1 hour`, null, null, 'error').catch(() => {});
+    }
+    emailCircuit.open = true;
   }
 }
 
@@ -119,12 +131,15 @@ function circuitCheck() {
     return true;
   }
   const minLeft = Math.ceil((emailCircuit.pausedUntil - Date.now()) / 60000);
-  console.log(`⏳ [EMAIL CIRCUIT] Open — ${minLeft}m remaining, skipping outreach`);
+  const hLeft   = (minLeft / 60).toFixed(1);
+  if (minLeft % 30 === 0 || minLeft < 5) { // only log occasionally to reduce noise
+    console.log(`⏳ [EMAIL CIRCUIT] Open — ${hLeft}h remaining, skipping outreach`);
+  }
   return false;
 }
 
 function isAuthError(err) {
-  return /454|535|Too many login|Username and Password|Invalid login/i.test(err.message || '');
+  return /454|535|5\.4\.5|Too many login|Username and Password|Invalid login|sending limit|Daily user/i.test(err.message || '');
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
