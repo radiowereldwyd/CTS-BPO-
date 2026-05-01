@@ -471,6 +471,11 @@ async function sendLeadOutreach(leadId, prospect) {
       }
     }
     const result = await emailOutreach.sendClientColdOutreach(prospect);
+    if (!result || result.sent === false) {
+      if (result?.skipped) return null; // daily cap or paused
+      await logActivity('email_sent', `Provider rejected send → ${prospect.email}`, 'lead', leadId, 'error');
+      return null;
+    }
     emailCircuit.failures = 0; // reset on success
     await db.query(
       `UPDATE ai_leads SET status='outreach_sent', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
@@ -1290,12 +1295,18 @@ async function runJobLeadOutreach() {
         continue;
       }
 
-      await emailOutreach.sendClientColdOutreach({
+      const sendResult = await emailOutreach.sendClientColdOutreach({
         email:   lead.contact_email,
         name:    lead.contact_name || lead.company || 'there',
         company: lead.company || 'your organisation',
         jobType: lead.job_type || 'business process outsourcing',
       });
+      if (!sendResult || sendResult.sent === false) {
+        // Email provider rejected (4xx) — skip this lead, try next cycle
+        if (sendResult?.skipped) continue; // daily cap or paused — stop batch
+        await logActivity('prospect_outreach', `Provider rejected send → ${lead.contact_email}`, 'job_lead', lead.id, 'error');
+        continue;
+      }
       emailCircuit.failures = 0;
 
       // Mark this job_lead as contacted (job_leads has no domain column — update by id)

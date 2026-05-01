@@ -63,6 +63,20 @@ let dailyResetDate = new Date().toDateString();
   } catch (e) { /* ignore */ }
 })();
 
+// Persist per-provider daily count to disk so the dashboard reflects live sends
+const _statsFs   = require('fs');
+const _statsPath = require('path').join(__dirname, '../../data/outreach-stats.json');
+function savePerProviderCount() {
+  try {
+    const mode   = getSenderMode();
+    const today  = new Date().toDateString();
+    let existing = {};
+    try { existing = JSON.parse(_statsFs.readFileSync(_statsPath, 'utf8')); } catch {}
+    existing[mode] = { sentToday: dailySentCount, todayDate: today };
+    _statsFs.writeFileSync(_statsPath, JSON.stringify(existing, null, 2));
+  } catch {}
+}
+
 function checkDailyReset() {
   const today = new Date().toDateString();
   if (today !== dailyResetDate) { dailySentCount = 0; dailyResetDate = today; }
@@ -110,11 +124,20 @@ function isEmailPaused() { return emailPaused; }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── Sender detection — priority: MailerLite > Mailgun > Mailjet > Gmail ──────
+// Providers that returned 404/403 (feature not enabled) are skipped for the session
+const _brokenProviders = new Set();
+function markBroken(provider) {
+  if (!_brokenProviders.has(provider)) {
+    _brokenProviders.add(provider);
+    console.warn(`[EMAIL] ⚠️ Provider '${provider}' marked broken (404/403) — falling back to next provider`);
+  }
+}
+
 function getSenderMode() {
-  if (MAILERLITE_API_KEY)                 return 'mailerlite';
-  if (MAILGUN_KEY && MAILGUN_DOMAIN)      return 'mailgun';
-  if (MAILJET_API_KEY && MAILJET_SEC_KEY) return 'mailjet';
-  if (GMAIL_USER && GMAIL_APP_PASS)       return 'gmail';
+  if (MAILERLITE_API_KEY && !_brokenProviders.has('mailerlite'))                 return 'mailerlite';
+  if (MAILGUN_KEY && MAILGUN_DOMAIN && !_brokenProviders.has('mailgun'))         return 'mailgun';
+  if (MAILJET_API_KEY && MAILJET_SEC_KEY && !_brokenProviders.has('mailjet'))    return 'mailjet';
+  if (GMAIL_USER && GMAIL_APP_PASS && !_brokenProviders.has('gmail'))            return 'gmail';
   return null;
 }
 
@@ -220,16 +243,39 @@ async function sendMail({ to, subject, html, text, replyTo }) {
     }
 
     dailySentCount++;
+    savePerProviderCount();
     if (EMAIL_RATE_MS > 0) await sleep(EMAIL_RATE_MS);
     return { sent: true, mode };
 
   } catch (err) {
     const status = err.response?.status || 0;
-    // 4xx from SendGrid/Mailgun (bad address etc) — don't throw, just return error
     if (status >= 400 && status < 500) {
-      return { error: true, status, message: err.response?.data?.errors?.[0]?.message || err.message };
+      const msg = err.response?.data?.errors?.[0]?.message || err.response?.data?.message || err.message;
+      // 404 / 403 = feature not enabled; 401 = bad credentials → mark broken, try next provider
+      if (status === 404 || status === 403 || status === 401) {
+        markBroken(mode);
+        const nextMode = getSenderMode();
+        if (nextMode) {
+          console.log(`[EMAIL] Retrying via fallback provider: ${nextMode}`);
+          return sendMail({ to, subject, html, text, replyTo }); // recurse with next provider
+        }
+        console.error(`[EMAIL] All providers broken — no working email provider configured`);
+        return { error: true, status, message: 'All email providers unavailable — check API credentials' };
+      }
+      // 422 / 400 / other 4xx = bad email address — log and skip, don't mark provider broken
+      console.error(`[EMAIL] ${mode} ${status} error sending to ${to}: ${msg}`);
+      return { error: true, status, message: msg };
     }
-    throw err;
+    // SMTP / network errors (nodemailer Gmail, connection errors)
+    const smtpCode = err.responseCode || 0; // nodemailer sets responseCode
+    const isAuthErr = smtpCode === 535 || /535|authentication|credentials|login/i.test(err.message);
+    if (isAuthErr || (mode === 'gmail' && err.code === 'EAUTH')) {
+      console.error(`[EMAIL] Gmail SMTP auth failure — marking broken: ${err.message}`);
+      markBroken('gmail');
+      return { error: true, status: 535, message: `Gmail auth failed: ${err.message}` };
+    }
+    console.error(`[EMAIL] ${mode} SMTP/network error to ${to}: ${err.message}`);
+    return { error: true, status: 0, message: err.message };
   }
 }
 
@@ -1592,5 +1638,5 @@ module.exports = {
   getSenderMode,
   isEmailPaused,
   setEmailPaused,
-  getDailyStats: () => { checkDailyReset(); const mode = getSenderMode(); return { sent: dailySentCount, cap: getProviderCap(), stopAt: getStopAt(), mode, paused: emailPaused }; },
+  getDailyStats: () => { checkDailyReset(); const mode = getSenderMode(); return { sent: dailySentCount, cap: getProviderCap(), stopAt: getStopAt(), mode, paused: emailPaused, broken: [..._brokenProviders] }; },
 };

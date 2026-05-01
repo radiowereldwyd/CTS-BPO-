@@ -1373,17 +1373,18 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     const outreachStats = emailOutreach.getDailyStats();
     const circuit       = autonomousAgent.getCircuitState ? autonomousAgent.getCircuitState() : null;
 
-    // Total sent all-time from activity log
+    // Total sent all-time — individual sends only (target_id IS NOT NULL excludes batch summaries)
     const totalSent = await db.query(
       `SELECT COUNT(*) AS total FROM ai_activity_log
-       WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach') AND status='success'`
+       WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach')
+         AND status='success' AND target_id IS NOT NULL`
     ).catch(() => ({ rows: [{ total: 0 }] }));
 
-    // Sent today from activity log
+    // Sent today from activity log — same accurate filter
     const todaySent = await db.query(
       `SELECT COUNT(*) AS total FROM ai_activity_log
-       WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach')
-         AND status='success'
+       WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach')
+         AND status='success' AND target_id IS NOT NULL
          AND created_at >= CURRENT_DATE`
     ).catch(() => ({ rows: [{ total: 0 }] }));
 
@@ -1398,14 +1399,16 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     const today = new Date().toDateString();
 
     const CAPS = { mailerlite: 399, gmail: 500, mailjet: 299, mailgun: 99 };
+    const brokenSet = new Set(outreachStats.broken || []);
     function providerStats(name, configured, account, extra = {}) {
       const key    = name.toLowerCase();
       const active = outreachStats.mode === key;
+      const broken = brokenSet.has(key);
       const cap    = CAPS[key];
       const stopAt = cap ? Math.floor(cap * 0.99) : null;
       // Use live count for active provider; disk count for inactive
       let sentToday = 0;
-      if (configured) {
+      if (configured && !broken) {
         if (active) {
           sentToday = outreachStats.sent || 0;
         } else if (diskStats[key] && diskStats[key].todayDate === today) {
@@ -1413,7 +1416,7 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
         }
       }
       return {
-        name, configured, active,
+        name, configured, active, broken,
         sentToday,
         dailyCap: cap,
         stopAt,

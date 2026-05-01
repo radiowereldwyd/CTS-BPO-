@@ -637,6 +637,12 @@ const _continuousStats = {
   cyclesCompleted:    _saved.cyclesCompleted,
   lastQueryTs: null,
   recentQueries: [], // last 50 [{source, query, found, ts}]
+  sourceStats: {     // cumulative per-source totals for this session
+    google_places: { queries: 0, found: 0 },
+    google_cse:    { queries: 0, found: 0 },
+    duckduckgo:    { queries: 0, found: 0 },
+    serpapi_bpo:   { queries: 0, found: 0 },
+  },
 };
 
 const SOURCE_LABELS = {
@@ -683,6 +689,13 @@ async function runContinuous(onUpdate) {
     _continuousStats.totalQueries++;
     _continuousStats.lastFound = realFound;
     if (realFound > 0) _continuousStats.totalContactsAdded += realFound;
+
+    // Per-source session totals
+    if (!_continuousStats.sourceStats[pair.source]) {
+      _continuousStats.sourceStats[pair.source] = { queries: 0, found: 0 };
+    }
+    _continuousStats.sourceStats[pair.source].queries++;
+    if (realFound > 0) _continuousStats.sourceStats[pair.source].found += realFound;
 
     // Push to recent queries log (keep last 50)
     _continuousStats.recentQueries.unshift({

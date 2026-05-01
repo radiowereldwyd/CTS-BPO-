@@ -62,8 +62,10 @@ function Pulse({ color = '#10b981', size = 8 }) {
 // ── Scraper source card ───────────────────────────────────────────────────────
 function SourceCard({ source, isActive, currentQuery, stats }) {
   const meta = SOURCE_META[source] || { label: source, icon: '🔎', color: '#64748b', bg: '#f1f5f9' };
-  const found = stats?.recentQueries?.filter(q => q.source === source).reduce((a, b) => a + (b.found || 0), 0) || 0;
-  const queries = stats?.recentQueries?.filter(q => q.source === source).length || 0;
+  // Use per-source session totals if available; fall back to scanning recentQueries
+  const srcStat = stats?.sourceStats?.[source];
+  const found   = srcStat ? (srcStat.found || 0) : (stats?.recentQueries?.filter(q => q.source === source).reduce((a, b) => a + (b.found || 0), 0) || 0);
+  const queries  = srcStat ? (srcStat.queries || 0) : (stats?.recentQueries?.filter(q => q.source === source).length || 0);
 
   return (
     <div style={{
@@ -493,6 +495,26 @@ export default function AIAgentDashboard({ token }) {
               </div>
             )}
             
+            {(() => {
+              const allBroken = emailStats?.providers?.length > 0 &&
+                emailStats.providers.filter(p => p.configured).every(p => p.broken);
+              return allBroken ? (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#fff7ed', border: '1.5px solid #f97316', borderRadius: 10, padding: '12px 16px', marginBottom: 12 }}>
+                  <span style={{ fontSize: 22 }}>⚠️</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#9a3412', fontSize: 14 }}>All email providers are unavailable</div>
+                    <div style={{ fontSize: 12, color: '#c2410c', marginTop: 4, lineHeight: 1.5 }}>
+                      No emails can be sent right now. Please fix the credentials for at least one provider:<br/>
+                      • <b>MailerLite</b>: Enable the Transactional Emails add-on in your MailerLite account.<br/>
+                      • <b>Mailgun</b>: Upgrade to Flex plan or add recipients to your sandbox allowlist.<br/>
+                      • <b>Mailjet</b>: Verify MAILJET_API_KEY and MAILJET_SECRET_KEY are set correctly.<br/>
+                      • <b>Gmail</b>: Regenerate your App Password at myaccount.google.com → Security → App Passwords.
+                    </div>
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
               {(emailStats?.providers || [
                 { name: 'MailerLite', configured: false },
@@ -504,9 +526,11 @@ export default function AIAgentDashboard({ token }) {
                 const atStop   = p.stopAt   && p.sentToday >= p.stopAt;
                 const isFull   = pct !== null && pct >= 100;
                 const isPaused = p.circuit?.open;
-                const bg   = !p.configured ? '#f8fafc' : isFull || atStop ? '#fef2f2' : isPaused ? '#fffbeb' : p.active ? '#f0fdf4' : '#f8fafc';
-                const dot  = !p.configured ? '#94a3b8' : isFull || atStop ? '#ef4444' : isPaused ? '#f59e0b' : p.active ? '#22c55e' : '#94a3b8';
+                const isBroken = !!p.broken;
+                const bg   = !p.configured ? '#f8fafc' : isBroken ? '#fff7ed' : isFull || atStop ? '#fef2f2' : isPaused ? '#fffbeb' : p.active ? '#f0fdf4' : '#f8fafc';
+                const dot  = !p.configured ? '#94a3b8' : isBroken ? '#f97316' : isFull || atStop ? '#ef4444' : isPaused ? '#f59e0b' : p.active ? '#22c55e' : '#94a3b8';
                 const status = !p.configured ? 'Not set up'
+                             : isBroken      ? '⚠️ Feature unavailable'
                              : atStop        ? '🛑 Stopped at 99%'
                              : isFull        ? 'Daily limit reached'
                              : isPaused      ? '⏸ Paused'
@@ -557,8 +581,13 @@ export default function AIAgentDashboard({ token }) {
               })}
             </div>
             {emailStats && (
-              <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8', textAlign: 'right' }}>
-                All-time emails sent: <strong style={{ color: '#64748b' }}>{(emailStats.allTime || 0).toLocaleString()}</strong>
+              <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>
+                  Today (DB verified): <strong style={{ color: '#0ea5e9' }}>{(emailStats.todayDb || 0).toLocaleString()}</strong>
+                </span>
+                <span>
+                  All-time: <strong style={{ color: '#64748b' }}>{(emailStats.allTime || 0).toLocaleString()}</strong>
+                </span>
               </div>
             )}
           </div>
