@@ -1299,7 +1299,48 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
   try {
     const session = webScraper.getTargetedSession();
     let contacts = [];
-    if (session.sessionId) {
+
+    // Build a broad keyword search across the whole scraped_contacts table
+    // so results appear even when all domains were already in the DB (ON CONFLICT DO NOTHING)
+    // Accept query params so the frontend can search without a live session (e.g. after restart)
+    const kw       = req.query.keywords || session.keywords  || null;
+    const country  = req.query.country  || session.country   || null;
+    const industry = req.query.industry || session.industry  || null;
+
+    if (kw || country || industry) {
+      // Clauses are OR for keyword (match any field), AND for country/industry filters
+      const conditions = [];
+      const params     = [];
+      let idx = 1;
+
+      if (kw) {
+        const like = `%${kw.toLowerCase()}%`;
+        conditions.push(
+          `(LOWER(company) LIKE $${idx} OR LOWER(snippet) LIKE $${idx+1} OR LOWER(query_used) LIKE $${idx+2} OR LOWER(business_type) LIKE $${idx+3})`
+        );
+        params.push(like, like, like, like);
+        idx += 4;
+      }
+      if (country) {
+        conditions.push(`LOWER(country) LIKE $${idx}`);
+        params.push(`%${country.toLowerCase()}%`);
+        idx++;
+      }
+      if (industry) {
+        conditions.push(`LOWER(business_type) LIKE $${idx}`);
+        params.push(`%${industry.toLowerCase()}%`);
+        idx++;
+      }
+
+      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+      const result = await db.query(
+        `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, created_at
+         FROM scraped_contacts ${where} ORDER BY created_at DESC LIMIT 500`,
+        params
+      );
+      contacts = result.rows;
+    } else if (session.sessionId) {
+      // Fallback: show the session-tagged rows only
       const sourceTag = `targeted_${session.sessionId}`;
       const result = await db.query(
         `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, created_at
@@ -1308,7 +1349,66 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
       );
       contacts = result.rows;
     }
+
     res.json({ session, contacts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/email-stats — live email provider status + daily send counts
+app.get('/api/email-stats', requireAuth, async (req, res) => {
+  try {
+    const outreachStats = emailOutreach.getDailyStats();
+    const circuit       = autonomousAgent.getCircuitState ? autonomousAgent.getCircuitState() : null;
+
+    // Total sent all-time from activity log
+    const totalSent = await db.query(
+      `SELECT COUNT(*) AS total FROM ai_activity_log
+       WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach') AND status='success'`
+    ).catch(() => ({ rows: [{ total: 0 }] }));
+
+    // Sent today from activity log
+    const todaySent = await db.query(
+      `SELECT COUNT(*) AS total FROM ai_activity_log
+       WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach')
+         AND status='success'
+         AND created_at >= CURRENT_DATE`
+    ).catch(() => ({ rows: [{ total: 0 }] }));
+
+    const GMAIL_OK  = !!(process.env.GMAIL_USER && (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g,'').length >= 16);
+    const SG_OK     = !!process.env.SENDGRID_API_KEY;
+    const MG_OK     = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
+
+    res.json({
+      providers: [
+        {
+          name:        'Gmail',
+          configured:  GMAIL_OK,
+          active:      outreachStats.mode === 'gmail',
+          sentToday:   outreachStats.sent,
+          dailyCap:    500,
+          account:     process.env.GMAIL_USER || null,
+          circuit:     circuit,
+        },
+        {
+          name:        'SendGrid',
+          configured:  SG_OK,
+          active:      outreachStats.mode === 'sendgrid',
+          sentToday:   SG_OK ? outreachStats.sent : 0,
+          dailyCap:    100,
+          account:     SG_OK ? 'Connected' : null,
+        },
+        {
+          name:        'Mailgun',
+          configured:  MG_OK,
+          active:      outreachStats.mode === 'mailgun',
+          sentToday:   MG_OK ? outreachStats.sent : 0,
+          dailyCap:    null,
+          account:     process.env.MAILGUN_DOMAIN || null,
+        },
+      ],
+      allTime:   parseInt(totalSent.rows[0].total) || 0,
+      todayDb:   parseInt(todaySent.rows[0].total)  || 0,
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

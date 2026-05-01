@@ -1463,4 +1463,15 @@ function getStatus() {
   };
 }
 
-module.exports = { startAgent, triggerNow, getStatus, processAIJobs, runPaymentChase, webScraper };
+function getCircuitState() {
+  const open = emailCircuit.open;
+  const minLeft = open ? Math.ceil((emailCircuit.pausedUntil - Date.now()) / 60000) : 0;
+  return {
+    open,
+    failures:     emailCircuit.failures,
+    resumeAt:     open ? new Date(emailCircuit.pausedUntil).toISOString() : null,
+    minutesLeft:  open ? Math.max(0, minLeft) : 0,
+  };
+}
+
+module.exports = { startAgent, triggerNow, getStatus, getCircuitState, processAIJobs, runPaymentChase, webScraper };
