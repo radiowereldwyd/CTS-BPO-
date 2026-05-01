@@ -90,6 +90,45 @@ const agentState = {
   errors: [],
 };
 
+// ── Email circuit breaker — stops all sends if Gmail locks out ───────────────
+// Activated by 454-4.7.0 (too many attempts) or 535-5.7.8 (bad credentials).
+// Pauses for CIRCUIT_PAUSE_MS then auto-resets.
+const CIRCUIT_PAUSE_MS = 60 * 60 * 1000; // 1 hour
+const emailCircuit = {
+  open:        false,   // true = paused
+  failures:    0,
+  pausedUntil: null,
+};
+
+function circuitTrip(errMsg) {
+  emailCircuit.failures++;
+  if (emailCircuit.failures >= 2 && !emailCircuit.open) {
+    emailCircuit.open        = true;
+    emailCircuit.pausedUntil = Date.now() + CIRCUIT_PAUSE_MS;
+    console.warn(`🚫 [EMAIL CIRCUIT] Tripped after ${emailCircuit.failures} auth failures — pausing ALL outreach for 1 hour`);
+    logActivity('email_circuit', `Gmail auth circuit tripped — pausing outreach for 1 hour`, null, null, 'error').catch(() => {});
+  }
+}
+
+function circuitCheck() {
+  if (!emailCircuit.open) return true;
+  if (Date.now() > emailCircuit.pausedUntil) {
+    emailCircuit.open     = false;
+    emailCircuit.failures = 0;
+    console.log('✅ [EMAIL CIRCUIT] Pause lifted — resuming outreach');
+    return true;
+  }
+  const minLeft = Math.ceil((emailCircuit.pausedUntil - Date.now()) / 60000);
+  console.log(`⏳ [EMAIL CIRCUIT] Open — ${minLeft}m remaining, skipping outreach`);
+  return false;
+}
+
+function isAuthError(err) {
+  return /454|535|Too many login|Username and Password|Invalid login/i.test(err.message || '');
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 // Live stats — updated in real-time by scraper callbacks + outreach
 const _restoredOutreach = loadOutreachStats();
 const liveStats = {
@@ -295,6 +334,7 @@ async function runLeadSearch() {
 
 // ── 2. Send Cold Outreach to Lead ─────────────────────────────────────────
 async function sendLeadOutreach(leadId, prospect) {
+  if (!circuitCheck()) return null;
   try {
     if (prospect.email) {
       const bounceCheck = await db.query(
@@ -307,6 +347,7 @@ async function sendLeadOutreach(leadId, prospect) {
       }
     }
     const result = await emailOutreach.sendClientColdOutreach(prospect);
+    emailCircuit.failures = 0; // reset on success
     await db.query(
       `UPDATE ai_leads SET status='outreach_sent', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
       [leadId]
@@ -321,32 +362,47 @@ async function sendLeadOutreach(leadId, prospect) {
     await logActivity('email_sent', `Cold outreach → ${prospect.email} [${prospect.jobType}]`, 'lead', leadId, 'success', { to: prospect.email, type: prospect.jobType });
     return result;
   } catch (err) {
+    if (isAuthError(err)) circuitTrip(err.message);
     await logActivity('email_sent', `Failed to send to ${prospect.email}: ${err.message}`, 'lead', leadId, 'error');
   }
 }
 
-// ── 2b. Batch outreach to all new ai_leads ────────────────────────────────
+// ── 2b. Batch outreach to ai_leads — ONE per domain, max 10 per run ──────────
 async function runAiLeadOutreach() {
+  if (!circuitCheck()) return;
+
+  // DISTINCT ON domain so we never email the same company twice
   const newLeads = await db.query(`
-    SELECT id, contact_email, company, domain, job_type FROM ai_leads
+    SELECT DISTINCT ON (domain) id, contact_email, company, domain, job_type
+    FROM ai_leads
     WHERE status = 'new'
       AND contact_email IS NOT NULL
       AND bounced_at IS NULL
-    ORDER BY created_at ASC
-    LIMIT 500
+      AND domain IS NOT NULL
+    ORDER BY domain, created_at ASC
+    LIMIT 10
   `).catch(() => ({ rows: [] }));
 
   if (newLeads.rows.length === 0) return;
 
   let sent = 0;
   for (const lead of newLeads.rows) {
+    if (!circuitCheck()) break;
     const result = await sendLeadOutreach(lead.id, {
       name:    lead.company || lead.domain,
       company: lead.company || lead.domain,
       email:   lead.contact_email,
       jobType: lead.job_type || 'business process outsourcing',
     });
-    if (result) sent++;
+    if (result) {
+      sent++;
+      // Mark ALL same-domain ai_leads as outreach_sent
+      await db.query(
+        `UPDATE ai_leads SET status='outreach_sent', outreach_sent_at=NOW(), updated_at=NOW() WHERE domain=$1 AND status='new'`,
+        [lead.domain]
+      ).catch(() => {});
+    }
+    await sleep(4000); // 4s between emails — stays well under Gmail rate limits
   }
   if (sent > 0) {
     await logActivity('ai_outreach', `Batch outreach: sent ${sent} emails from ai_leads`, null, null, 'success', { sent });
@@ -389,6 +445,7 @@ function isContactRelevant(c) {
 // ── 2d. Batch outreach to scraped_contacts ────────────────────────────────
 // ONE email per company domain, relevance-gated, marks ALL domain rows contacted.
 async function runScrapedContactsOutreach() {
+  if (!circuitCheck()) return;
   // Pick ONE representative contact per domain (prefer info@ then contact@)
   // Only look at domains not yet outreached
   const rows = await db.query(`
@@ -423,6 +480,7 @@ async function runScrapedContactsOutreach() {
         continue;
       }
 
+      if (!circuitCheck()) break;
       await emailOutreach.sendClientColdOutreach({
         name:    c.company || c.domain,
         company: c.company || c.domain,
@@ -431,6 +489,7 @@ async function runScrapedContactsOutreach() {
         city:    c.city || null,
         country: c.country || null,
       });
+      emailCircuit.failures = 0;
 
       // Mark the sent email with outreach_sent_at (used by follow-up to reach same person)
       await db.query(
@@ -453,7 +512,9 @@ async function runScrapedContactsOutreach() {
       liveStats.outreach.active      = true;
       saveOutreachStats(liveStats.outreach);
       await logActivity('scrape_outreach', `Outreach → ${c.email} [${c.business_type || 'BPO'}]`, 'scraped_contact', c.id, 'success', { to: c.email });
+      await sleep(4000); // 4s between emails
     } catch (err) {
+      if (isAuthError(err)) { circuitTrip(err.message); break; }
       await logActivity('scrape_outreach', `Failed → ${c.email}: ${err.message}`, 'scraped_contact', c.id, 'error');
     }
   }
@@ -1043,25 +1104,28 @@ async function runJobLeadScan() {
 }
 
 // ── 8. Send Cold Outreach to New Job Leads ────────────────────────────────
-// Picks up to 10 uncontacted job_leads that have a contact_email and sends
-// them a CTS BPO cold-outreach pitch email.
+// Picks up to 10 uncontacted job_leads — ONE per domain — with circuit breaker.
 async function runJobLeadOutreach() {
+  if (!circuitCheck()) return;
+
   const newLeads = await db.query(`
-    SELECT id, title, company, contact_email, contact_name, job_type, source_url
+    SELECT DISTINCT ON (COALESCE(domain, contact_email))
+      id, title, company, contact_email, contact_name, job_type, source_url, domain
     FROM job_leads
     WHERE status = 'new'
       AND contact_email IS NOT NULL
       AND contact_email != ''
-    ORDER BY created_at ASC
-    LIMIT 500
+    ORDER BY COALESCE(domain, contact_email), created_at ASC
+    LIMIT 10
   `).catch(() => ({ rows: [] }));
 
   if (newLeads.rows.length === 0) return;
 
   let sent = 0;
   for (const lead of newLeads.rows) {
+    if (!circuitCheck()) break;
     try {
-      // Bounce guard: skip if this email is already blacklisted in ai_leads
+      // Bounce guard
       const bounced = await db.query(
         `SELECT id FROM ai_leads WHERE LOWER(contact_email)=LOWER($1) AND bounced_at IS NOT NULL LIMIT 1`,
         [lead.contact_email]
@@ -1077,16 +1141,33 @@ async function runJobLeadOutreach() {
         company: lead.company || 'your organisation',
         jobType: lead.job_type || 'business process outsourcing',
       });
+      emailCircuit.failures = 0;
 
-      await db.query(
-        `UPDATE job_leads SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
-        [lead.id]
-      );
+      // Mark all same-domain job_leads as contacted
+      if (lead.domain) {
+        await db.query(
+          `UPDATE job_leads SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE domain=$1 AND status='new'`,
+          [lead.domain]
+        ).catch(() => {});
+      } else {
+        await db.query(
+          `UPDATE job_leads SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
+          [lead.id]
+        );
+      }
       sent++;
-      await logActivity('prospect_outreach', `Cold pitch sent → ${lead.contact_email} [${lead.job_type}]`, 'job_lead', lead.id, 'success', { company: lead.company, jobType: lead.job_type });
+      checkDailyReset();
+      liveStats.outreach.sentThisSession++;
+      liveStats.outreach.sentToday++;
+      liveStats.outreach.lastSentTo = lead.contact_email;
+      liveStats.outreach.lastSentAt = new Date().toISOString();
+      saveOutreachStats(liveStats.outreach);
+      await logActivity('prospect_outreach', `Cold pitch → ${lead.contact_email} [${lead.job_type}]`, 'job_lead', lead.id, 'success', { company: lead.company, jobType: lead.job_type });
     } catch (err) {
-      await logActivity('prospect_outreach', `Failed to send to ${lead.contact_email}: ${err.message}`, 'job_lead', lead.id, 'error');
+      if (isAuthError(err)) { circuitTrip(err.message); break; }
+      await logActivity('prospect_outreach', `Failed → ${lead.contact_email}: ${err.message}`, 'job_lead', lead.id, 'error');
     }
+    await sleep(4000); // 4s between emails
   }
 
   if (sent > 0) {
