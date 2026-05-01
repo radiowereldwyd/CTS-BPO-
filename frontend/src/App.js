@@ -18,6 +18,7 @@ import SubcontractorPortal from './components/SubcontractorPortal';
 import CTSLogo from './components/CTSLogo';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ClientPortal from './components/ClientPortal';
+import TargetedScraper from './components/TargetedScraper';
 import './App.css';
 
 function NavLink({ to, children }) {
@@ -49,6 +50,7 @@ function AdminShell({ user, token, onLogout }) {
           <NavLink to="/subcontractors">🤝 Subcontractors</NavLink>
           <NavLink to="/ai-agent">🧠 AI Agent</NavLink>
           <NavLink to="/analytics">📊 Analytics</NavLink>
+          <NavLink to="/targeted-scraper">🎯 Targeted</NavLink>
         </nav>
         <div className="header-user">
           <Link to="/" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none', marginRight: 12 }}>← Public Site</Link>
@@ -70,6 +72,7 @@ function AdminShell({ user, token, onLogout }) {
           <Route path="/subcontractors" element={<SubcontractorHub token={token} />} />
           <Route path="/ai-agent" element={<AIAgentDashboard token={token} />} />
           <Route path="/analytics" element={<AnalyticsDashboard token={token} />} />
+          <Route path="/targeted-scraper" element={<TargetedScraper token={token} />} />
           <Route path="/login" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

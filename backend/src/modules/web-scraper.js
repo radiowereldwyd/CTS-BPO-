@@ -715,6 +715,136 @@ async function runContinuous(onUpdate) {
 function stopContinuous() { _continuousRunning = false; }
 function getContinuousStats() { return { ..._continuousStats }; }
 
+// ── Targeted Scrape — user-defined country / industry / keywords ─────────────
+// Runs up to `limit` distinct-domain new contacts then returns.
+// Tags every row with source = `targeted_<sessionId>` so the UI can filter them.
+
+let _targetedSession = {
+  active: false, sessionId: null, country: null, industry: null,
+  keywords: null, found: 0, limit: 100, startedAt: null, completedAt: null,
+};
+
+function getTargetedSession() { return { ..._targetedSession }; }
+
+async function runTargetedScrape({ country, industry, keywords, limit = 100, sessionId }) {
+  _targetedSession = {
+    active: true, sessionId, country, industry, keywords,
+    found: 0, limit, startedAt: new Date().toISOString(), completedAt: null,
+  };
+
+  // Build an array of search queries from the three parameters
+  const parts = [keywords, industry, country].filter(Boolean);
+  const base  = parts.join(' ');
+  const queries = [
+    `${base} company "contact us" -site:linkedin.com`,
+    `${base} business email -site:linkedin.com`,
+    `${base} firm "get in touch" -site:linkedin.com`,
+    `${base} "contact" email -site:linkedin.com -site:indeed.com`,
+  ];
+  if (keywords) queries.push(`${keywords} ${country || ''} "contact us" -site:linkedin.com`);
+  if (industry) queries.push(`${industry} ${country || ''} contact -site:linkedin.com`);
+
+  let totalInserted = 0;
+
+  const sourceTag = `targeted_${sessionId}`;
+
+  for (const q of queries) {
+    if (totalInserted >= limit) break;
+
+    // ── DuckDuckGo ───────────────────────────────────────────────────────────
+    try {
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        timeout: 20000,
+      });
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+
+      $('.result').each((_, el) => {
+        const titleEl = $(el).find('.result__title a');
+        const snippet = $(el).find('.result__snippet').text().trim();
+        let link = titleEl.attr('href') || '';
+        if (link.includes('uddg=')) {
+          try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {}
+        }
+        const domain = extractDomain(link);
+        if (!domain || domain.includes('duckduckgo') || domain.includes('google')) return;
+
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({
+            company: titleEl.text().trim() || domain,
+            website: link, domain, email,
+            country: country || null,
+            businessType: industry || null,
+            source: sourceTag,
+            query: q,
+            snippet: snippet || null,
+          });
+        }
+      });
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      _targetedSession.found = totalInserted;
+      console.log(`🎯 [TARGETED] DDG "${q.slice(0,50)}..." → ${inserted} new`);
+    } catch (err) {
+      if (err.response?.status === 429 || err.response?.status === 403) {
+        console.warn('⚠️  [TARGETED] DuckDuckGo rate-limited — skipping remaining DDG queries');
+      } else {
+        console.error(`❌ [TARGETED] DDG error:`, err.message);
+      }
+    }
+
+    await sleep(SCRAPE_DELAY_MS * 3);
+    if (totalInserted >= limit) break;
+
+    // ── SerpAPI ──────────────────────────────────────────────────────────────
+    const SERPAPI_KEY = process.env.SERPAPI_KEY;
+    if (SERPAPI_KEY) {
+      try {
+        const res = await axios.get('https://serpapi.com/search', {
+          params: { q, api_key: SERPAPI_KEY, engine: 'google', num: 100, hl: 'en' },
+          timeout: 20000,
+        });
+        const results = res.data.organic_results || [];
+        const contacts = [];
+        for (const r of results) {
+          const domain = extractDomain(r.link);
+          if (!domain) continue;
+          for (const email of buildEmailVariants(domain)) {
+            contacts.push({
+              company: r.title || domain, website: r.link, domain, email,
+              country: country || null,
+              businessType: industry || null,
+              source: sourceTag,
+              query: q,
+              snippet: r.snippet || null,
+            });
+          }
+        }
+        const inserted = await storeContacts(contacts);
+        totalInserted += inserted;
+        _targetedSession.found = totalInserted;
+        console.log(`🎯 [TARGETED] SerpAPI "${q.slice(0,50)}..." → ${inserted} new`);
+      } catch (err) {
+        console.error(`❌ [TARGETED] SerpAPI error:`, err.message);
+      }
+      await sleep(SCRAPE_DELAY_MS);
+    }
+  }
+
+  _targetedSession.active      = false;
+  _targetedSession.completedAt = new Date().toISOString();
+  _targetedSession.found       = totalInserted;
+  console.log(`🎯 [TARGETED] Session ${sessionId} complete — ${totalInserted} new contacts`);
+  return totalInserted;
+}
+
 // ── Stats ────────────────────────────────────────────────────────────────────
 async function getStats() {
   try {
@@ -748,4 +878,7 @@ module.exports = {
   stopContinuous,
   getContinuousStats,
   buildAllPairs,
+  // Targeted scrape
+  runTargetedScrape,
+  getTargetedSession,
 };

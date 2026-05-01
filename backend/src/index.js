@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const path    = require('path');
+const multer  = require('multer');
 
 const negotiation = require('./modules/negotiation');
 const contractManager = require('./modules/contract-manager');
@@ -19,6 +20,7 @@ const db = require('./db');
 const authRouter = require('./routes/auth');
 const { requireAuth, requireAdmin } = require('./middleware/auth');
 const autonomousAgent = require('./modules/autonomous-agent');
+const webScraper      = require('./modules/web-scraper');
 const clientPortalRouter = require('./routes/client-portal');
 
 const app = express();
@@ -1260,6 +1262,121 @@ app.get('/api/ai-agent/scraped-contacts', requireAuth, async (req, res) => {
       `),
     ]);
     res.json({ stats: stats.rows[0], contacts: recent.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Targeted Scrape ─────────────────────────────────────────────────────────
+// Multer — store PDF in memory (max 20 MB)
+const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+// POST /api/targeted-scrape/start — kick off a new targeted scrape session
+app.post('/api/targeted-scrape/start', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { country, industry, keywords, limit } = req.body;
+    if (!country && !industry && !keywords) {
+      return res.status(400).json({ error: 'Provide at least one of: country, industry, keywords' });
+    }
+    const session = webScraper.getTargetedSession();
+    if (session.active) {
+      return res.status(409).json({ error: 'A targeted scrape is already running', session });
+    }
+    const sessionId = Date.now().toString(36);
+    // Run in background — respond immediately
+    webScraper.runTargetedScrape({
+      country: country || null,
+      industry: industry || null,
+      keywords: keywords || null,
+      limit: parseInt(limit || 100, 10),
+      sessionId,
+    }).catch(err => console.error('[TARGETED] unhandled error:', err.message));
+
+    res.json({ ok: true, sessionId, message: 'Targeted scrape started in background' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/targeted-scrape/status — poll progress + results of the current/last session
+app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
+  try {
+    const session = webScraper.getTargetedSession();
+    let contacts = [];
+    if (session.sessionId) {
+      const sourceTag = `targeted_${session.sessionId}`;
+      const result = await db.query(
+        `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, created_at
+         FROM scraped_contacts WHERE source = $1 ORDER BY created_at DESC LIMIT 500`,
+        [sourceTag]
+      );
+      contacts = result.rows;
+    }
+    res.json({ session, contacts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/targeted-scrape/send — send a message + optional PDF to selected contacts
+// multipart/form-data: subject, body, contactIds (JSON array), pdf (optional file)
+app.post('/api/targeted-scrape/send', requireAuth, requireAdmin, pdfUpload.single('pdf'), async (req, res) => {
+  try {
+    const { subject, body, contactIds } = req.body;
+    const ids = JSON.parse(contactIds || '[]');
+    if (!ids.length) return res.status(400).json({ error: 'No contacts selected' });
+    if (!subject || !body) return res.status(400).json({ error: 'subject and body are required' });
+
+    // Fetch the selected contacts
+    const result = await db.query(
+      `SELECT id, email, company FROM scraped_contacts WHERE id = ANY($1::int[])`,
+      [ids]
+    );
+    const contacts = result.rows;
+    if (!contacts.length) return res.status(404).json({ error: 'No matching contacts found' });
+
+    const nodemailer = require('nodemailer');
+    const GMAIL_USER     = process.env.GMAIL_USER || '';
+    const GMAIL_APP_PASS = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+
+    if (!GMAIL_USER || !GMAIL_APP_PASS) {
+      return res.status(503).json({ error: 'Email not configured — set GMAIL_USER and GMAIL_APP_PASSWORD' });
+    }
+
+    const transport = nodemailer.createTransport({
+      host: 'smtp.gmail.com', port: 587, secure: false,
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASS },
+    });
+
+    const attachments = [];
+    if (req.file) {
+      attachments.push({
+        filename: req.file.originalname || 'attachment.pdf',
+        content:  req.file.buffer,
+        contentType: req.file.mimetype || 'application/pdf',
+      });
+    }
+
+    let sent = 0, failed = 0;
+    for (const c of contacts) {
+      try {
+        await transport.sendMail({
+          from: `"CTS BPO" <${GMAIL_USER}>`,
+          to:   c.email,
+          subject,
+          text: body.replace(/{{company}}/g, c.company || 'there'),
+          html: `<div style="font-family:sans-serif;line-height:1.6">${
+            body.replace(/\n/g, '<br>').replace(/{{company}}/g, c.company || 'there')
+          }</div>`,
+          attachments,
+        });
+        sent++;
+        await db.query(
+          `UPDATE scraped_contacts SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
+          [c.id]
+        ).catch(() => {});
+      } catch (err) {
+        failed++;
+        console.error(`[TARGETED SEND] Failed → ${c.email}:`, err.message);
+      }
+      await new Promise(r => setTimeout(r, 4000)); // 4s between sends
+    }
+
+    res.json({ ok: true, sent, failed, total: contacts.length });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

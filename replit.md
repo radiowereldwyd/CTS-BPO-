@@ -10,6 +10,23 @@
 
 ## New Features (May 2026)
 
+### Targeted Scraper Page (`/targeted-scraper`)
+- Frontend: `frontend/src/components/TargetedScraper.js`
+- Nav: "🎯 Targeted" link in admin header
+- UI: Country dropdown (16 options), Industry dropdown (19 options), Keywords freetext, target count (25/50/100)
+- Activate button kicks off a background scrape focused on the chosen parameters (up to 100 unique contacts)
+- Results table appears as contacts are scraped (auto-polls every 4s); checkbox selection
+- Compose area: subject + body with {{company}} placeholder; drag-and-drop PDF attachment
+- Send button dispatches personalised emails to all selected contacts with the optional PDF attached
+- Backend: `runTargetedScrape()` in `web-scraper.js`; contacts tagged `source=targeted_<sessionId>`
+- API endpoints: `POST /api/targeted-scrape/start`, `GET /api/targeted-scrape/status`, `POST /api/targeted-scrape/send`
+- Email circuit breaker (from autonomous-agent.js) protects against Gmail lockouts
+
+### Email Circuit Breaker
+- `emailCircuit` object in `autonomous-agent.js`; trips after 2 consecutive auth failures
+- Pauses ALL outreach for 1 hour automatically; resets on first successful send
+- Logs `🚫 [EMAIL CIRCUIT] Tripped` to console and activity log
+
 ### Web Scraper — Multi-Source Lead Acquisition
 - Module: `backend/src/modules/web-scraper.js`
 - Table: `scraped_contacts` (company, domain, email, phone, address, city, country, business_type, source, status)
