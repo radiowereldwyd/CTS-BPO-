@@ -1391,13 +1391,14 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     const SG_OK     = !!process.env.SENDGRID_API_KEY;
     const MJ_OK     = !!(process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY);
     const MG_OK     = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
+    const ML_OK     = !!process.env.MAILERLITE_API_KEY;
 
     // Load per-provider disk counts (for inactive providers)
     let diskStats = {};
     try { diskStats = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../../data/outreach-stats.json'), 'utf8')); } catch {}
     const today = new Date().toDateString();
 
-    const CAPS = { gmail: 500, sendgrid: 100, mailjet: 299, mailgun: 99 };
+    const CAPS = { mailerlite: 1000, gmail: 500, sendgrid: 100, mailjet: 299, mailgun: 99 };
     function providerStats(name, configured, account, extra = {}) {
       const key    = name.toLowerCase();
       const active = outreachStats.mode === key;
@@ -1425,10 +1426,11 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     res.json({
       paused:  emailOutreach.isEmailPaused(),
       providers: [
-        providerStats('Mailgun',  MG_OK,    MG_OK  ? process.env.MAILGUN_DOMAIN : null),
-        providerStats('Mailjet',  MJ_OK,    MJ_OK  ? 'cts.cybersolutions@gmail.com' : null),
-        providerStats('SendGrid', SG_OK,    SG_OK  ? 'Connected' : null),
-        providerStats('Gmail',    GMAIL_OK, process.env.GMAIL_USER || null, { circuit }),
+        providerStats('MailerLite', ML_OK,    ML_OK  ? 'Connected' : null),
+        providerStats('Mailgun',    MG_OK,    MG_OK  ? process.env.MAILGUN_DOMAIN : null),
+        providerStats('Mailjet',    MJ_OK,    MJ_OK  ? 'cts.cybersolutions@gmail.com' : null),
+        providerStats('SendGrid',   SG_OK,    SG_OK  ? 'Connected' : null),
+        providerStats('Gmail',      GMAIL_OK, process.env.GMAIL_USER || null, { circuit }),
       ],
       allTime:  parseInt(totalSent.rows[0].total) || 0,
       todayDb:  parseInt(todaySent.rows[0].total)  || 0,

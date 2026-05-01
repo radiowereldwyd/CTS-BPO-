@@ -1,8 +1,8 @@
 {
-  "sentToday": 402,
+  "sentToday": 343,
   "todayDate": "Fri May 01 2026",
-  "savedAt": "2026-05-01T11:10:36.158Z",
-  "provider": "mailgun",
+  "savedAt": "2026-05-01T11:20:00.000Z",
+  "provider": "mailerlite",
   "gmail": {
     "sentToday": 343,
     "todayDate": "Fri May 01 2026"
@@ -12,6 +12,10 @@
     "todayDate": "Fri May 01 2026"
   },
   "mailgun": {
+    "sentToday": 0,
+    "todayDate": "Fri May 01 2026"
+  },
+  "mailerlite": {
     "sentToday": 0,
     "todayDate": "Fri May 01 2026"
   }

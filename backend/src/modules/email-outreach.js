@@ -15,8 +15,9 @@ const SMTP_PORT       = parseInt(process.env.SMTP_PORT  || '587', 10);
 const SENDGRID_KEY    = process.env.SENDGRID_API_KEY    || '';
 const MAILGUN_KEY     = process.env.MAILGUN_API_KEY     || '';
 const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN      || '';
-const MAILJET_API_KEY = process.env.MAILJET_API_KEY     || '';
-const MAILJET_SEC_KEY = process.env.MAILJET_SECRET_KEY  || '';
+const MAILJET_API_KEY    = process.env.MAILJET_API_KEY     || '';
+const MAILJET_SEC_KEY    = process.env.MAILJET_SECRET_KEY  || '';
+const MAILERLITE_API_KEY = process.env.MAILERLITE_API_KEY  || '';
 const FROM_NAME       = 'Calvin Thomas';
 const FROM_EMAIL      = process.env.FROM_EMAIL || GMAIL_USER || 'cts.bposolutions@gmail.com';
 const REPLY_EMAIL     = 'cts.cybersolutions@gmail.com';
@@ -26,8 +27,8 @@ const WEBSITE         = 'cts.bposolutions@gmail.com';
 const EMAIL_RATE_MS   = parseInt(process.env.EMAIL_RATE_MS || '200', 10);
 
 // Per-provider daily caps (99% threshold = stop before hard limits)
-// Mailjet free: 200/day  |  Gmail: 500/day  |  SendGrid free: 100/day
-const PROVIDER_CAPS = { mailjet: 299, gmail: 500, sendgrid: 100, mailgun: 99 };
+// MailerLite free: 1000/day | Mailjet: 299/day | Gmail: 500/day | SendGrid free: 100/day | Mailgun: 99/day
+const PROVIDER_CAPS = { mailerlite: 1000, mailjet: 299, gmail: 500, sendgrid: 100, mailgun: 99 };
 function getProviderCap() { return PROVIDER_CAPS[getSenderMode()] || 500; }
 function getStopAt()      { return Math.floor(getProviderCap() * 0.99); }   // 99% rule
 
@@ -109,9 +110,10 @@ function isEmailPaused() { return emailPaused; }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Sender detection — priority: Mailgun > Mailjet > SendGrid > Gmail ────────
-// Mailgun first: no daily cap, high deliverability, already configured
+// ── Sender detection — priority: MailerLite > Mailgun > Mailjet > SendGrid > Gmail ──────
+// MailerLite first: highest free cap (1000/day), transactional API
 function getSenderMode() {
+  if (MAILERLITE_API_KEY)                 return 'mailerlite';
   if (MAILGUN_KEY && MAILGUN_DOMAIN)      return 'mailgun';
   if (MAILJET_API_KEY && MAILJET_SEC_KEY) return 'mailjet';
   if (SENDGRID_KEY)                       return 'sendgrid';
@@ -162,7 +164,26 @@ async function sendMail({ to, subject, html, text, replyTo }) {
   const fromStr = `${FROM_NAME} <${FROM_EMAIL}>`;
 
   try {
-    if (mode === 'sendgrid') {
+    if (mode === 'mailerlite') {
+      // MailerLite transactional email API v3
+      await axios.post('https://connect.mailerlite.com/api/emails', {
+        from:     FROM_EMAIL,
+        from_name: FROM_NAME,
+        to: [{ email: to }],
+        reply_to: replyTo || REPLY_EMAIL,
+        subject,
+        html,
+        ...(text ? { text } : {}),
+      }, {
+        headers: {
+          Authorization: `Bearer ${MAILERLITE_API_KEY}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        timeout: 12000,
+      });
+
+    } else if (mode === 'sendgrid') {
       const content = [{ type: 'text/html', value: html }];
       if (text) content.unshift({ type: 'text/plain', value: text });
       await axios.post('https://api.sendgrid.com/v3/mail/send', {
