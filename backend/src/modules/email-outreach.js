@@ -5,19 +5,53 @@
  */
 
 const nodemailer  = require('nodemailer');
+const axios       = require('axios');
 const auditLogger = require('./audit-logger');
 
-const GMAIL_USER     = process.env.GMAIL_USER         || process.env.SMTP_USER || '';
-const GMAIL_APP_PASS = process.env.GMAIL_APP_PASSWORD  || process.env.SMTP_PASS || '';
-const SMTP_HOST      = process.env.SMTP_HOST           || 'smtp.gmail.com';
-const SMTP_PORT      = parseInt(process.env.SMTP_PORT  || '587', 10);
-const FROM_NAME      = 'Calvin | CTS BPO Solutions';
-const FROM_EMAIL     = GMAIL_USER || 'cts.bposolutions@gmail.com';
-const REPLY_EMAIL    = 'cts.bposolutions@gmail.com';
-const WEBSITE        = 'cts.bposolutions@gmail.com';
+const GMAIL_USER      = process.env.GMAIL_USER         || process.env.SMTP_USER || '';
+const GMAIL_APP_PASS  = process.env.GMAIL_APP_PASSWORD  || process.env.SMTP_PASS || '';
+const SMTP_HOST       = process.env.SMTP_HOST           || 'smtp.gmail.com';
+const SMTP_PORT       = parseInt(process.env.SMTP_PORT  || '587', 10);
+const SENDGRID_KEY    = process.env.SENDGRID_API_KEY    || '';
+const MAILGUN_KEY     = process.env.MAILGUN_API_KEY     || '';
+const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN      || '';
+const FROM_NAME       = 'Calvin | CTS BPO Solutions';
+const FROM_EMAIL      = process.env.FROM_EMAIL || GMAIL_USER || 'cts.bposolutions@gmail.com';
+const REPLY_EMAIL     = 'cts.bposolutions@gmail.com';
+const WEBSITE         = 'cts.bposolutions@gmail.com';
 
+// Rate limit: ms between sends. Default 200ms (5/sec). Set EMAIL_RATE_MS=50 for SendGrid paid plans.
+const EMAIL_RATE_MS   = parseInt(process.env.EMAIL_RATE_MS || '200', 10);
+
+// Daily cap guard — prevents runaway sends. Gmail ~500, SendGrid free 100, paid unlimited.
+const MAX_DAILY_EMAILS = parseInt(process.env.MAX_DAILY_EMAILS || '10000', 10);
+let dailySentCount = 0;
+let dailyResetDate = new Date().toDateString();
+
+function checkDailyReset() {
+  const today = new Date().toDateString();
+  if (today !== dailyResetDate) { dailySentCount = 0; dailyResetDate = today; }
+}
+
+function dailyCapReached() {
+  checkDailyReset();
+  return dailySentCount >= MAX_DAILY_EMAILS;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Sender detection ────────────────────────────────────────────────────────
+function getSenderMode() {
+  if (SENDGRID_KEY)                     return 'sendgrid';
+  if (MAILGUN_KEY && MAILGUN_DOMAIN)    return 'mailgun';
+  if (GMAIL_USER && GMAIL_APP_PASS)     return 'gmail';
+  return null;
+}
+
+function isConfigured() { return !!getSenderMode(); }
+
+// ── Gmail SMTP transporter ──────────────────────────────────────────────────
 let transporter = null;
-
 function getTransporter() {
   if (transporter) return transporter;
   if (GMAIL_USER && GMAIL_APP_PASS) {
@@ -25,12 +59,73 @@ function getTransporter() {
       host: SMTP_HOST, port: SMTP_PORT,
       secure: SMTP_PORT === 465,
       auth: { user: GMAIL_USER, pass: GMAIL_APP_PASS },
+      pool: true, maxConnections: 5, maxMessages: 100,
     });
   }
   return transporter;
 }
 
-function isConfigured() { return !!(GMAIL_USER && GMAIL_APP_PASS); }
+// ── Core send function — routes to correct provider ─────────────────────────
+async function sendMail({ to, subject, html, replyTo }) {
+  if (dailyCapReached()) {
+    console.warn(`[EMAIL] Daily cap of ${MAX_DAILY_EMAILS} reached — skipping send to ${to}`);
+    return { skipped: true, reason: 'daily_cap' };
+  }
+
+  const mode = getSenderMode();
+  if (!mode) {
+    console.log(`[EMAIL CONSOLE] To: ${to} | Subject: ${subject}`);
+    return { preview: true };
+  }
+
+  const fromStr = `${FROM_NAME} <${FROM_EMAIL}>`;
+
+  try {
+    if (mode === 'sendgrid') {
+      await axios.post('https://api.sendgrid.com/v3/mail/send', {
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: FROM_EMAIL, name: FROM_NAME },
+        reply_to: { email: replyTo || REPLY_EMAIL },
+        subject,
+        content: [{ type: 'text/html', value: html }],
+      }, {
+        headers: { Authorization: `Bearer ${SENDGRID_KEY}`, 'Content-Type': 'application/json' },
+        timeout: 10000,
+      });
+
+    } else if (mode === 'mailgun') {
+      const FormData = require('form-data');
+      const form = new FormData();
+      form.append('from', fromStr);
+      form.append('to', to);
+      form.append('subject', subject);
+      form.append('html', html);
+      if (replyTo) form.append('h:Reply-To', replyTo);
+      await axios.post(
+        `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`,
+        form,
+        { auth: { username: 'api', password: MAILGUN_KEY }, timeout: 10000 }
+      );
+
+    } else {
+      // Gmail SMTP
+      const t = getTransporter();
+      await t.sendMail({ from: fromStr, to, subject, html, replyTo: replyTo || REPLY_EMAIL });
+    }
+
+    dailySentCount++;
+    if (EMAIL_RATE_MS > 0) await sleep(EMAIL_RATE_MS);
+    return { sent: true, mode };
+
+  } catch (err) {
+    const status = err.response?.status || 0;
+    // 4xx from SendGrid/Mailgun (bad address etc) — don't throw, just return error
+    if (status >= 400 && status < 500) {
+      return { error: true, status, message: err.response?.data?.errors?.[0]?.message || err.message };
+    }
+    throw err;
+  }
+}
 
 function esc(str) {
   if (typeof str !== 'string') return '';
@@ -524,39 +619,35 @@ async function sendOutreachEmail(prospect, templateName = 'bpoApplication') {
   if (!VALID_TEMPLATES.includes(templateName)) throw new Error(`Unknown template: ${templateName}`);
 
   const { subject, html } = templates[templateName](prospect);
-  const xport = getTransporter();
+  const result = await sendMail({ to: prospect.email, subject, html });
 
-  if (xport) {
-    const info = await xport.sendMail({
-      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
-      to:   prospect.email,
-      subject,
-      html,
-      replyTo: REPLY_EMAIL,
-    });
-    await auditLogger.log('outreach.sent', 'prospect', null,
-      `Sent to ${prospect.email} [${templateName}]: ${info.messageId}`, null, 'info');
-    return { sent: true, messageId: info.messageId, to: prospect.email, subject };
+  if (result.preview || result.simulated) {
+    console.log('[EMAIL STUB]', templateName, '→', prospect.email, '|', subject);
+    return { sent: false, simulated: true, to: prospect.email, subject };
   }
+  if (result.skipped) return { sent: false, skipped: true, reason: result.reason, to: prospect.email };
+  if (result.error) return { sent: false, error: result.message, to: prospect.email };
 
-  console.log('[EMAIL STUB]', templateName, '→', prospect.email, '|', subject);
-  return { sent: false, simulated: true, to: prospect.email, subject };
+  await auditLogger.log('outreach.sent', 'prospect', null,
+    `Sent to ${prospect.email} [${templateName}] via ${result.mode}`, null, 'info');
+  return { sent: true, to: prospect.email, subject, mode: result.mode };
 }
 
 async function runCampaign(prospects, templateName = 'bpoApplication') {
-  const results = { sent: 0, simulated: 0, failed: 0, total: prospects.length };
+  const results = { sent: 0, simulated: 0, failed: 0, skipped: 0, total: prospects.length };
   for (const prospect of prospects) {
     try {
       const r = await sendOutreachEmail(prospect, templateName);
-      if (r.sent) results.sent++; else results.simulated++;
-      await new Promise(r => setTimeout(r, 800)); // rate-limit
+      if (r.sent) results.sent++;
+      else if (r.skipped) { results.skipped++; break; } // daily cap hit — stop campaign
+      else results.simulated++;
     } catch (err) {
       results.failed++;
       console.error('Outreach failed:', err.message);
     }
   }
   await auditLogger.log('outreach.campaign', null, null,
-    `Campaign [${templateName}]: ${results.sent} sent, ${results.simulated} simulated, ${results.failed} failed`, null, 'info');
+    `Campaign [${templateName}]: ${results.sent} sent, ${results.simulated} simulated, ${results.failed} failed, ${results.skipped} skipped`, null, 'info');
   return results;
 }
 
@@ -805,14 +896,11 @@ async function sendSubcontractorRecruitment({ name, email }) {
 </table>
 </body></html>`;
 
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
-    await auditLogger.log('outreach.recruitment_sent', null, null, `Recruitment email sent to ${email}`, null, 'info');
-    return { sent: true, to: email };
-  }
-  console.log('[EMAIL STUB] Recruitment →', email);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Recruitment →', email); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  await auditLogger.log('outreach.recruitment_sent', null, null, `Recruitment email sent to ${email} via ${_r.mode}`, null, 'info');
+  return { sent: true, to: email };
 }
 
 // ─── Subcontractor Task Reminder Email ───────────────────────────────────────
@@ -853,13 +941,10 @@ async function sendSubcontractorReminder({ name, email, jobTitle, dueDate, jobId
   </td></tr>
 </table></body></html>`;
 
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
-    return { sent: true, to: email };
-  }
-  console.log('[EMAIL STUB] Reminder →', email, '| Job:', jobId);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Reminder →', email, '| Job:', jobId); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  return { sent: true, to: email };
 }
 
 // ── Autonomous Agent Email Functions ─────────────────────────────────────────
@@ -900,13 +985,10 @@ async function sendClientColdOutreach({ name, company, email, jobType }) {
   </td></tr>
 </table></td></tr></table></body></html>`;
 
-  const t = getTransporter();
-  if (t) {
-    const info = await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
-    return { sent: true, to: email, messageId: info.messageId };
-  }
-  console.log('[EMAIL STUB] Cold outreach →', email);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Cold outreach →', email); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  return { sent: true, to: email };
 }
 
 async function sendClientFollowUp({ email, company, jobType, followUpNumber }) {
@@ -933,13 +1015,10 @@ async function sendClientFollowUp({ email, company, jobType, followUpNumber }) {
   </td></tr>
 </table></td></tr></table></body></html>`;
 
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
-    return { sent: true, to: email };
-  }
-  console.log('[EMAIL STUB] Follow-up →', email, `(#${followUpNumber})`);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Follow-up →', email, `(#${followUpNumber})`); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  return { sent: true, to: email };
 }
 
 async function sendSubcontractorAcknowledgment({ name, email, amount }) {
@@ -963,13 +1042,10 @@ async function sendSubcontractorAcknowledgment({ name, email, amount }) {
   </td></tr>
 </table></td></tr></table></body></html>`;
 
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
-    return { sent: true, to: email };
-  }
-  console.log('[EMAIL STUB] Acknowledgment →', email);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Acknowledgment →', email); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  return { sent: true, to: email };
 }
 
 async function sendSubcontractorApproval({ name, email, amount, appUrl }) {
@@ -1000,13 +1076,10 @@ async function sendSubcontractorApproval({ name, email, amount, appUrl }) {
   </td></tr>
 </table></td></tr></table></body></html>`;
 
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
-    return { sent: true, to: email };
-  }
-  console.log('[EMAIL STUB] Approval →', email);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Approval →', email); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  return { sent: true, to: email };
 }
 
 async function sendContractAssignment({ name, email, jobTitle, jobValue, dueDate, jobId, description }) {
@@ -1044,13 +1117,10 @@ async function sendContractAssignment({ name, email, jobTitle, jobValue, dueDate
   </td></tr>
 </table></td></tr></table></body></html>`;
 
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html, replyTo: REPLY_EMAIL });
-    return { sent: true, to: email };
-  }
-  console.log('[EMAIL STUB] Contract assignment →', email, jobTitle);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Contract assignment →', email, jobTitle); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  return { sent: true, to: email };
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -1081,14 +1151,11 @@ async function sendPortalSetupEmail(email, name, setupLink) {
       ${portalFooter()}
     </div>
   `;
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
-    await auditLogger.log('email.portal_setup', 'subcontractor', email, `Portal setup email → ${email}`, null, 'info');
-    return { sent: true, to: email };
-  }
-  console.log('[EMAIL STUB] Portal setup →', email, setupLink);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Portal setup →', email, setupLink); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  await auditLogger.log('email.portal_setup', 'subcontractor', email, `Portal setup email → ${email} via ${_r.mode}`, null, 'info');
+  return { sent: true, to: email };
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -1133,14 +1200,11 @@ async function sendClientDelivery(email, clientName, jobTitle, confirmLink, down
       ${footer()}
     </div>
   `;
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
-    await auditLogger.log('email.client_delivery', 'client', email, `Delivery email → ${email} for job "${jobTitle}"`, null, 'info');
-    return { sent: true, to: email };
-  }
-  console.log('[EMAIL STUB] Client delivery →', email, jobTitle);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Client delivery →', email, jobTitle); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  await auditLogger.log('email.client_delivery', 'client', email, `Delivery email → ${email} for job "${jobTitle}" via ${_r.mode}`, null, 'info');
+  return { sent: true, to: email };
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -1186,14 +1250,11 @@ async function sendClientPaymentReminder(email, clientName, jobTitle, confirmLin
       ${portalFooter()}
     </div>
   `;
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
-    await auditLogger.log('email.payment_reminder', 'client', email, `Payment reminder #${reminderNumber} → ${email} for job "${jobTitle}"`, null, 'info');
-    return { sent: true, to: email };
-  }
-  console.log(`[EMAIL STUB] Payment reminder #${reminderNumber} →`, email, jobTitle);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log(`[EMAIL STUB] Payment reminder #${reminderNumber} →`, email, jobTitle); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  await auditLogger.log('email.payment_reminder', 'client', email, `Payment reminder #${reminderNumber} → ${email} for "${jobTitle}" via ${_r.mode}`, null, 'info');
+  return { sent: true, to: email };
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -1219,14 +1280,11 @@ async function sendSubcontractorPayout(email, name, amount, jobTitle, reference)
       ${footer()}
     </div>
   `;
-  const t = getTransporter();
-  if (t) {
-    await t.sendMail({ from: `"${FROM_NAME}" <${FROM_EMAIL}>`, to: email, subject, html });
-    await auditLogger.log('email.payout_sent', 'subcontractor', email, `Payout email → ${email} R${amount} for "${jobTitle}"`, null, 'info');
-    return { sent: true, to: email };
-  }
-  console.log('[EMAIL STUB] Payout →', email, `R${amount}`, jobTitle);
-  return { sent: false, simulated: true, to: email };
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] Payout →', email, `R${amount}`, jobTitle); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  await auditLogger.log('email.payout_sent', 'subcontractor', email, `Payout email → ${email} R${amount} for "${jobTitle}" via ${_r.mode}`, null, 'info');
+  return { sent: true, to: email };
 }
 
 /* ── Shared helpers for portal emails ────────────────────────────────────── */
@@ -1256,6 +1314,7 @@ function portalFooter() {
 }
 
 module.exports = {
+  sendMail,
   sendOutreachEmail, runCampaign, previewTemplate,
   sendSubcontractorRecruitment, sendSubcontractorReminder,
   sendClientColdOutreach, sendClientFollowUp,
@@ -1263,5 +1322,7 @@ module.exports = {
   sendContractAssignment,
   sendPortalSetupEmail, sendClientDelivery, sendClientPaymentReminder, sendSubcontractorPayout,
   templates, TEMPLATE_META, VALID_TEMPLATES,
-  isConfigured: () => !!(GMAIL_USER && GMAIL_APP_PASS),
+  isConfigured,
+  getSenderMode,
+  getDailyStats: () => { checkDailyReset(); return { sent: dailySentCount, cap: MAX_DAILY_EMAILS, mode: getSenderMode() }; },
 };

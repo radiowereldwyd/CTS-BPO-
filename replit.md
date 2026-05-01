@@ -4,7 +4,7 @@
 - **Backend:** Node.js 20 + Express (port 3001 dev / PORT env prod)
 - **Frontend:** React 18 CRA (port 5000 dev)
 - **Database:** Supabase PostgreSQL (pg)
-- **Email:** Gmail SMTP via nodemailer (GMAIL_APP_PASSWORD)
+- **Email:** Multi-provider: SendGrid API (SENDGRID_API_KEY) → Mailgun (MAILGUN_API_KEY + MAILGUN_DOMAIN) → Gmail SMTP (GMAIL_APP_PASSWORD) — auto-detected in priority order
 - **PDF:** pdfkit (branded invoice generation)
 - **WhatsApp/SMS:** Twilio (optional — needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM)
 

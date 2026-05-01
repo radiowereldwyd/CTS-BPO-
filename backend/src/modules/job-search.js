@@ -89,7 +89,7 @@ async function ensureTable() {
       id              SERIAL PRIMARY KEY,
       title           TEXT NOT NULL,
       company         TEXT,
-      source_url      TEXT,
+      source_url      TEXT UNIQUE,
       snippet         TEXT,
       contact_email   TEXT,
       contact_name    TEXT,
@@ -103,12 +103,16 @@ async function ensureTable() {
       updated_at      TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Ensure unique index exists on existing tables (migration)
+  await db.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS job_leads_source_url_unique ON job_leads (source_url)
+  `).catch(() => {});
 }
 
 /**
  * Run a SerpApi Google search for a given query.
  */
-async function searchSerpApi(query, numResults = 10) {
+async function searchSerpApi(query, numResults = 100) {
   if (!SERPAPI_KEY) {
     throw new Error('SERPAPI_KEY not set. Add it in Secrets to enable job scanning.');
   }
@@ -126,8 +130,11 @@ async function searchSerpApi(query, numResults = 10) {
   return res.data.organic_results || [];
 }
 
+// Email variants to try per domain — maximises reachable contacts
+const EMAIL_PREFIXES = ['info', 'contact', 'hello', 'enquiries', 'admin', 'sales', 'support'];
+
 /**
- * Parse a search result into a job lead record.
+ * Parse a search result into a list of job lead records (one per email variant).
  */
 function parseResult(result, jobType, query) {
   const title = result.title || 'Untitled Opportunity';
@@ -136,19 +143,44 @@ function parseResult(result, jobType, query) {
 
   // Attempt to extract company name from the displayed URL or title
   let company = '';
+  let domain   = '';
   try {
     const hostname = new URL(url).hostname.replace('www.', '');
+    domain  = hostname;
     company = hostname.split('.')[0];
     company = company.charAt(0).toUpperCase() + company.slice(1);
   } catch { company = 'Unknown'; }
 
   // Skip pure employee job boards (we want companies that need outsourcing, not employee listings)
-  const skipDomains = ['linkedin.com', 'indeed.com', 'glassdoor.com', 'reed.co.uk', 'monster.com', 'ziprecruiter.com', 'simplyhired.com', 'careerbuilder.com'];
-  if (skipDomains.some(d => url.includes(d))) return null;
-  // Must have a valid URL
-  if (!url.startsWith('http')) return null;
+  const skipDomains = ['linkedin.com', 'indeed.com', 'glassdoor.com', 'reed.co.uk', 'monster.com',
+    'ziprecruiter.com', 'simplyhired.com', 'careerbuilder.com', 'upwork.com', 'fiverr.com', 'clutch.co'];
+  if (skipDomains.some(d => url.includes(d))) return [];
+  if (!url.startsWith('http')) return [];
 
-  return { title, company, source_url: url, snippet, job_type: jobType, search_query: query };
+  // Extract explicit email from snippet/title
+  const snippetEmail = (snippet + ' ' + title).match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+
+  const leads = [];
+
+  if (snippetEmail) {
+    // Use the explicit email we found — single record
+    leads.push({ title, company, source_url: url, snippet, job_type: jobType, search_query: query, contact_email: snippetEmail[0].toLowerCase() });
+  } else if (domain) {
+    // Generate multiple email variants for this domain
+    EMAIL_PREFIXES.forEach((prefix, i) => {
+      leads.push({
+        title,
+        company,
+        source_url: i === 0 ? url : `${url}#${prefix}`, // first uses real url, rest have anchors
+        snippet,
+        job_type: jobType,
+        search_query: query,
+        contact_email: `${prefix}@${domain}`,
+      });
+    });
+  }
+
+  return leads;
 }
 
 /**
@@ -160,31 +192,28 @@ async function scanForJobs(queryIndices = null) {
 
   const queriesToRun = queryIndices
     ? BPO_QUERIES.filter((_, i) => queryIndices.includes(i))
-    : BPO_QUERIES.slice(0, 5); // default: first 5 queries to conserve API quota
+    : BPO_QUERIES; // run all queries for maximum lead coverage
 
   const newLeads = [];
   const errors = [];
 
   for (const { query, type } of queriesToRun) {
     try {
-      const results = await searchSerpApi(query, 8);
+      const results = await searchSerpApi(query, 100);
       for (const result of results) {
-        const lead = parseResult(result, type, query);
-        if (!lead) continue;
-
-        // Deduplicate by URL
-        const existing = await db.query(
-          'SELECT id FROM job_leads WHERE source_url = $1 LIMIT 1',
-          [lead.source_url]
-        );
-        if (existing.rows.length > 0) continue;
-
-        const inserted = await db.query(
-          `INSERT INTO job_leads (title, company, source_url, snippet, job_type, search_query)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-          [lead.title, lead.company, lead.source_url, lead.snippet, lead.job_type, lead.search_query]
-        );
-        newLeads.push(inserted.rows[0]);
+        const leads = parseResult(result, type, query);
+        for (const lead of leads) {
+          try {
+            const inserted = await db.query(
+              `INSERT INTO job_leads (title, company, source_url, snippet, job_type, search_query, contact_email)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
+               ON CONFLICT (source_url) DO NOTHING
+               RETURNING *`,
+              [lead.title, lead.company, lead.source_url, lead.snippet, lead.job_type, lead.search_query, lead.contact_email || null]
+            );
+            if (inserted.rows[0]) newLeads.push(inserted.rows[0]);
+          } catch (_) { /* skip duplicate */ }
+        }
       }
     } catch (err) {
       errors.push({ query, error: err.message });

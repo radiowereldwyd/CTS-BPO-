@@ -128,9 +128,16 @@ function extractEmailFromText(text) {
   return match ? match[0].toLowerCase() : null;
 }
 
+const EMAIL_PREFIXES = ['info', 'contact', 'hello', 'enquiries', 'admin', 'sales', 'support'];
+
 function buildContactEmail(domain) {
   if (!domain) return null;
   return `info@${domain}`;
+}
+
+function buildEmailVariants(domain) {
+  if (!domain) return [];
+  return EMAIL_PREFIXES.map(p => `${p}@${domain}`);
 }
 
 function pickRandom(arr, n) {
@@ -145,13 +152,14 @@ async function runLeadSearch() {
     return;
   }
 
-  const queries = pickRandom(LEAD_QUERIES, 3);
+  // Use all queries for maximum coverage (not just 3 random)
+  const queries = LEAD_QUERIES;
   let newLeads = 0;
 
   for (const { q, type } of queries) {
     try {
       const resp = await axios.get('https://serpapi.com/search.json', {
-        params: { q, api_key: SERPAPI_KEY, num: 10, hl: 'en', gl: 'za' },
+        params: { q, api_key: SERPAPI_KEY, num: 100, hl: 'en', gl: 'za' },
         timeout: 15000,
       });
 
@@ -162,29 +170,33 @@ async function runLeadSearch() {
         if (!url) continue;
 
         const domain = extractDomain(url);
+        if (!domain) continue;
+
         const emailFromSnippet = extractEmailFromText(r.snippet) || extractEmailFromText(r.title);
-        const contactEmail = emailFromSnippet || buildContactEmail(domain);
 
-        try {
-          const ins = await db.query(
-            `INSERT INTO ai_leads (title, company, source_url, domain, contact_email, job_type, snippet, status)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'new')
-             ON CONFLICT (source_url) DO NOTHING
-             RETURNING id`,
-            [r.title || 'BPO Lead', domain, url, domain, contactEmail, type, r.snippet || '']
-          );
+        // Generate variants: if snippet has explicit email, just use that; else all 7 prefixes
+        const emailsToTry = emailFromSnippet
+          ? [emailFromSnippet]
+          : buildEmailVariants(domain);
 
-          if (ins.rows.length > 0) {
-            newLeads++;
-            agentState.totalLeadsFound++;
+        for (let i = 0; i < emailsToTry.length; i++) {
+          const contactEmail = emailsToTry[i];
+          // Unique URL per variant (suffix #prefix for secondary variants)
+          const variantUrl = i === 0 ? url : `${url}#${EMAIL_PREFIXES[i]}`;
+          try {
+            const ins = await db.query(
+              `INSERT INTO ai_leads (title, company, source_url, domain, contact_email, job_type, snippet, status)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'new')
+               ON CONFLICT (source_url) DO NOTHING
+               RETURNING id`,
+              [r.title || 'BPO Lead', domain, variantUrl, domain, contactEmail, type, r.snippet || '']
+            );
 
-            // Immediately attempt outreach if we have an email
-            if (contactEmail) {
-              await sendLeadOutreach(ins.rows[0].id, { name: domain, company: domain, email: contactEmail, jobType: type });
+            if (ins.rows.length > 0) {
+              newLeads++;
+              agentState.totalLeadsFound++;
             }
-          }
-        } catch (dbErr) {
-          // Duplicate url — skip silently
+          } catch (_) { /* duplicate — skip silently */ }
         }
       }
     } catch (err) {
@@ -223,6 +235,34 @@ async function sendLeadOutreach(leadId, prospect) {
   }
 }
 
+// ── 2b. Batch outreach to all new ai_leads ────────────────────────────────
+async function runAiLeadOutreach() {
+  const newLeads = await db.query(`
+    SELECT id, contact_email, company, domain, job_type FROM ai_leads
+    WHERE status = 'new'
+      AND contact_email IS NOT NULL
+      AND bounced_at IS NULL
+    ORDER BY created_at ASC
+    LIMIT 500
+  `).catch(() => ({ rows: [] }));
+
+  if (newLeads.rows.length === 0) return;
+
+  let sent = 0;
+  for (const lead of newLeads.rows) {
+    const result = await sendLeadOutreach(lead.id, {
+      name:    lead.company || lead.domain,
+      company: lead.company || lead.domain,
+      email:   lead.contact_email,
+      jobType: lead.job_type || 'business process outsourcing',
+    });
+    if (result) sent++;
+  }
+  if (sent > 0) {
+    await logActivity('ai_outreach', `Batch outreach: sent ${sent} emails from ai_leads`, null, null, 'success', { sent });
+  }
+}
+
 // ── 3. Follow-up Sequence ─────────────────────────────────────────────────
 async function runFollowUpSequence() {
   // Day 3 follow-up
@@ -233,7 +273,7 @@ async function runFollowUpSequence() {
       AND followup1_sent_at IS NULL
       AND contact_email IS NOT NULL
       AND bounced_at IS NULL
-    LIMIT 20
+    LIMIT 500
   `);
 
   for (const lead of day3.rows) {
@@ -255,7 +295,7 @@ async function runFollowUpSequence() {
       AND followup2_sent_at IS NULL
       AND contact_email IS NOT NULL
       AND bounced_at IS NULL
-    LIMIT 20
+    LIMIT 500
   `);
 
   for (const lead of day7.rows) {
@@ -755,7 +795,7 @@ async function runJobLeadOutreach() {
       AND contact_email IS NOT NULL
       AND contact_email != ''
     ORDER BY created_at ASC
-    LIMIT 10
+    LIMIT 500
   `).catch(() => ({ rows: [] }));
 
   if (newLeads.rows.length === 0) return;
@@ -809,7 +849,7 @@ async function runJobLeadFollowUps() {
       AND outreach_sent_at < NOW() - INTERVAL '3 days'
       AND followup1_sent_at IS NULL
       AND contact_email IS NOT NULL
-    LIMIT 15
+    LIMIT 500
   `).catch(() => ({ rows: [] }));
 
   for (const lead of day3.rows) {
@@ -839,7 +879,7 @@ async function runJobLeadFollowUps() {
       AND followup1_sent_at < NOW() - INTERVAL '4 days'
       AND followup2_sent_at IS NULL
       AND contact_email IS NOT NULL
-    LIMIT 15
+    LIMIT 500
   `).catch(() => ({ rows: [] }));
 
   for (const lead of day7.rows) {
@@ -877,35 +917,42 @@ async function startAgent() {
   console.log('🤖 CTS BPO Autonomous AI Agent — ONLINE');
 
   // Run immediately on startup (staggered to avoid hammering)
-  setTimeout(() => runLeadSearch().catch(console.error), 5000);
-  setTimeout(() => processApplications().catch(console.error), 10000);
-  setTimeout(() => assignContracts().catch(console.error), 15000);
-  setTimeout(() => processAIJobs().catch(console.error), 20000);
-  setTimeout(() => runJobLeadOutreach().catch(console.error), 35000);
+  setTimeout(() => runLeadSearch().catch(console.error),       5_000);
+  setTimeout(() => runJobLeadScan().catch(console.error),     15_000);
+  setTimeout(() => processApplications().catch(console.error),20_000);
+  setTimeout(() => assignContracts().catch(console.error),    25_000);
+  setTimeout(() => processAIJobs().catch(console.error),      30_000);
+  setTimeout(() => runAiLeadOutreach().catch(console.error),  40_000);
+  setTimeout(() => runJobLeadOutreach().catch(console.error), 50_000);
 
   // ── Schedules ──
-  // Lead search every 2 hours (ai_leads — agent's own SerpAPI queries)
-  cron.schedule('0 */2 * * *', () => {
+  // Lead search every 30 minutes (ai_leads — runs ALL 12 queries, 100 results each)
+  cron.schedule('*/30 * * * *', () => {
     runLeadSearch().catch(e => logActivity('lead_search', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
-  // Client prospect scan every 3 hours (job_leads — improved buyer-targeted queries)
-  cron.schedule('0 */3 * * *', () => {
+  // Client prospect scan every 45 minutes (job_leads — all 28 buyer-targeted queries, 100 results each)
+  cron.schedule('*/45 * * * *', () => {
     runJobLeadScan().catch(e => logActivity('prospect_scan', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
-  // Auto-outreach to new job_leads every 2 hours (offset by 1h from lead search)
-  cron.schedule('30 */2 * * *', () => {
+  // BATCH OUTREACH to ai_leads every 5 minutes — processes up to 500 uncontacted leads per run
+  cron.schedule('*/5 * * * *', () => {
+    runAiLeadOutreach().catch(e => logActivity('ai_outreach', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
+  // BATCH OUTREACH to job_leads every 5 minutes (offset by 2.5 min via setTimeout on startup)
+  cron.schedule('*/5 * * * *', () => {
     runJobLeadOutreach().catch(e => logActivity('prospect_outreach', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
-  // Follow-up emails every 6 hours (ai_leads)
-  cron.schedule('0 */6 * * *', () => {
+  // Follow-up emails every 2 hours (ai_leads — day-3 and day-7)
+  cron.schedule('0 */2 * * *', () => {
     runFollowUpSequence().catch(e => logActivity('followup_sequence', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
-  // Follow-up emails every 6 hours (job_leads — prospect follow-ups)
-  cron.schedule('0 1,7,13,19 * * *', () => {
+  // Follow-up emails every 2 hours (job_leads — prospect follow-ups)
+  cron.schedule('30 */2 * * *', () => {
     runJobLeadFollowUps().catch(e => logActivity('prospect_followup', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
@@ -955,11 +1002,13 @@ async function triggerNow(task) {
     case 'bounce_check':      await gmailReader.processBounces(); break;
     case 'prospect_scan':     await runJobLeadScan(); break;
     case 'prospect_outreach': await runJobLeadOutreach(); break;
+    case 'ai_lead_outreach':  await runAiLeadOutreach(); break;
     case 'prospect_followup': await runJobLeadFollowUps(); break;
     case 'all':
       await gmailReader.processBounces();
       await runLeadSearch();
       await runJobLeadScan();
+      await runAiLeadOutreach();
       await runJobLeadOutreach();
       await processApplications();
       await assignContracts();
