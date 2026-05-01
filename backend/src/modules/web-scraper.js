@@ -22,7 +22,8 @@ const path    = require('path');
 const db      = require('../db');
 
 // ── Stats persistence — survives backend restarts ────────────────────────────
-const STATS_FILE = path.join(__dirname, '../../data/scraper-stats.json');
+const STATS_FILE    = path.join(__dirname, '../../data/scraper-stats.json');
+const SEARCHED_FILE = path.join(__dirname, '../../data/scraper-searched.json');
 
 function loadPersistedStats() {
   try {
@@ -50,6 +51,31 @@ function savePersistedStats(stats) {
       savedAt:            new Date().toISOString(),
     }, null, 2), 'utf8');
   } catch { /* silently skip */ }
+}
+
+// ── Query-history persistence (so we never repeat a query within the same cycle) ─
+function searchedKey(pair) {
+  return `${pair.source}::${pair.query}`;
+}
+
+function loadSearchedQueries() {
+  try {
+    if (fs.existsSync(SEARCHED_FILE)) {
+      const arr = JSON.parse(fs.readFileSync(SEARCHED_FILE, 'utf8'));
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch { /* start fresh */ }
+  return new Set();
+}
+
+function saveSearchedQueries(set) {
+  try {
+    fs.writeFileSync(SEARCHED_FILE, JSON.stringify([...set], null, 0), 'utf8');
+  } catch { /* silently skip */ }
+}
+
+function clearSearchedQueries() {
+  try { fs.writeFileSync(SEARCHED_FILE, '[]', 'utf8'); } catch {}
 }
 
 // ── Config ─────────────────────────────────────────────────────────────────
@@ -636,6 +662,8 @@ const _continuousStats = {
   totalContactsAdded: _saved.totalContactsAdded,
   cyclesCompleted:    _saved.cyclesCompleted,
   lastQueryTs: null,
+  queriesDoneThisCycle: 0,  // how many unique queries run in the current cycle
+  queriesPerCycle: 0,       // total unique queries available (set at startup)
   recentQueries: [], // last 50 [{source, query, found, ts}]
   sourceStats: {     // cumulative per-source totals for this session
     google_places: { queries: 0, found: 0 },
@@ -663,19 +691,37 @@ async function runContinuous(onUpdate) {
   _continuousRunning = true;
   _continuousStats.running = true;
 
-  // Build shuffled query list
+  // Load query history so we don't repeat searches within the same cycle
+  const searchedQueries = loadSearchedQueries();
   const allPairs = buildAllPairs();
-  const shuffled = allPairs.sort(() => 0.5 - Math.random());
+  const totalPairs = allPairs.length;
+  _continuousStats.queriesPerCycle = totalPairs;
+
+  // Filter out any queries already done this cycle, then shuffle the remainder
+  let remaining = allPairs.filter(p => !searchedQueries.has(searchedKey(p)));
+  remaining.sort(() => 0.5 - Math.random());
   let idx = 0;
 
+  _continuousStats.queriesDoneThisCycle = searchedQueries.size;
+  const skipped = totalPairs - remaining.length;
+  if (skipped > 0) {
+    console.log(`[SCRAPER] Resuming cycle — ${skipped}/${totalPairs} queries already done, ${remaining.length} remaining`);
+  }
+
   while (_continuousRunning) {
-    if (idx >= shuffled.length) {
-      idx = 0;
+    if (idx >= remaining.length) {
+      // All queries for this cycle are done — start a fresh cycle
       _continuousStats.cyclesCompleted++;
-      shuffled.sort(() => 0.5 - Math.random()); // reshuffle each cycle for variety
+      _continuousStats.queriesDoneThisCycle = 0;
+      searchedQueries.clear();
+      clearSearchedQueries();
+      console.log(`[SCRAPER] Full cycle complete (cycle #${_continuousStats.cyclesCompleted}) — resetting query history and starting fresh`);
+      // Rebuild and re-shuffle the full list
+      remaining = [...allPairs].sort(() => 0.5 - Math.random());
+      idx = 0;
     }
 
-    const pair = shuffled[idx++];
+    const pair = remaining[idx++];
     _continuousStats.source      = pair.source;
     _continuousStats.sourceLabel = SOURCE_LABELS[pair.source] || pair.source;
     _continuousStats.query       = pair.query;
@@ -685,6 +731,14 @@ async function runContinuous(onUpdate) {
 
     const found = await runOnePair(pair);
     const realFound = found < 0 ? 0 : found;
+
+    // Mark this query as done for the current cycle (rate-limit hits still count as done)
+    searchedQueries.add(searchedKey(pair));
+    _continuousStats.queriesDoneThisCycle = searchedQueries.size;
+    // Save every 10 searches (or on every find) to avoid hitting disk too hard
+    if (searchedQueries.size % 10 === 0 || realFound > 0) {
+      saveSearchedQueries(searchedQueries);
+    }
 
     _continuousStats.totalQueries++;
     _continuousStats.lastFound = realFound;

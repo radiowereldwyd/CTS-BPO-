@@ -268,11 +268,30 @@ async function sendMail({ to, subject, html, text, replyTo }) {
     }
     // SMTP / network errors (nodemailer Gmail, connection errors)
     const smtpCode = err.responseCode || 0; // nodemailer sets responseCode
-    const isAuthErr = smtpCode === 535 || /535|authentication|credentials|login/i.test(err.message);
-    if (isAuthErr || (mode === 'gmail' && err.code === 'EAUTH')) {
+    const isGmailAuthErr = mode === 'gmail' && (smtpCode === 535 || err.code === 'EAUTH' || /535|authentication|credentials|login/i.test(err.message));
+    if (isGmailAuthErr) {
       console.error(`[EMAIL] Gmail SMTP auth failure — marking broken: ${err.message}`);
       markBroken('gmail');
       return { error: true, status: 535, message: `Gmail auth failed: ${err.message}` };
+    }
+    // Gmail daily sending limit (550 5.4.5) — mark as broken for this session
+    const isGmailDailyLimit = mode === 'gmail' && (smtpCode === 550 || /550.*5\.4\.5|Daily.*sending.*limit|user sending limit/i.test(err.message));
+    if (isGmailDailyLimit) {
+      console.error(`[EMAIL] Gmail daily sending limit reached — marking broken for this session`);
+      markBroken('gmail');
+      return { error: true, status: 550, message: 'Gmail daily limit reached' };
+    }
+    // For API providers (not Gmail), connection errors mean the provider is unreachable — mark broken & fall through
+    if (mode !== 'gmail' && (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND')) {
+      console.error(`[EMAIL] ${mode} connection error (${err.code}) — marking broken and falling back`);
+      markBroken(mode);
+      const nextMode = getSenderMode();
+      if (nextMode) {
+        console.log(`[EMAIL] Retrying via fallback provider: ${nextMode}`);
+        return sendMail({ to, subject, html, text, replyTo });
+      }
+      console.error(`[EMAIL] All providers broken — no working email provider configured`);
+      return { error: true, status: 0, message: 'All email providers unavailable' };
     }
     console.error(`[EMAIL] ${mode} SMTP/network error to ${to}: ${err.message}`);
     return { error: true, status: 0, message: err.message };

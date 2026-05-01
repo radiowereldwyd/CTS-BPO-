@@ -349,6 +349,26 @@ export default function AIAgentDashboard({ token }) {
                     <span style={{ fontWeight: 800, color: '#0f172a' }}>{r.v}</span>
                   </div>
                 ))}
+                {/* Current cycle progress bar */}
+                {scraper.queriesPerCycle > 0 && (() => {
+                  const done  = scraper.queriesDoneThisCycle || 0;
+                  const total = scraper.queriesPerCycle;
+                  const pct   = Math.min(100, Math.round((done / total) * 100));
+                  return (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                        <span style={{ color: '#64748b', fontWeight: 700 }}>Cycle progress</span>
+                        <span style={{ fontWeight: 800, color: '#0f172a' }}>{done}/{total} ({pct}%)</span>
+                      </div>
+                      <div style={{ background: '#e2e8f0', borderRadius: 999, height: 6, overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, background: '#6366f1', height: '100%', borderRadius: 999, transition: 'width 0.5s ease' }} />
+                      </div>
+                      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>
+                        {total - done} unique {total - done === 1 ? 'query' : 'queries'} remaining — no repeats until cycle resets
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -496,15 +516,30 @@ export default function AIAgentDashboard({ token }) {
             )}
             
             {(() => {
-              const allBroken = emailStats?.providers?.length > 0 &&
-                emailStats.providers.filter(p => p.configured).every(p => p.broken);
-              return allBroken ? (
+              const configured = (emailStats?.providers || []).filter(p => p.configured);
+              const allBroken  = configured.length > 0 && configured.every(p => p.broken);
+              const gmailDailyLimit = configured.find(p => p.name === 'Gmail' && p.broken && (p.sentToday || 0) >= Math.floor((p.dailyCap || 500) * 0.5));
+              if (!allBroken) return null;
+              return gmailDailyLimit ? (
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#fef2f2', border: '1.5px solid #f87171', borderRadius: 10, padding: '12px 16px', marginBottom: 12 }}>
+                  <span style={{ fontSize: 22 }}>🛑</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#991b1b', fontSize: 14 }}>Gmail daily sending limit reached — outreach resumes tomorrow</div>
+                    <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 4, lineHeight: 1.5 }}>
+                      Gmail has sent its maximum emails for today. Fix a backup provider to avoid this gap tomorrow:<br/>
+                      • <b>MailerLite</b>: Enable Transactional Emails add-on in your account.<br/>
+                      • <b>Mailgun</b>: Upgrade to Flex plan or add verified sandbox recipients.<br/>
+                      • <b>Mailjet</b>: Verify MAILJET_API_KEY and MAILJET_SECRET_KEY secrets are not swapped.
+                    </div>
+                  </div>
+                </div>
+              ) : (
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: '#fff7ed', border: '1.5px solid #f97316', borderRadius: 10, padding: '12px 16px', marginBottom: 12 }}>
                   <span style={{ fontSize: 22 }}>⚠️</span>
                   <div>
                     <div style={{ fontWeight: 800, color: '#9a3412', fontSize: 14 }}>All email providers are unavailable</div>
                     <div style={{ fontSize: 12, color: '#c2410c', marginTop: 4, lineHeight: 1.5 }}>
-                      No emails can be sent right now. Please fix the credentials for at least one provider:<br/>
+                      No emails can be sent right now. Please fix at least one provider:<br/>
                       • <b>MailerLite</b>: Enable the Transactional Emails add-on in your MailerLite account.<br/>
                       • <b>Mailgun</b>: Upgrade to Flex plan or add recipients to your sandbox allowlist.<br/>
                       • <b>Mailjet</b>: Verify MAILJET_API_KEY and MAILJET_SECRET_KEY are set correctly.<br/>
@@ -512,7 +547,7 @@ export default function AIAgentDashboard({ token }) {
                     </div>
                   </div>
                 </div>
-              ) : null;
+              );
             })()}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
@@ -529,8 +564,10 @@ export default function AIAgentDashboard({ token }) {
                 const isBroken = !!p.broken;
                 const bg   = !p.configured ? '#f8fafc' : isBroken ? '#fff7ed' : isFull || atStop ? '#fef2f2' : isPaused ? '#fffbeb' : p.active ? '#f0fdf4' : '#f8fafc';
                 const dot  = !p.configured ? '#94a3b8' : isBroken ? '#f97316' : isFull || atStop ? '#ef4444' : isPaused ? '#f59e0b' : p.active ? '#22c55e' : '#94a3b8';
+                const hitDailyLimit = isBroken && (p.sentToday || 0) >= Math.floor((p.dailyCap || 500) * 0.5);
                 const status = !p.configured ? 'Not set up'
-                             : isBroken      ? '⚠️ Feature unavailable'
+                             : isBroken && hitDailyLimit ? '🛑 Daily limit reached'
+                             : isBroken      ? '⚠️ Unavailable — check credentials'
                              : atStop        ? '🛑 Stopped at 99%'
                              : isFull        ? 'Daily limit reached'
                              : isPaused      ? '⏸ Paused'
