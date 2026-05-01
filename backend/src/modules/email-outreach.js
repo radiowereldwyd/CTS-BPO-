@@ -9,7 +9,7 @@ const axios       = require('axios');
 const auditLogger = require('./audit-logger');
 
 const GMAIL_USER      = process.env.GMAIL_USER         || process.env.SMTP_USER || '';
-const GMAIL_APP_PASS  = process.env.GMAIL_APP_PASSWORD  || process.env.SMTP_PASS || '';
+const GMAIL_APP_PASS  = (process.env.GMAIL_APP_PASSWORD  || process.env.SMTP_PASS || '').replace(/\s+/g, '');
 const SMTP_HOST       = process.env.SMTP_HOST           || 'smtp.gmail.com';
 const SMTP_PORT       = parseInt(process.env.SMTP_PORT  || '587', 10);
 const SENDGRID_KEY    = process.env.SENDGRID_API_KEY    || '';
@@ -54,6 +54,7 @@ function isConfigured() { return !!getSenderMode(); }
 let transporter = null;
 function getTransporter() {
   if (transporter) return transporter;
+  console.log(`[EMAIL] Config — mode:${getSenderMode()||'NONE'} user:${GMAIL_USER||'(not set)'} pass_len:${GMAIL_APP_PASS.length} host:${SMTP_HOST}:${SMTP_PORT}`);
   if (GMAIL_USER && GMAIL_APP_PASS) {
     transporter = nodemailer.createTransport({
       host: SMTP_HOST, port: SMTP_PORT,
