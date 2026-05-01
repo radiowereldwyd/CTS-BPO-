@@ -1170,6 +1170,37 @@ app.get('/api/ai-agent/status', requireAuth, (req, res) => {
   res.json(autonomousAgent.getStatus());
 });
 
+// GET /api/ai-agent/live — real-time ops center data (poll every 2s from frontend)
+let _dailyStatsCache = null;
+let _dailyStatsCacheTs = 0;
+app.get('/api/ai-agent/live', requireAuth, async (req, res) => {
+  try {
+    // Daily stats cached for 60s
+    if (!_dailyStatsCache || Date.now() - _dailyStatsCacheTs > 60_000) {
+      try {
+        const [ds, es, cs] = await Promise.all([
+          // Leads added per day (last 7 days)
+          db.query(`SELECT DATE(created_at) AS day, COUNT(*) AS count FROM ai_leads WHERE created_at > NOW()-INTERVAL '7 days' GROUP BY day ORDER BY day DESC`),
+          // Emails sent per day (last 7 days from activity log)
+          db.query(`SELECT DATE(created_at) AS day, COUNT(*) AS count FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach') AND created_at > NOW()-INTERVAL '7 days' GROUP BY day ORDER BY day DESC`),
+          // Contacts added per day
+          db.query(`SELECT DATE(created_at) AS day, COUNT(*) AS count FROM scraped_contacts WHERE created_at > NOW()-INTERVAL '7 days' GROUP BY day ORDER BY day DESC`),
+        ]);
+        // Merge into daily map
+        const dayMap = {};
+        for (const r of ds.rows)  { dayMap[r.day] = { ...(dayMap[r.day]||{}), day: r.day, leads: parseInt(r.count)||0 }; }
+        for (const r of es.rows)  { dayMap[r.day] = { ...(dayMap[r.day]||{}), day: r.day, emails: parseInt(r.count)||0 }; }
+        for (const r of cs.rows)  { dayMap[r.day] = { ...(dayMap[r.day]||{}), day: r.day, contacts: parseInt(r.count)||0 }; }
+        _dailyStatsCache = Object.values(dayMap).sort((a, b) => new Date(b.day) - new Date(a.day));
+        _dailyStatsCacheTs = Date.now();
+      } catch { _dailyStatsCache = []; }
+    }
+
+    const status = autonomousAgent.getStatus();
+    res.json({ ...status, dailyStats: _dailyStatsCache });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/ai-agent/activity — returns recent activity log
 app.get('/api/ai-agent/activity', requireAuth, async (req, res) => {
   try {

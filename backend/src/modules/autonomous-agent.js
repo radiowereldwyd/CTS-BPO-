@@ -57,6 +57,50 @@ const agentState = {
   errors: [],
 };
 
+// Live stats — updated in real-time by scraper callbacks + outreach
+const liveStats = {
+  outreach: {
+    active: false,
+    lastSentTo: null,
+    lastSentAt: null,
+    sentThisSession: 0,
+    sentToday: 0,
+    todayDate: new Date().toDateString(),
+  },
+  db: {
+    ai_leads:         { total: 0, pending: 0 },
+    job_leads:        { total: 0, pending: 0 },
+    scraped_contacts: { total: 0, pending: 0 },
+    grand_total: 0,
+    lastRefresh: null,
+  },
+};
+
+// Reset daily counters at midnight
+function checkDailyReset() {
+  const today = new Date().toDateString();
+  if (today !== liveStats.outreach.todayDate) {
+    liveStats.outreach.sentToday  = 0;
+    liveStats.outreach.todayDate  = today;
+  }
+}
+
+// Refresh DB volumes (called every 30s)
+async function refreshDbStats() {
+  try {
+    const [a, j, s] = await Promise.all([
+      db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new') AS pending FROM ai_leads`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
+      db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new' OR status='pending') AS pending FROM job_leads`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
+      db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new') AS pending FROM scraped_contacts`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
+    ]);
+    liveStats.db.ai_leads         = { total: parseInt(a.rows[0].total) || 0, pending: parseInt(a.rows[0].pending) || 0 };
+    liveStats.db.job_leads        = { total: parseInt(j.rows[0].total) || 0, pending: parseInt(j.rows[0].pending) || 0 };
+    liveStats.db.scraped_contacts = { total: parseInt(s.rows[0].total) || 0, pending: parseInt(s.rows[0].pending) || 0 };
+    liveStats.db.grand_total      = liveStats.db.ai_leads.total + liveStats.db.job_leads.total + liveStats.db.scraped_contacts.total;
+    liveStats.db.lastRefresh      = new Date().toISOString();
+  } catch { /* silently skip */ }
+}
+
 // ── Table setup ────────────────────────────────────────────────────────────
 async function ensureTables() {
   await db.query(`
@@ -215,7 +259,6 @@ async function runLeadSearch() {
 // ── 2. Send Cold Outreach to Lead ─────────────────────────────────────────
 async function sendLeadOutreach(leadId, prospect) {
   try {
-    // Never contact a bounced address
     if (prospect.email) {
       const bounceCheck = await db.query(
         `SELECT id FROM ai_leads WHERE LOWER(contact_email)=LOWER($1) AND bounced_at IS NOT NULL LIMIT 1`,
@@ -232,6 +275,11 @@ async function sendLeadOutreach(leadId, prospect) {
       [leadId]
     );
     agentState.totalEmailsSent++;
+    checkDailyReset();
+    liveStats.outreach.sentThisSession++;
+    liveStats.outreach.sentToday++;
+    liveStats.outreach.lastSentTo  = prospect.email;
+    liveStats.outreach.lastSentAt  = new Date().toISOString();
     await logActivity('email_sent', `Cold outreach → ${prospect.email} [${prospect.jobType}]`, 'lead', leadId, 'success', { to: prospect.email, type: prospect.jobType });
     return result;
   } catch (err) {
@@ -317,6 +365,12 @@ async function runScrapedContactsOutreach() {
       );
       agentState.totalEmailsSent++;
       sent++;
+      checkDailyReset();
+      liveStats.outreach.sentThisSession++;
+      liveStats.outreach.sentToday++;
+      liveStats.outreach.lastSentTo  = c.email;
+      liveStats.outreach.lastSentAt  = new Date().toISOString();
+      liveStats.outreach.active      = true;
       await logActivity('scrape_outreach', `Outreach → ${c.email} [${c.business_type || 'BPO'}]`, 'scraped_contact', c.id, 'success', { to: c.email });
     } catch (err) {
       await logActivity('scrape_outreach', `Failed → ${c.email}: ${err.message}`, 'scraped_contact', c.id, 'error');
@@ -1029,7 +1083,6 @@ async function startAgent() {
   setTimeout(() => processAIJobs().catch(console.error),                 30_000);
   setTimeout(() => runAiLeadOutreach().catch(console.error),             40_000);
   setTimeout(() => runJobLeadOutreach().catch(console.error),            50_000);
-  setTimeout(() => runWebScraper().catch(console.error),                 60_000);
   setTimeout(() => runScrapedContactsOutreach().catch(console.error),   120_000);
 
   // ── Schedules ──
@@ -1091,10 +1144,24 @@ async function startAgent() {
   // Run once on startup after 30s
   setTimeout(() => gmailReader.processBounces().catch(console.error), 30000);
 
-  // Multi-source web scraper — every 6 hours (Google Places + CSE + DuckDuckGo + SerpAPI BPO)
-  cron.schedule('0 */6 * * *', () => {
-    runWebScraper().catch(e => logActivity('web_scrape', `Cron error: ${e.message}`, null, null, 'error'));
-  });
+  // ── Continuous scraper (non-stop, no cron) ──
+  // Starts 45s after boot, runs forever cycling through 675+ queries across 4 sources
+  setTimeout(() => {
+    webScraper.runContinuous((event) => {
+      // Update liveStats.scraper from the scraper's own _continuousStats
+      // (getContinuousStats() returns the current state)
+      if (event.type === 'done') {
+        agentState.totalLeadsFound += (event.found || 0);
+      }
+    }).catch(e => {
+      console.error('[SCRAPER] Continuous loop crashed, restarting in 10s:', e.message);
+      setTimeout(() => webScraper.runContinuous(() => {}).catch(() => {}), 10000);
+    });
+  }, 45_000);
+
+  // DB volume refresh every 30 seconds
+  setInterval(() => refreshDbStats().catch(() => {}), 30_000);
+  setTimeout(() => refreshDbStats().catch(() => {}), 5_000); // initial refresh
 
   // Outreach to scraped_contacts every 5 minutes (offset by ~2.5 min from ai/job crons)
   cron.schedule('2-57/5 * * * *', () => {
@@ -1151,7 +1218,13 @@ async function triggerNow(task) {
 
 // ── Status ─────────────────────────────────────────────────────────────────
 function getStatus() {
-  return { ...agentState };
+  checkDailyReset();
+  return {
+    ...agentState,
+    scraper: webScraper.getContinuousStats(),
+    outreach: { ...liveStats.outreach },
+    db: { ...liveStats.db },
+  };
 }
 
 module.exports = { startAgent, triggerNow, getStatus, processAIJobs, runPaymentChase, webScraper };

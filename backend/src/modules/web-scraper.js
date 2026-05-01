@@ -457,6 +457,218 @@ async function runAllScrapers() {
   return total;
 }
 
+// ── Continuous mode: per-query engine ────────────────────────────────────────
+
+// Build master flat list of ALL queries across every source
+function buildAllPairs() {
+  const pairs = [];
+  // Google Places: 25 types × 25 cities = 625
+  for (const city of SEARCH_CITIES) {
+    for (const type of BUSINESS_TYPES) {
+      pairs.push({ source: 'google_places', query: `${type} ${city}`, type, city });
+    }
+  }
+  // Google CSE
+  for (const q of CSE_QUERIES) pairs.push({ source: 'google_cse', query: q });
+  // DuckDuckGo
+  for (const q of DDG_QUERIES) pairs.push({ source: 'duckduckgo', query: q });
+  // SerpAPI BPO
+  for (const q of SERP_BPO_QUERIES) pairs.push({ source: 'serpapi_bpo', query: q });
+  return pairs;
+}
+
+// Execute exactly ONE query for any source — returns count of new contacts stored
+async function runOnePair(pair) {
+  try {
+    if (pair.source === 'google_places') {
+      if (!GOOGLE_API_KEY) return 0;
+      const res = await axios.post(
+        'https://places.googleapis.com/v1/places:searchText',
+        { textQuery: pair.query, languageCode: 'en', maxResultCount: 20 },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_API_KEY,
+            'X-Goog-FieldMask': 'places.displayName,places.websiteUri,places.formattedAddress,places.nationalPhoneNumber,places.businessStatus',
+          },
+          timeout: 15000,
+        }
+      );
+      const places = res.data.places || [];
+      const contacts = [];
+      for (const p of places) {
+        if (p.businessStatus && p.businessStatus !== 'OPERATIONAL') continue;
+        const website = p.websiteUri || null;
+        const domain  = extractDomain(website);
+        if (!domain) continue;
+        const cityName = (pair.city || '').split(' ')[0];
+        const country  = (pair.city || '').split(' ').slice(1).join(' ') || null;
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({
+            company: p.displayName?.text || '', website, domain, email,
+            phone: p.nationalPhoneNumber || null, address: p.formattedAddress || '',
+            city: cityName, country, businessType: pair.type || null,
+            source: 'google_places', query: pair.query, snippet: p.formattedAddress || null,
+          });
+        }
+      }
+      return await storeContacts(contacts);
+    }
+
+    if (pair.source === 'google_cse') {
+      if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) return 0;
+      const res = await axios.get('https://www.googleapis.com/customsearch/v1', {
+        params: { key: GOOGLE_API_KEY, cx: GOOGLE_CSE_ID, q: pair.query, num: 10 },
+        timeout: 15000,
+      });
+      const items = res.data.items || [];
+      const contacts = [];
+      for (const item of items) {
+        const domain = extractDomain(item.link);
+        if (!domain) continue;
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({ company: item.title || domain, website: item.link, domain, email, source: 'google_cse', query: pair.query, snippet: item.snippet || null });
+        }
+      }
+      return await storeContacts(contacts);
+    }
+
+    if (pair.source === 'duckduckgo') {
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q: pair.query },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 20000,
+      });
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+      $('.result').each((_, el) => {
+        let link = $(el).find('.result__title a').attr('href') || '';
+        if (link.includes('uddg=')) { try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {} }
+        const domain = extractDomain(link);
+        if (!domain || domain.includes('duckduckgo') || domain.includes('google')) return;
+        const title   = $(el).find('.result__title a').text().trim() || domain;
+        const snippet = $(el).find('.result__snippet').text().trim();
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({ company: title, website: link, domain, email, source: 'duckduckgo', query: pair.query, snippet: snippet || null });
+        }
+      });
+      return await storeContacts(contacts);
+    }
+
+    if (pair.source === 'serpapi_bpo') {
+      const SERPAPI_KEY = process.env.SERPAPI_KEY;
+      if (!SERPAPI_KEY) return 0;
+      const res = await axios.get('https://serpapi.com/search', {
+        params: { q: pair.query, api_key: SERPAPI_KEY, engine: 'google', num: 100, hl: 'en', gl: 'us' },
+        timeout: 20000,
+      });
+      const results = res.data.organic_results || [];
+      const contacts = [];
+      for (const r of results) {
+        const domain = extractDomain(r.link);
+        if (!domain) continue;
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({ company: r.title || domain, website: r.link, domain, email, source: 'serpapi_bpo', query: pair.query, snippet: r.snippet || null });
+        }
+      }
+      return await storeContacts(contacts);
+    }
+  } catch (err) {
+    if (err.response?.status === 429 || err.response?.status === 403) return -429; // rate limit signal
+    return 0;
+  }
+  return 0;
+}
+
+// ── Continuous loop (runs forever until stopContinuous()) ─────────────────────
+let _continuousRunning = false;
+const _continuousStats = {
+  running: false,
+  source: null,
+  sourceLabel: null,
+  query: null,
+  lastFound: 0,
+  totalQueries: 0,
+  totalContactsAdded: 0,
+  cyclesCompleted: 0,
+  lastQueryTs: null,
+  recentQueries: [], // last 50 [{source, query, found, ts}]
+};
+
+const SOURCE_LABELS = {
+  google_places: 'Google Places',
+  google_cse:    'Google CSE',
+  duckduckgo:    'DuckDuckGo',
+  serpapi_bpo:   'SerpAPI',
+};
+const SOURCE_DELAYS = {
+  google_places: 1200,
+  google_cse:    2500,
+  duckduckgo:    3500,
+  serpapi_bpo:   1500,
+};
+
+async function runContinuous(onUpdate) {
+  if (_continuousRunning) return;
+  _continuousRunning = true;
+  _continuousStats.running = true;
+
+  // Build shuffled query list
+  const allPairs = buildAllPairs();
+  const shuffled = allPairs.sort(() => 0.5 - Math.random());
+  let idx = 0;
+
+  while (_continuousRunning) {
+    if (idx >= shuffled.length) {
+      idx = 0;
+      _continuousStats.cyclesCompleted++;
+      shuffled.sort(() => 0.5 - Math.random()); // reshuffle each cycle for variety
+    }
+
+    const pair = shuffled[idx++];
+    _continuousStats.source      = pair.source;
+    _continuousStats.sourceLabel = SOURCE_LABELS[pair.source] || pair.source;
+    _continuousStats.query       = pair.query;
+    _continuousStats.lastQueryTs = new Date().toISOString();
+
+    if (onUpdate) onUpdate({ type: 'start', ...pair });
+
+    const found = await runOnePair(pair);
+    const realFound = found < 0 ? 0 : found;
+
+    _continuousStats.totalQueries++;
+    _continuousStats.lastFound = realFound;
+    if (realFound > 0) _continuousStats.totalContactsAdded += realFound;
+
+    // Push to recent queries log (keep last 50)
+    _continuousStats.recentQueries.unshift({
+      source: pair.source,
+      sourceLabel: SOURCE_LABELS[pair.source] || pair.source,
+      query: pair.query,
+      found: realFound,
+      ts: new Date().toISOString(),
+    });
+    if (_continuousStats.recentQueries.length > 50) _continuousStats.recentQueries.pop();
+
+    if (onUpdate) onUpdate({ type: 'done', ...pair, found: realFound });
+
+    // Rate-appropriate delay per source
+    const delay = found === -429
+      ? SOURCE_DELAYS[pair.source] * 5    // back off on rate limit
+      : SOURCE_DELAYS[pair.source] || 1500;
+
+    await sleep(delay);
+  }
+
+  _continuousStats.running = false;
+}
+
+function stopContinuous() { _continuousRunning = false; }
+function getContinuousStats() { return { ..._continuousStats }; }
+
 // ── Stats ────────────────────────────────────────────────────────────────────
 async function getStats() {
   try {
@@ -485,4 +697,9 @@ module.exports = {
   getStats,
   buildEmailVariants,
   extractDomain,
+  // Continuous mode
+  runContinuous,
+  stopContinuous,
+  getContinuousStats,
+  buildAllPairs,
 };

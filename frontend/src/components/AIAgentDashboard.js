@@ -1,132 +1,183 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 const API = process.env.REACT_APP_API_URL || '';
 
+const SOURCE_META = {
+  google_places: { label: 'Google Places', icon: '📍', color: '#4285f4', bg: '#e8f0fe' },
+  google_cse:    { label: 'Google CSE',    icon: '🔍', color: '#34a853', bg: '#e6f4ea' },
+  duckduckgo:    { label: 'DuckDuckGo',    icon: '🦆', color: '#de5833', bg: '#fce8e6' },
+  serpapi_bpo:   { label: 'SerpAPI',       icon: '🌐', color: '#10b981', bg: '#d1fae5' },
+};
+
 const ACTION_ICONS = {
-  agent_start:             '🚀',
-  lead_search:             '🔍',
-  email_sent:              '📧',
-  followup_sent:           '📩',
-  followup_sequence:       '🔄',
-  application_acknowledged:'✅',
-  application_approved:    '🎉',
-  contract_assigned:       '📋',
-  contract_assign:         '📋',
-  application_process:     '⚙️',
-  heartbeat:               '💓',
-  error:                   '❌',
-  prospect_scan:           '🌐',
-  prospect_outreach:       '📤',
-  prospect_followup:       '🔁',
-  bounce_process:          '🚫',
-  payment_chase:           '💰',
-  payment_auto_release:    '💸',
-  ai_job_start:            '🤖',
-  ai_job_complete:         '✔️',
-  ai_job_error:            '⚠️',
-  outreach_sent:           '📨',
-  web_scrape:              '🕷️',
-  scrape_outreach:         '📬',
-  scrape_followup:         '🔂',
-  ai_outreach:             '📧',
+  agent_start: '🚀', lead_search: '🔍', email_sent: '📧', followup_sent: '📩',
+  followup_sequence: '🔄', application_acknowledged: '✅', application_approved: '🎉',
+  contract_assigned: '📋', contract_assign: '📋', application_process: '⚙️',
+  heartbeat: '💓', error: '❌', prospect_scan: '🌐', prospect_outreach: '📤',
+  prospect_followup: '🔁', bounce_process: '🚫', payment_chase: '💰',
+  payment_auto_release: '💸', ai_job_start: '🤖', ai_job_complete: '✔️',
+  ai_job_error: '⚠️', outreach_sent: '📨', web_scrape: '🕷️',
+  scrape_outreach: '📬', scrape_followup: '🔂', ai_outreach: '📧',
 };
 
-const STATUS_COLORS = {
-  success: '#10b981',
-  error:   '#ef4444',
-  skipped: '#f59e0b',
-  info:    '#6366f1',
+const ACTION_COLORS = {
+  email_sent: '#0ea5e9', scrape_outreach: '#0ea5e9', prospect_outreach: '#0ea5e9',
+  ai_outreach: '#0ea5e9', outreach_sent: '#0ea5e9',
+  web_scrape: '#8b5cf6', lead_search: '#8b5cf6', prospect_scan: '#8b5cf6',
+  contract_assigned: '#f59e0b', contract_assign: '#f59e0b',
+  followup_sent: '#06b6d4', followup_sequence: '#06b6d4', scrape_followup: '#06b6d4',
+  error: '#ef4444', ai_job_error: '#ef4444',
+  application_approved: '#10b981', ai_job_complete: '#10b981', payment_auto_release: '#10b981',
 };
 
-const JOB_TYPE_BADGE = {
-  'data-entry':          { bg: '#e0f2fe', color: '#0369a1' },
-  'transcription':       { bg: '#fef9c3', color: '#854d0e' },
-  'translation':         { bg: '#f0fdf4', color: '#166534' },
-  'virtual-assistant':   { bg: '#f3e8ff', color: '#6d28d9' },
-  'finance-admin':       { bg: '#fef3c7', color: '#92400e' },
-  'content-moderation':  { bg: '#fce7f3', color: '#9d174d' },
-  'customer-support':    { bg: '#ede9fe', color: '#5b21b6' },
-  'document-processing': { bg: '#ecfdf5', color: '#065f46' },
-  'social-media':        { bg: '#fff1f2', color: '#9f1239' },
-  'general':             { bg: '#f1f5f9', color: '#475569' },
-};
+function fmt(n) { return n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n/1_000).toFixed(1)}K` : (n||0).toString(); }
 
-const LEAD_STATUS_BADGE = {
-  new:             { bg: '#e0f2fe', color: '#0369a1',  label: 'New' },
-  outreach_sent:   { bg: '#fef3c7', color: '#92400e',  label: 'Outreach Sent' },
-  followup1_sent:  { bg: '#fde68a', color: '#78350f',  label: 'Follow-up #1' },
-  followup2_sent:  { bg: '#fed7aa', color: '#7c2d12',  label: 'Follow-up #2' },
-  responded:       { bg: '#d1fae5', color: '#065f46',  label: 'Responded' },
-  converted:       { bg: '#a7f3d0', color: '#064e3b',  label: 'Converted' },
-};
-
-function timeAgo(dateStr) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1)  return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)  return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+function timeAgo(ts) {
+  if (!ts) return '—';
+  const s = Math.floor((Date.now() - new Date(ts)) / 1000);
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+  return `${Math.floor(s/86400)}d ago`;
 }
 
-function StatCard({ label, value, sub, color }) {
+function fmtDay(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  const today = new Date();
+  const yest  = new Date(today); yest.setDate(yest.getDate()-1);
+  if (dt.toDateString() === today.toDateString()) return 'Today';
+  if (dt.toDateString() === yest.toDateString())  return 'Yesterday';
+  return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+}
+
+function Pulse({ color = '#10b981', size = 8 }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 14, padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.07)', borderTop: `4px solid ${color || '#6366f1'}`, minWidth: 150, flex: 1 }}>
-      <div style={{ fontSize: 28, fontWeight: 900, color: color || '#0f172a', lineHeight: 1 }}>{value}</div>
-      <div style={{ fontSize: 13, color: '#64748b', marginTop: 4, fontWeight: 600 }}>{label}</div>
-      {sub && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{sub}</div>}
+    <span style={{ display: 'inline-block', width: size, height: size, borderRadius: '50%', background: color,
+      boxShadow: `0 0 0 0 ${color}`, animation: 'pulseRing 1.5s infinite' }} />
+  );
+}
+
+// ── Scraper source card ───────────────────────────────────────────────────────
+function SourceCard({ source, isActive, currentQuery, stats }) {
+  const meta = SOURCE_META[source] || { label: source, icon: '🔎', color: '#64748b', bg: '#f1f5f9' };
+  const found = stats?.recentQueries?.filter(q => q.source === source).reduce((a, b) => a + (b.found || 0), 0) || 0;
+  const queries = stats?.recentQueries?.filter(q => q.source === source).length || 0;
+
+  return (
+    <div style={{
+      background: isActive ? meta.bg : '#fff',
+      border: `2px solid ${isActive ? meta.color : '#e2e8f0'}`,
+      borderRadius: 12, padding: '14px 16px', transition: 'all 0.3s',
+      boxShadow: isActive ? `0 0 16px ${meta.color}30` : '0 1px 4px rgba(0,0,0,0.06)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 20 }}>{meta.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: meta.color }}>{meta.label}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {isActive ? <Pulse color={meta.color} size={6} /> : <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#cbd5e1', display: 'inline-block' }} />}
+            <span style={{ fontSize: 10, fontWeight: 700, color: isActive ? meta.color : '#94a3b8' }}>
+              {isActive ? 'QUERYING' : 'IDLE'}
+            </span>
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: meta.color }}>{fmt(found)}</div>
+          <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600 }}>contacts</div>
+        </div>
+      </div>
+      {isActive && currentQuery && (
+        <div style={{ fontSize: 10, color: meta.color, background: '#fff', padding: '5px 8px', borderRadius: 6, marginTop: 4, wordBreak: 'break-word', lineHeight: 1.4, fontWeight: 600 }}>
+          {currentQuery}
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+        <span style={{ fontSize: 10, color: '#94a3b8' }}>{queries} queries recent</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Live feed item ────────────────────────────────────────────────────────────
+function FeedItem({ item }) {
+  const isScraperEvent = item._type === 'scraper';
+  const color = isScraperEvent
+    ? (SOURCE_META[item.source]?.color || '#8b5cf6')
+    : (ACTION_COLORS[item.action_type] || '#64748b');
+
+  return (
+    <div style={{
+      display: 'flex', gap: 10, padding: '6px 12px', borderBottom: '1px solid #0f172a',
+      alignItems: 'flex-start', background: 'transparent',
+    }}>
+      <div style={{ fontSize: 13, flexShrink: 0, marginTop: 1 }}>
+        {isScraperEvent ? (SOURCE_META[item.source]?.icon || '🕷️') : (ACTION_ICONS[item.action_type] || '⚙️')}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {isScraperEvent ? (
+          <>
+            <span style={{ fontSize: 11, fontWeight: 700, color }}>
+              [{SOURCE_META[item.source]?.label || item.source}]
+            </span>
+            <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{item.query?.slice(0, 70)}</span>
+            {item.found > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#10b981', marginLeft: 6 }}>+{item.found}</span>
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>{item.description}</span>
+        )}
+      </div>
+      <div style={{ fontSize: 10, color: '#475569', flexShrink: 0, fontFamily: 'monospace' }}>
+        {timeAgo(item.ts || item.created_at)}
+      </div>
     </div>
   );
 }
 
 export default function AIAgentDashboard({ token }) {
-  const [status, setStatus]           = useState(null);
-  const [activities, setActivities]   = useState([]);
-  const [leads, setLeads]             = useState([]);
-  const [scrapedStats, setScrapedStats] = useState(null);
-  const [scrapedContacts, setScrapedContacts] = useState([]);
-  const [activeTab, setActiveTab]     = useState('activity');
-  const [triggering, setTriggering]   = useState('');
-  const [triggerMsg, setTriggerMsg]   = useState('');
-  const [loading, setLoading]         = useState(true);
+  const [live, setLive]           = useState(null);
+  const [activities, setActivities] = useState([]);
+  const [activeTab, setActiveTab] = useState('ops');
+  const [triggering, setTriggering] = useState('');
+  const [triggerMsg, setTriggerMsg] = useState('');
+  const [loading, setLoading]     = useState(true);
+  const feedRef = useRef(null);
+  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-  const fetchAll = useCallback(async () => {
-    const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const fetchLive = useCallback(async () => {
     try {
-      const [s, a, l, sc] = await Promise.all([
-        fetch(`${API}/api/ai-agent/status`,                { headers: h }).then(r => r.json()),
-        fetch(`${API}/api/ai-agent/activity?limit=80`,     { headers: h }).then(r => r.json()),
-        fetch(`${API}/api/ai-agent/leads`,                 { headers: h }).then(r => r.json()),
-        fetch(`${API}/api/ai-agent/scraped-contacts`,      { headers: h }).then(r => r.json()).catch(() => ({})),
-      ]);
-      setStatus(s);
-      setActivities(a.activities || []);
-      setLeads(l.leads || []);
-      setScrapedStats(sc.stats || null);
-      setScrapedContacts(sc.contacts || []);
-    } catch (e) {
-      console.error('Agent fetch error:', e);
-    } finally {
+      const data = await fetch(`${API}/api/ai-agent/live`, { headers: h }).then(r => r.json());
+      setLive(data);
       setLoading(false);
-    }
+    } catch {}
+  }, [token]);
+
+  const fetchActivity = useCallback(async () => {
+    try {
+      const data = await fetch(`${API}/api/ai-agent/activity?limit=40`, { headers: h }).then(r => r.json());
+      setActivities(data.activities || []);
+    } catch {}
   }, [token]);
 
   useEffect(() => {
-    fetchAll();
-    const iv = setInterval(fetchAll, 15000);
-    return () => clearInterval(iv);
-  }, [fetchAll]);
+    fetchLive();
+    fetchActivity();
+    const iv1 = setInterval(fetchLive, 2000);
+    const iv2 = setInterval(fetchActivity, 5000);
+    return () => { clearInterval(iv1); clearInterval(iv2); };
+  }, [fetchLive, fetchActivity]);
 
   async function trigger(task) {
-    const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
     setTriggering(task);
     setTriggerMsg('');
     try {
       const r = await fetch(`${API}/api/ai-agent/trigger/${task}`, { method: 'POST', headers: h });
       const data = await r.json();
       setTriggerMsg(data.message || data.error || 'Done');
-      setTimeout(() => { fetchAll(); setTriggerMsg(''); }, 2000);
+      setTimeout(() => { fetchLive(); fetchActivity(); setTriggerMsg(''); }, 2000);
     } catch (e) {
       setTriggerMsg('Error: ' + e.message);
     } finally {
@@ -134,249 +185,390 @@ export default function AIAgentDashboard({ token }) {
     }
   }
 
-  const pulse = status?.running
-    ? { animation: 'pulse 2s infinite', boxShadow: '0 0 0 4px rgba(16,185,129,0.15)' }
-    : {};
+  const scraper   = live?.scraper   || {};
+  const outreach  = live?.outreach  || {};
+  const db        = live?.db        || {};
+  const daily     = live?.dailyStats || [];
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300, color: '#64748b' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🤖</div>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Loading AI Agent...</div>
-        </div>
+  // Build merged live feed (scraper recent queries + activity log)
+  const scraperFeed = (scraper.recentQueries || []).map(q => ({ ...q, _type: 'scraper', ts: q.ts }));
+  const activityFeed = activities.map(a => ({ ...a, _type: 'activity', ts: a.created_at }));
+  const merged = [...scraperFeed, ...activityFeed]
+    .sort((a, b) => new Date(b.ts) - new Date(a.ts))
+    .slice(0, 80);
+
+  const totalDb = parseInt(db.grand_total) || 0;
+  const isOnline = live?.running;
+
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
+      <div style={{ textAlign: 'center', color: '#64748b' }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🤖</div>
+        <div style={{ fontSize: 15, fontWeight: 700 }}>Connecting to AI Agent...</div>
       </div>
-    );
-  }
+    </div>
+  );
 
   return (
-    <div style={{ padding: '0 0 40px', maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ padding: '0 0 48px', maxWidth: 1280, margin: '0 auto', fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif' }}>
       <style>{`
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
-        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-        .trigger-btn { border:none;border-radius:10px;padding:10px 18px;font-weight:700;font-size:13px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:7px; }
-        .trigger-btn:hover { transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,0.15); }
-        .trigger-btn:disabled { opacity:0.6;cursor:not-allowed;transform:none; }
+        @keyframes pulseRing {
+          0%   { box-shadow: 0 0 0 0 currentColor; }
+          70%  { box-shadow: 0 0 0 8px transparent; }
+          100% { box-shadow: 0 0 0 0 transparent; }
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        @keyframes spin  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes slideIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+        .trig-btn { border:none;border-radius:8px;padding:8px 14px;font-weight:700;font-size:12px;cursor:pointer;transition:all 0.15s; }
+        .trig-btn:hover { filter:brightness(1.12); transform:translateY(-1px); }
+        .trig-btn:disabled { opacity:0.55;cursor:not-allowed;transform:none; }
         .tab-btn { background:none;border:none;padding:10px 20px;cursor:pointer;font-size:13px;font-weight:700;color:#64748b;border-bottom:3px solid transparent;transition:all 0.2s; }
         .tab-btn.active { color:#6366f1;border-bottom-color:#6366f1; }
-        .activity-row { display:flex;gap:14px;padding:14px 20px;border-bottom:1px solid #f1f5f9;align-items:flex-start;transition:background 0.15s; }
-        .activity-row:hover { background:#f8faff; }
-        .lead-row { display:grid;grid-template-columns:1fr 1fr 140px 140px 120px;gap:12px;padding:14px 20px;border-bottom:1px solid #f1f5f9;align-items:center;font-size:13px;transition:background 0.15s; }
-        .lead-row:hover { background:#f8faff; }
+        .feed-item { animation: slideIn 0.2s ease; }
+        .stat-num { font-variant-numeric: tabular-nums; }
       `}</style>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 16, background: 'linear-gradient(135deg,#0f172a,#1e3a5f)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, ...pulse }}>🤖</div>
+      {/* ── HEADER ─────────────────────────────────────────────────────────── */}
+      <div style={{ background: 'linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%)', borderRadius: 16, padding: '20px 28px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ fontSize: 36 }}>🤖</div>
           <div>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: '#0f172a' }}>Autonomous AI Agent</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: status?.running ? '#10b981' : '#ef4444', boxShadow: status?.running ? '0 0 6px #10b981' : 'none' }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: status?.running ? '#10b981' : '#ef4444' }}>{status?.running ? 'ONLINE — Running Autonomously' : 'OFFLINE'}</span>
-              {status?.startedAt && <span style={{ fontSize: 11, color: '#94a3b8' }}>· started {timeAgo(status.startedAt)}</span>}
+            <div style={{ fontSize: 20, fontWeight: 900, color: '#fff', letterSpacing: -0.5 }}>CTS BPO — LIVE OPERATIONS CENTER</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              {isOnline ? <Pulse color="#10b981" size={8} /> : <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />}
+              <span style={{ fontSize: 12, fontWeight: 700, color: isOnline ? '#10b981' : '#ef4444' }}>
+                {isOnline ? 'ONLINE — All systems running' : 'OFFLINE'}
+              </span>
+              {live?.startedAt && <span style={{ fontSize: 11, color: '#64748b' }}>· since {timeAgo(live.startedAt)}</span>}
             </div>
           </div>
         </div>
-        <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'right' }}>
-          <div>Auto-refreshes every 15s</div>
-          <div style={{ marginTop: 4, color: '#6366f1', fontWeight: 600, cursor: 'pointer' }} onClick={fetchAll}>↻ Refresh now</div>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
-        <StatCard label="Leads Found"        value={status?.totalLeadsFound || 0}                      color="#6366f1" sub={`Last search: ${status?.lastLeadSearch ? timeAgo(status.lastLeadSearch) : 'not yet'}`} />
-        <StatCard label="Emails Sent"        value={status?.totalEmailsSent || 0}                       color="#0ea5e9" sub="Cold outreach + follow-ups" />
-        <StatCard label="Apps Processed"     value={status?.totalAppProcessed || 0}                     color="#10b981" sub={`Last check: ${status?.lastAppCheck ? timeAgo(status.lastAppCheck) : 'not yet'}`} />
-        <StatCard label="Contracts Assigned" value={status?.totalContractsAssigned || 0}                color="#f59e0b" sub={`Last run: ${status?.lastContractAssign ? timeAgo(status.lastContractAssign) : 'not yet'}`} />
-        <StatCard label="Scraped Contacts"   value={scrapedStats?.total || 0}                           color="#ec4899" sub={`${scrapedStats?.pending || 0} pending · ${scrapedStats?.contacted || 0} contacted`} />
-        <StatCard label="Unique Domains"     value={scrapedStats?.unique_domains || 0}                  color="#8b5cf6" sub={`${scrapedStats?.sources || 0} data sources`} />
-      </div>
-
-      {/* Manual Trigger Panel */}
-      <div style={{ background: '#fff', borderRadius: 14, padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.07)', marginBottom: 28 }}>
-        <div style={{ fontWeight: 800, fontSize: 14, color: '#0f172a', marginBottom: 14 }}>Manual Triggers — Force Agent Tasks Now</div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {/* Top KPIs */}
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
           {[
-            { key: 'lead_search',       label: '🔍 Lead Search',           bg: '#6366f1', fg: '#fff' },
-            { key: 'web_scrape',        label: '🕷️ Run Web Scraper',        bg: '#ec4899', fg: '#fff' },
-            { key: 'scrape_outreach',   label: '📬 Scrape Outreach',        bg: '#db2777', fg: '#fff' },
-            { key: 'ai_lead_outreach',  label: '📧 AI Lead Outreach',       bg: '#0ea5e9', fg: '#fff' },
-            { key: 'prospect_outreach', label: '📤 Prospect Outreach',      bg: '#7c3aed', fg: '#fff' },
-            { key: 'followup',          label: '📩 Follow-ups',             bg: '#0284c7', fg: '#fff' },
-            { key: 'applications',      label: '✅ Applications',            bg: '#10b981', fg: '#fff' },
-            { key: 'contracts',         label: '📋 Contracts',              bg: '#f59e0b', fg: '#fff' },
-            { key: 'all',               label: '⚡ Run Everything Now',      bg: '#0f172a', fg: '#fff' },
-          ].map(({ key, label, bg, fg }) => (
-            <button key={key} className="trigger-btn" style={{ background: bg, color: fg }} disabled={!!triggering} onClick={() => trigger(key)}>
-              {triggering === key ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> : null}
-              {label}
-            </button>
-          ))}
-        </div>
-        {triggerMsg && <div style={{ marginTop: 12, padding: '10px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#166534', fontWeight: 600 }}>{triggerMsg}</div>}
-
-        {/* Schedule info */}
-        <div style={{ marginTop: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          {[
-            { label: 'Web Scraper',         freq: 'Every 6 hours',  next: scrapedStats?.last_scraped,     color: '#ec4899' },
-            { label: 'Scrape Outreach',     freq: 'Every 5 mins',   next: null,                            color: '#db2777' },
-            { label: 'Lead Search',         freq: 'Every 30 mins',  next: status?.lastLeadSearch,         color: '#6366f1' },
-            { label: 'AI Outreach',         freq: 'Every 5 mins',   next: null,                            color: '#0ea5e9' },
-            { label: 'Follow-up Emails',    freq: 'Every 2 hours',  next: status?.lastFollowUp,           color: '#0284c7' },
-            { label: 'App Processing',      freq: 'Every 30 mins',  next: status?.lastAppCheck,           color: '#10b981' },
-            { label: 'Contract Assignment', freq: 'Every 1 hour',   next: status?.lastContractAssign,     color: '#f59e0b' },
-          ].map(({ label, freq, next, color }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#f8fafc', borderRadius: 8, border: `1px solid ${color}30` }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{label}</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>{freq} · {next ? timeAgo(next) : 'pending'}</div>
-              </div>
+            { label: 'TOTAL CONTACTS DB', val: fmt(totalDb),                      color: '#38bdf8' },
+            { label: 'SCRAPER QUERIES',   val: fmt(scraper.totalQueries),          color: '#a78bfa' },
+            { label: 'CONTACTS ADDED',    val: fmt(scraper.totalContactsAdded),    color: '#34d399' },
+            { label: 'EMAILS SENT TODAY', val: fmt(outreach.sentToday),            color: '#fb923c' },
+            { label: 'SESSION EMAILS',    val: fmt(outreach.sentThisSession),      color: '#f472b6' },
+          ].map(k => (
+            <div key={k.label} style={{ textAlign: 'center' }}>
+              <div className="stat-num" style={{ fontSize: 22, fontWeight: 900, color: k.color, lineHeight: 1 }}>{k.val || '0'}</div>
+              <div style={{ fontSize: 9, fontWeight: 800, color: '#475569', letterSpacing: 1, textTransform: 'uppercase', marginTop: 3 }}>{k.label}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-        <div style={{ borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap' }}>
-          <button className={`tab-btn${activeTab === 'activity' ? ' active' : ''}`} onClick={() => setActiveTab('activity')}>
-            📋 Activity Log ({activities.length})
-          </button>
-          <button className={`tab-btn${activeTab === 'leads' ? ' active' : ''}`} onClick={() => setActiveTab('leads')}>
-            🎯 Leads ({leads.length})
-          </button>
-          <button className={`tab-btn${activeTab === 'scraped' ? ' active' : ''}`} onClick={() => setActiveTab('scraped')}>
-            🕷️ Scraped Contacts ({scrapedContacts.length})
-          </button>
-        </div>
+      {/* ── TABS ───────────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', marginBottom: 20 }}>
+        <button className={`tab-btn${activeTab==='ops'?' active':''}`} onClick={()=>setActiveTab('ops')}>⚡ Live Ops</button>
+        <button className={`tab-btn${activeTab==='daily'?' active':''}`} onClick={()=>setActiveTab('daily')}>📅 Daily Stats</button>
+        <button className={`tab-btn${activeTab==='triggers'?' active':''}`} onClick={()=>setActiveTab('triggers')}>🎮 Triggers</button>
+        <button className={`tab-btn${activeTab==='contacts'?' active':''}`} onClick={()=>setActiveTab('contacts')}>🕷️ Scraped Contacts</button>
+      </div>
 
-        {/* Activity Log */}
-        {activeTab === 'activity' && (
-          <div>
-            {activities.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🔄</div>
-                <div style={{ fontSize: 14 }}>Agent is initialising — activity will appear here shortly.</div>
-              </div>
-            ) : activities.map(a => (
-              <div key={a.id} className="activity-row">
-                <div style={{ width: 34, height: 34, borderRadius: 10, background: a.status === 'error' ? '#fef2f2' : a.status === 'skipped' ? '#fffbeb' : '#f0f9ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
-                  {ACTION_ICONS[a.action_type] || '⚙️'}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, lineHeight: 1.4 }}>{a.description}</div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: STATUS_COLORS[a.status] || '#64748b', background: `${STATUS_COLORS[a.status]}18`, padding: '1px 7px', borderRadius: 20 }}>
-                      {a.status}
-                    </span>
-                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{a.action_type.replace(/_/g, ' ')}</span>
-                    {a.target_entity && <span style={{ fontSize: 11, color: '#94a3b8' }}>· {a.target_entity} #{a.target_id}</span>}
-                  </div>
-                </div>
-                <div style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', flexShrink: 0 }}>{timeAgo(a.created_at)}</div>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* ══════════════════ OPS TAB ══════════════════════════════════════════ */}
+      {activeTab === 'ops' && (
+        <div>
+          {/* ── Row 1: Scraper cards + Live feed + Email pipeline ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr 260px', gap: 16, marginBottom: 16 }}>
 
-        {/* Leads Table */}
-        {activeTab === 'leads' && (
-          <div>
-            {/* Header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 140px 140px 120px', gap: 12, padding: '10px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1 }}>
-              <span>Title / Domain</span><span>Email</span><span>Type</span><span>Status</span><span>Found</span>
-            </div>
-            {leads.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
-                <div style={{ fontSize: 14 }}>No leads yet — the agent will search for BPO clients every 2 hours. Use the trigger above to run now.</div>
+            {/* Scraper cards */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 }}>
+                🕷️ Scrapers — Non-Stop
               </div>
-            ) : leads.map(l => {
-              const jb = JOB_TYPE_BADGE[l.job_type] || JOB_TYPE_BADGE['general'];
-              const sb = LEAD_STATUS_BADGE[l.status] || { bg: '#f1f5f9', color: '#475569', label: l.status };
-              return (
-                <div key={l.id} className="lead-row">
-                  <div>
-                    <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title || l.domain}</div>
-                    {l.source_url && (
-                      <a href={l.source_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: '#6366f1', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', whiteSpace: 'nowrap' }}>
-                        {l.domain}
-                      </a>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.contact_email || '—'}</div>
-                  <div>
-                    <span style={{ background: jb.bg, color: jb.color, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
-                      {l.job_type?.replace(/-/g, ' ') || 'general'}
-                    </span>
-                  </div>
-                  <div>
-                    <span style={{ background: sb.bg, color: sb.color, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>
-                      {sb.label}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{timeAgo(l.created_at)}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-        {/* Scraped Contacts Tab */}
-        {activeTab === 'scraped' && (
-          <div>
-            {/* Stats bar */}
-            {scrapedStats && (
-              <div style={{ display: 'flex', gap: 12, padding: '14px 20px', background: '#fdf4ff', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {Object.keys(SOURCE_META).map(src => (
+                  <SourceCard
+                    key={src}
+                    source={src}
+                    isActive={scraper.source === src}
+                    currentQuery={scraper.source === src ? scraper.query : null}
+                    stats={scraper}
+                  />
+                ))}
+              </div>
+              {/* Cycle / total stats */}
+              <div style={{ marginTop: 10, padding: '10px 14px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', marginBottom: 6 }}>SCRAPER TOTALS</div>
                 {[
-                  { label: 'Total', val: scrapedStats.total, color: '#7c3aed' },
-                  { label: 'Pending', val: scrapedStats.pending, color: '#0ea5e9' },
-                  { label: 'Contacted', val: scrapedStats.contacted, color: '#f59e0b' },
-                  { label: 'Follow-up 1', val: scrapedStats.followup1, color: '#f97316' },
-                  { label: 'Follow-up 2', val: scrapedStats.followup2, color: '#ef4444' },
-                  { label: 'Bounced', val: scrapedStats.bounced, color: '#94a3b8' },
-                  { label: 'Converted', val: scrapedStats.converted, color: '#10b981' },
-                  { label: 'Unique Domains', val: scrapedStats.unique_domains, color: '#ec4899' },
-                ].map(s => (
-                  <div key={s.label} style={{ textAlign: 'center', padding: '4px 12px', background: '#fff', borderRadius: 8, border: `1px solid ${s.color}30` }}>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: s.color }}>{s.val || 0}</div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{s.label}</div>
+                  { l: 'Queries run', v: fmt(scraper.totalQueries) },
+                  { l: 'Contacts added', v: fmt(scraper.totalContactsAdded) },
+                  { l: 'Cycles done', v: scraper.cyclesCompleted || 0 },
+                  { l: 'Last query', v: timeAgo(scraper.lastQueryTs) },
+                ].map(r => (
+                  <div key={r.l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <span style={{ color: '#64748b' }}>{r.l}</span>
+                    <span style={{ fontWeight: 800, color: '#0f172a' }}>{r.v}</span>
                   </div>
                 ))}
               </div>
-            )}
-            {/* Header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 120px 110px 90px 90px', gap: 8, padding: '10px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1 }}>
-              <span>Company / Domain</span><span>Email</span><span>Business Type</span><span>Location</span><span>Source</span><span>Status</span>
             </div>
-            {scrapedContacts.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-                <div style={{ fontSize: 40, marginBottom: 10 }}>🕷️</div>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>No scraped contacts yet</div>
-                <div style={{ fontSize: 13 }}>Click <strong>Run Web Scraper</strong> above to start filling the database with leads from Google Places, CSE, and DuckDuckGo.</div>
+
+            {/* Live activity feed */}
+            <div style={{ background: '#0f172a', borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '12px 16px', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Pulse color="#10b981" />
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', letterSpacing: 1, textTransform: 'uppercase' }}>Live Activity Feed</span>
+                <span style={{ marginLeft: 'auto', fontSize: 10, color: '#475569' }}>↻ 2s</span>
               </div>
-            ) : scrapedContacts.map(c => {
-              const srcColor = { google_places: '#4285f4', google_cse: '#34a853', duckduckgo: '#de5833', serpapi_bpo: '#10b981' }[c.source] || '#94a3b8';
-              const stColor  = { new: '#0ea5e9', contacted: '#f59e0b', followup1: '#f97316', followup2: '#ef4444', bounced: '#94a3b8', converted: '#10b981' }[c.status] || '#94a3b8';
-              return (
-                <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 120px 110px 90px 90px', gap: 8, padding: '12px 20px', borderBottom: '1px solid #f1f5f9', alignItems: 'center', fontSize: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.company || c.domain}</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.domain}</div>
-                  </div>
-                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155' }}>{c.email}</div>
-                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#64748b' }}>{c.business_type || '—'}</div>
-                  <div style={{ color: '#64748b' }}>{c.city || ''}{c.country ? `, ${c.country}` : ''}</div>
-                  <div><span style={{ background: `${srcColor}18`, color: srcColor, padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{(c.source || '').replace('_', ' ')}</span></div>
-                  <div><span style={{ background: `${stColor}18`, color: stColor, padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{c.status}</span></div>
+              <div ref={feedRef} style={{ flex: 1, overflowY: 'auto', maxHeight: 520 }}>
+                {merged.length === 0 ? (
+                  <div style={{ padding: 32, textAlign: 'center', color: '#475569', fontSize: 13 }}>Waiting for activity...</div>
+                ) : merged.map((item, i) => (
+                  <FeedItem key={`${item._type}-${i}`} item={item} />
+                ))}
+              </div>
+            </div>
+
+            {/* Email pipeline + DB volumes */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* Email pipeline */}
+              <div style={{ background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.07)', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 }}>📧 Email Pipeline</div>
+
+                {/* Sending animation */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, padding: '10px 12px', background: outreach.lastSentAt && (Date.now()-new Date(outreach.lastSentAt))<10000 ? '#f0fdf4' : '#f8fafc', borderRadius: 8, border: `1px solid ${outreach.lastSentAt && (Date.now()-new Date(outreach.lastSentAt))<10000 ? '#bbf7d0' : '#e2e8f0'}` }}>
+                  {outreach.lastSentAt && (Date.now()-new Date(outreach.lastSentAt))<30000 ? (
+                    <><Pulse color="#10b981" /><div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#10b981' }}>SENDING</div>
+                      <div style={{ fontSize: 10, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{outreach.lastSentTo}</div>
+                    </div></>
+                  ) : (
+                    <><span style={{ fontSize: 16 }}>💤</span><div style={{ fontSize: 11, color: '#94a3b8' }}>Queue ready</div></>
+                  )}
                 </div>
-              );
-            })}
+
+                {[
+                  { l: 'Sent today', v: fmt(outreach.sentToday), c: '#0ea5e9' },
+                  { l: 'Sent this session', v: fmt(outreach.sentThisSession), c: '#6366f1' },
+                  { l: 'All time', v: fmt(live?.totalEmailsSent), c: '#f59e0b' },
+                  { l: 'Last sent', v: timeAgo(outreach.lastSentAt), c: '#64748b' },
+                ].map(r => (
+                  <div key={r.l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <span style={{ fontSize: 12, color: '#64748b' }}>{r.l}</span>
+                    <span className="stat-num" style={{ fontSize: 14, fontWeight: 900, color: r.c }}>{r.v || '0'}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* DB Volumes */}
+              <div style={{ background: '#fff', borderRadius: 14, padding: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.07)', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 12 }}>🗄️ Database Volumes</div>
+                {[
+                  { l: 'Scraped Contacts', t: db.scraped_contacts?.total, p: db.scraped_contacts?.pending, c: '#ec4899' },
+                  { l: 'AI Leads',         t: db.ai_leads?.total,         p: db.ai_leads?.pending,         c: '#6366f1' },
+                  { l: 'Job Leads',        t: db.job_leads?.total,        p: db.job_leads?.pending,        c: '#0ea5e9' },
+                ].map(r => (
+                  <div key={r.l} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                      <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>{r.l}</span>
+                      <span className="stat-num" style={{ fontSize: 13, fontWeight: 900, color: r.c }}>{fmt(r.t)}</span>
+                    </div>
+                    {/* Mini progress bar: pending / total */}
+                    <div style={{ height: 4, background: '#f1f5f9', borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min(100, ((r.p||0) / Math.max(r.t||1, 1)) * 100)}%`, background: r.c, transition: 'width 1s ease', borderRadius: 4 }} />
+                    </div>
+                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{fmt(r.p)} pending outreach</div>
+                  </div>
+                ))}
+                <div style={{ marginTop: 8, paddingTop: 8, borderTop: '2px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#0f172a' }}>GRAND TOTAL</span>
+                  <span className="stat-num" style={{ fontSize: 18, fontWeight: 900, color: '#0f172a' }}>{fmt(db.grand_total)}</span>
+                </div>
+                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>Last refresh: {timeAgo(db.lastRefresh)}</div>
+              </div>
+            </div>
           </div>
-        )}
+
+          {/* Current scraper query highlight */}
+          {scraper.running && scraper.query && (
+            <div style={{ background: '#fdf4ff', border: '2px solid #c084fc', borderRadius: 12, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 20, animation: 'spin 3s linear infinite', display: 'inline-block' }}>🕷️</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#7c3aed', letterSpacing: 1, textTransform: 'uppercase' }}>
+                  Currently Scraping — {SOURCE_META[scraper.source]?.label || scraper.source}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginTop: 2 }}>"{scraper.query}"</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="stat-num" style={{ fontSize: 22, fontWeight: 900, color: '#7c3aed' }}>{scraper.lastFound || 0}</div>
+                <div style={{ fontSize: 10, color: '#94a3b8' }}>last query</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══════════════════ DAILY STATS TAB ══════════════════════════════════ */}
+      {activeTab === 'daily' && (
+        <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid #e2e8f0', fontWeight: 800, fontSize: 14, color: '#0f172a' }}>
+            📅 Daily Performance — Last 7 Days
+          </div>
+          <div style={{ padding: '0 24px 24px' }}>
+            {/* Header */}
+            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 1fr', gap: 16, padding: '12px 0', borderBottom: '2px solid #e2e8f0', fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginTop: 16 }}>
+              <span>Date</span><span>New Leads</span><span>Contacts Added</span><span>Emails Sent</span>
+            </div>
+            {daily.length === 0 ? (
+              <div style={{ padding: '40px 0', textAlign: 'center', color: '#94a3b8' }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+                <div>Stats will appear here as the agent runs</div>
+              </div>
+            ) : daily.map((d, i) => (
+              <div key={d.day} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 1fr', gap: 16, padding: '14px 0', borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {i === 0 && <Pulse color="#10b981" size={7} />}
+                  <span style={{ fontSize: 14, fontWeight: i === 0 ? 900 : 600, color: i === 0 ? '#0f172a' : '#334155' }}>{fmtDay(d.day)}</span>
+                </div>
+                <div className="stat-num" style={{ fontSize: 18, fontWeight: 800, color: '#6366f1' }}>{fmt(d.leads || 0)}</div>
+                <div className="stat-num" style={{ fontSize: 18, fontWeight: 800, color: '#ec4899' }}>{fmt(d.contacts || 0)}</div>
+                <div className="stat-num" style={{ fontSize: 18, fontWeight: 800, color: '#0ea5e9' }}>{fmt(d.emails || 0)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════ TRIGGERS TAB ═════════════════════════════════════ */}
+      {activeTab === 'triggers' && (
+        <div style={{ background: '#fff', borderRadius: 14, padding: 24, boxShadow: '0 2px 12px rgba(0,0,0,0.07)' }}>
+          <div style={{ fontWeight: 800, fontSize: 14, color: '#0f172a', marginBottom: 6 }}>🎮 Manual Agent Triggers</div>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 20 }}>Force any agent task to run immediately.</div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
+            {[
+              { key: 'lead_search',       label: '🔍 Lead Search',           bg: '#6366f1' },
+              { key: 'ai_lead_outreach',  label: '📧 AI Lead Outreach',       bg: '#0ea5e9' },
+              { key: 'prospect_outreach', label: '📤 Prospect Outreach',      bg: '#7c3aed' },
+              { key: 'scrape_outreach',   label: '📬 Scrape Outreach',        bg: '#db2777' },
+              { key: 'followup',          label: '📩 Send Follow-ups',        bg: '#0284c7' },
+              { key: 'scrape_followup',   label: '🔂 Scrape Follow-ups',      bg: '#9333ea' },
+              { key: 'applications',      label: '✅ Process Applications',    bg: '#10b981' },
+              { key: 'contracts',         label: '📋 Assign Contracts',       bg: '#f59e0b' },
+              { key: 'bounce_check',      label: '🚫 Process Bounces',        bg: '#64748b' },
+              { key: 'payment_chase',     label: '💰 Payment Chase',          bg: '#dc2626' },
+              { key: 'all',               label: '⚡ Run Everything Now',      bg: '#0f172a' },
+            ].map(({ key, label, bg }) => (
+              <button key={key} className="trig-btn" style={{ background: bg, color: '#fff' }} disabled={!!triggering} onClick={() => trigger(key)}>
+                {triggering === key ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳ </span> : null}
+                {label}
+              </button>
+            ))}
+          </div>
+          {triggerMsg && (
+            <div style={{ padding: '10px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#166534', fontWeight: 600 }}>
+              {triggerMsg}
+            </div>
+          )}
+          {/* Schedule reference */}
+          <div style={{ marginTop: 24, borderTop: '1px solid #f1f5f9', paddingTop: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#64748b', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>Automatic Schedule</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 10 }}>
+              {[
+                { label: 'Web Scraper',    freq: 'Non-stop continuous loop',     color: '#ec4899' },
+                { label: 'Lead Search',    freq: 'Every 30 min',                 color: '#6366f1' },
+                { label: 'AI Outreach',    freq: 'Every 5 min (up to 500/run)',  color: '#0ea5e9' },
+                { label: 'Job Outreach',   freq: 'Every 5 min (up to 500/run)',  color: '#7c3aed' },
+                { label: 'Scrape Outreach',freq: 'Every 5 min (up to 500/run)',  color: '#db2777' },
+                { label: 'Follow-ups',     freq: 'Every 2 hours',               color: '#0284c7' },
+                { label: 'Applications',   freq: 'Every 30 min',                color: '#10b981' },
+                { label: 'Contracts',      freq: 'Every 1 hour',                color: '#f59e0b' },
+                { label: 'Payment Chase',  freq: 'Every 1 hour',                color: '#dc2626' },
+                { label: 'Bounce Check',   freq: 'Every 20 min',                color: '#64748b' },
+              ].map(s => (
+                <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, border: `1px solid ${s.color}30` }}>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: s.color, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{s.label}</div>
+                    <div style={{ fontSize: 10, color: '#64748b' }}>{s.freq}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════ SCRAPED CONTACTS TAB ════════════════════════════ */}
+      {activeTab === 'contacts' && (
+        <ScrapedContactsPanel token={token} live={live} />
+      )}
+    </div>
+  );
+}
+
+// Separate panel for scraped contacts (lazy loads its data)
+function ScrapedContactsPanel({ token, live }) {
+  const [data, setData] = useState({ stats: null, contacts: [] });
+  const [loading, setLoading] = useState(true);
+  const h = { Authorization: `Bearer ${token}` };
+
+  useEffect(() => {
+    fetch(`${API}/api/ai-agent/scraped-contacts`, { headers: h })
+      .then(r => r.json()).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
+    const iv = setInterval(() => {
+      fetch(`${API}/api/ai-agent/scraped-contacts`, { headers: h })
+        .then(r => r.json()).then(d => setData(d)).catch(() => {});
+    }, 15000);
+    return () => clearInterval(iv);
+  }, [token]);
+
+  const s = data.stats || {};
+  const contacts = data.contacts || [];
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading...</div>;
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+      {/* Stats strip */}
+      <div style={{ display: 'flex', gap: 10, padding: '16px 20px', background: 'linear-gradient(135deg,#fdf4ff,#f0f9ff)', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+        {[
+          { l: 'Total',        v: s.total,          c: '#7c3aed' },
+          { l: 'Pending',      v: s.pending,         c: '#0ea5e9' },
+          { l: 'Contacted',    v: s.contacted,       c: '#f59e0b' },
+          { l: 'Follow-up 1',  v: s.followup1,      c: '#f97316' },
+          { l: 'Follow-up 2',  v: s.followup2,      c: '#ef4444' },
+          { l: 'Bounced',      v: s.bounced,         c: '#94a3b8' },
+          { l: 'Converted',    v: s.converted,       c: '#10b981' },
+          { l: 'Unique Domains', v: s.unique_domains, c: '#ec4899' },
+        ].map(k => (
+          <div key={k.l} style={{ textAlign: 'center', padding: '6px 14px', background: '#fff', borderRadius: 8, border: `1px solid ${k.c}25` }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: k.c }}>{fmt(k.v || 0)}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{k.l}</div>
+          </div>
+        ))}
       </div>
+      {/* Table header */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 130px 110px 90px 90px', gap: 8, padding: '10px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1 }}>
+        <span>Company / Domain</span><span>Email</span><span>Business Type</span><span>Location</span><span>Source</span><span>Status</span>
+      </div>
+      {contacts.length === 0 ? (
+        <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>🕷️</div>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Scraper is running — contacts will appear here shortly</div>
+          <div style={{ fontSize: 13 }}>The continuous scraper is cycling through 675+ queries. Check back in a minute.</div>
+        </div>
+      ) : contacts.map(c => {
+        const srcColor = { google_places: '#4285f4', google_cse: '#34a853', duckduckgo: '#de5833', serpapi_bpo: '#10b981' }[c.source] || '#94a3b8';
+        const stColor  = { new: '#0ea5e9', contacted: '#f59e0b', followup1: '#f97316', followup2: '#ef4444', bounced: '#94a3b8', converted: '#10b981' }[c.status] || '#94a3b8';
+        return (
+          <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 130px 110px 90px 90px', gap: 8, padding: '11px 20px', borderBottom: '1px solid #f1f5f9', alignItems: 'center', fontSize: 12 }}>
+            <div>
+              <div style={{ fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.company || c.domain}</div>
+              <div style={{ fontSize: 10, color: '#94a3b8' }}>{c.domain}</div>
+            </div>
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155' }}>{c.email}</div>
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#64748b' }}>{c.business_type || '—'}</div>
+            <div style={{ color: '#64748b', fontSize: 11 }}>{c.city || ''}{c.country ? `, ${c.country}` : ''}</div>
+            <div><span style={{ background: `${srcColor}18`, color: srcColor, padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{(c.source || '').replace('_', ' ')}</span></div>
+            <div><span style={{ background: `${stColor}18`, color: stColor, padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{c.status}</span></div>
+          </div>
+        );
+      })}
     </div>
   );
 }
