@@ -215,62 +215,6 @@ export default function TargetedScraper({ token }) {
         Define a target audience and launch a focused scrape, or search the existing database instantly.
       </p>
 
-      {/* ── Email Provider Stats ────────────────────────────────────────── */}
-      {emailStats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
-          {emailStats.providers.map(p => {
-            const pct     = p.dailyCap ? Math.min(100, Math.round((p.sentToday / p.dailyCap) * 100)) : null;
-            const circuit = p.circuit;
-            const isFull  = pct !== null && pct >= 100;
-            const isPaused= circuit?.open;
-            const bg      = !p.configured ? '#f8fafc'
-                          : isFull        ? '#fef2f2'
-                          : isPaused      ? '#fffbeb'
-                          : p.active      ? '#f0fdf4'
-                          :                 '#f8fafc';
-            const dot     = !p.configured ? '#94a3b8'
-                          : isFull        ? '#ef4444'
-                          : isPaused      ? '#f59e0b'
-                          : p.active      ? '#22c55e'
-                          :                 '#94a3b8';
-            return (
-              <div key={p.name} style={{ ...card, background: bg, padding: '14px 18px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: dot, display: 'inline-block', flexShrink: 0 }} />
-                  <span style={{ fontWeight: 700, fontSize: 15 }}>{p.name}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: dot }}>
-                    {!p.configured ? 'Not configured' : isFull ? 'Daily limit reached' : isPaused ? 'Paused' : p.active ? 'Active sender' : 'Standby'}
-                  </span>
-                </div>
-                {p.configured ? (
-                  <>
-                    <div style={{ fontSize: 28, fontWeight: 800, color: isFull ? '#ef4444' : '#1e293b', lineHeight: 1 }}>
-                      {p.sentToday}<span style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>/{p.dailyCap || '∞'}</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>emails sent today</div>
-                    {p.dailyCap && (
-                      <div style={{ marginTop: 8 }}>
-                        <div style={{ background: '#e2e8f0', borderRadius: 3, height: 5 }}>
-                          <div style={{ width: `${pct}%`, background: isFull ? '#ef4444' : '#22c55e', height: '100%', borderRadius: 3, transition: 'width 0.4s' }} />
-                        </div>
-                        <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>{pct}% of daily quota</div>
-                      </div>
-                    )}
-                    {isPaused && circuit && (
-                      <div style={{ marginTop: 6, fontSize: 11, color: '#b45309', background: '#fef3c7', padding: '4px 8px', borderRadius: 4 }}>
-                        ⏳ Paused — resumes {circuit.minutesLeft > 60 ? `in ${Math.ceil(circuit.minutesLeft/60)}h` : `in ${circuit.minutesLeft}m`}
-                      </div>
-                    )}
-                    {p.account && <div style={{ marginTop: 4, fontSize: 11, color: '#64748b' }}>{p.account}</div>}
-                  </>
-                ) : (
-                  <div style={{ color: '#94a3b8', fontSize: 13 }}>Not set up — no API key found</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {/* ── Search Controls ─────────────────────────────────────────────── */}
       <div style={card}>

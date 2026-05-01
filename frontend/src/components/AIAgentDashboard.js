@@ -144,6 +144,7 @@ export default function AIAgentDashboard({ token }) {
   const [triggering, setTriggering] = useState('');
   const [triggerMsg, setTriggerMsg] = useState('');
   const [loading, setLoading]     = useState(true);
+  const [emailStats, setEmailStats] = useState(null);
   const feedRef = useRef(null);
   const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -162,13 +163,22 @@ export default function AIAgentDashboard({ token }) {
     } catch {}
   }, [token]);
 
+  const fetchEmailStats = useCallback(async () => {
+    try {
+      const data = await fetch(`${API}/api/email-stats`, { headers: h }).then(r => r.json());
+      setEmailStats(data);
+    } catch {}
+  }, [token]);
+
   useEffect(() => {
     fetchLive();
     fetchActivity();
+    fetchEmailStats();
     const iv1 = setInterval(fetchLive, 2000);
     const iv2 = setInterval(fetchActivity, 5000);
-    return () => { clearInterval(iv1); clearInterval(iv2); };
-  }, [fetchLive, fetchActivity]);
+    const iv3 = setInterval(fetchEmailStats, 15000);
+    return () => { clearInterval(iv1); clearInterval(iv2); clearInterval(iv3); };
+  }, [fetchLive, fetchActivity, fetchEmailStats]);
 
   async function trigger(task) {
     setTriggering(task);
@@ -400,6 +410,81 @@ export default function AIAgentDashboard({ token }) {
               </div>
             </div>
           )}
+
+          {/* ── Email Agent Status — 15s live ──────────────────────────────── */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              📧 Email Agents
+              <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'none', letterSpacing: 0 }}>↻ 15s live</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+              {(emailStats?.providers || [
+                { name: 'Gmail',    configured: false },
+                { name: 'SendGrid', configured: false },
+                { name: 'Mailgun',  configured: false },
+              ]).map(p => {
+                const pct      = p.dailyCap ? Math.min(100, Math.round((p.sentToday / p.dailyCap) * 100)) : null;
+                const atStop   = p.stopAt   && p.sentToday >= p.stopAt;
+                const isFull   = pct !== null && pct >= 100;
+                const isPaused = p.circuit?.open;
+                const bg   = !p.configured ? '#f8fafc' : isFull || atStop ? '#fef2f2' : isPaused ? '#fffbeb' : p.active ? '#f0fdf4' : '#f8fafc';
+                const dot  = !p.configured ? '#94a3b8' : isFull || atStop ? '#ef4444' : isPaused ? '#f59e0b' : p.active ? '#22c55e' : '#94a3b8';
+                const status = !p.configured ? 'Not set up'
+                             : atStop        ? '🛑 Stopped at 99%'
+                             : isFull        ? 'Daily limit reached'
+                             : isPaused      ? '⏸ Paused'
+                             : p.active      ? 'Active sender'
+                             :                 'Standby';
+                return (
+                  <div key={p.name} style={{ background: bg, border: `1px solid ${dot}30`, borderRadius: 12, padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: dot, display: 'inline-block', flexShrink: 0,
+                        boxShadow: p.active && !atStop && !isFull && !isPaused ? `0 0 0 3px ${dot}30` : 'none' }} />
+                      <span style={{ fontWeight: 800, fontSize: 14, color: '#0f172a' }}>{p.name}</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: dot }}>{status}</span>
+                    </div>
+                    {p.configured ? (
+                      <>
+                        <div style={{ fontSize: 32, fontWeight: 900, color: atStop || isFull ? '#ef4444' : '#1e293b', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                          {p.sentToday ?? 0}
+                          <span style={{ fontSize: 14, fontWeight: 500, color: '#64748b' }}>/{p.dailyCap ?? '∞'}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>emails sent today</div>
+                        {p.dailyCap && (
+                          <>
+                            <div style={{ marginTop: 8, background: '#e2e8f0', borderRadius: 3, height: 6 }}>
+                              <div style={{ width: `${pct}%`, background: atStop || isFull ? '#ef4444' : pct > 80 ? '#f59e0b' : '#22c55e', height: '100%', borderRadius: 3, transition: 'width 0.6s' }} />
+                            </div>
+                            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>
+                              {pct}% used · stops at {p.stopAt} (99%)
+                            </div>
+                          </>
+                        )}
+                        {atStop && (
+                          <div style={{ marginTop: 6, fontSize: 11, color: '#991b1b', background: '#fee2e2', padding: '4px 8px', borderRadius: 4, fontWeight: 700 }}>
+                            🛑 Sending paused — 99% cap reached. Resumes tomorrow.
+                          </div>
+                        )}
+                        {isPaused && p.circuit && !atStop && (
+                          <div style={{ marginTop: 6, fontSize: 11, color: '#b45309', background: '#fef3c7', padding: '4px 8px', borderRadius: 4 }}>
+                            ⏳ Resumes in {p.circuit.minutesLeft > 60 ? `${Math.ceil(p.circuit.minutesLeft/60)}h` : `${p.circuit.minutesLeft}m`}
+                          </div>
+                        )}
+                        {p.account && <div style={{ marginTop: 5, fontSize: 11, color: '#94a3b8' }}>{p.account}</div>}
+                      </>
+                    ) : (
+                      <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>No API key configured</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {emailStats && (
+              <div style={{ marginTop: 8, fontSize: 11, color: '#94a3b8', textAlign: 'right' }}>
+                All-time emails sent: <strong style={{ color: '#64748b' }}>{(emailStats.allTime || 0).toLocaleString()}</strong>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

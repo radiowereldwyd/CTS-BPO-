@@ -1378,36 +1378,30 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     const SG_OK     = !!process.env.SENDGRID_API_KEY;
     const MG_OK     = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
 
+    const CAPS = { gmail: 500, sendgrid: 100, mailgun: 9999 };
+    function providerStats(name, configured, account, extra = {}) {
+      const key     = name.toLowerCase();
+      const active  = outreachStats.mode === key;
+      const cap     = CAPS[key] || null;
+      const stopAt  = cap ? Math.floor(cap * 0.99) : null;
+      return {
+        name, configured, active,
+        sentToday:  configured && active ? outreachStats.sent : 0,
+        dailyCap:   cap === 9999 ? null : cap,
+        stopAt,
+        account,
+        ...extra,
+      };
+    }
+
     res.json({
       providers: [
-        {
-          name:        'Gmail',
-          configured:  GMAIL_OK,
-          active:      outreachStats.mode === 'gmail',
-          sentToday:   outreachStats.sent,
-          dailyCap:    500,
-          account:     process.env.GMAIL_USER || null,
-          circuit:     circuit,
-        },
-        {
-          name:        'SendGrid',
-          configured:  SG_OK,
-          active:      outreachStats.mode === 'sendgrid',
-          sentToday:   SG_OK ? outreachStats.sent : 0,
-          dailyCap:    100,
-          account:     SG_OK ? 'Connected' : null,
-        },
-        {
-          name:        'Mailgun',
-          configured:  MG_OK,
-          active:      outreachStats.mode === 'mailgun',
-          sentToday:   MG_OK ? outreachStats.sent : 0,
-          dailyCap:    null,
-          account:     process.env.MAILGUN_DOMAIN || null,
-        },
+        providerStats('Gmail',    GMAIL_OK, process.env.GMAIL_USER || null, { circuit }),
+        providerStats('SendGrid', SG_OK,    SG_OK ? 'Connected' : null),
+        providerStats('Mailgun',  MG_OK,    process.env.MAILGUN_DOMAIN || null),
       ],
-      allTime:   parseInt(totalSent.rows[0].total) || 0,
-      todayDb:   parseInt(todaySent.rows[0].total)  || 0,
+      allTime:  parseInt(totalSent.rows[0].total) || 0,
+      todayDb:  parseInt(todaySent.rows[0].total)  || 0,
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

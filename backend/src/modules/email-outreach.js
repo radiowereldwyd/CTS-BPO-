@@ -23,10 +23,30 @@ const WEBSITE         = 'cts.bposolutions@gmail.com';
 // Rate limit: ms between sends. Default 200ms (5/sec). Set EMAIL_RATE_MS=50 for SendGrid paid plans.
 const EMAIL_RATE_MS   = parseInt(process.env.EMAIL_RATE_MS || '200', 10);
 
-// Daily cap guard — prevents runaway sends. Gmail ~500, SendGrid free 100, paid unlimited.
-const MAX_DAILY_EMAILS = parseInt(process.env.MAX_DAILY_EMAILS || '10000', 10);
+// Per-provider daily caps (99% threshold = stop before Gmail's hard 500 limit)
+const PROVIDER_CAPS = { gmail: 500, sendgrid: 100, mailgun: 9999 };
+function getProviderCap() { return PROVIDER_CAPS[getSenderMode()] || 500; }
+function getStopAt()      { return Math.floor(getProviderCap() * 0.99); }   // 99% rule
+
 let dailySentCount = 0;
 let dailyResetDate = new Date().toDateString();
+
+// Load persisted send count so restarts don't reset the counter mid-day
+(function loadPersistedCount() {
+  try {
+    const fs   = require('fs');
+    const path = require('path');
+    const file = path.join(__dirname, '../../data/outreach-stats.json');
+    if (fs.existsSync(file)) {
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (data.todayDate === new Date().toDateString()) {
+        dailySentCount = data.sentToday || 0;
+        dailyResetDate = data.todayDate;
+        console.log(`[EMAIL] Restored daily sent count from disk: ${dailySentCount}`);
+      }
+    }
+  } catch (e) { /* ignore */ }
+})();
 
 function checkDailyReset() {
   const today = new Date().toDateString();
@@ -35,7 +55,7 @@ function checkDailyReset() {
 
 function dailyCapReached() {
   checkDailyReset();
-  return dailySentCount >= MAX_DAILY_EMAILS;
+  return dailySentCount >= getStopAt();   // stop at 99% of provider cap
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -1495,5 +1515,5 @@ module.exports = {
   templates, TEMPLATE_META, VALID_TEMPLATES,
   isConfigured,
   getSenderMode,
-  getDailyStats: () => { checkDailyReset(); return { sent: dailySentCount, cap: MAX_DAILY_EMAILS, mode: getSenderMode() }; },
+  getDailyStats: () => { checkDailyReset(); const mode = getSenderMode(); return { sent: dailySentCount, cap: getProviderCap(), stopAt: getStopAt(), mode }; },
 };
