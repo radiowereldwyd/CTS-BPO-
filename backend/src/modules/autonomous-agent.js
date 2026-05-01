@@ -13,6 +13,39 @@ const cron       = require('node-cron');
 const axios      = require('axios');
 const fs         = require('fs');
 const path       = require('path');
+
+// ── Outreach stats persistence ───────────────────────────────────────────────
+const OUTREACH_STATS_FILE = path.join(__dirname, '../../data/outreach-stats.json');
+
+function loadOutreachStats() {
+  try {
+    if (!fs.existsSync(path.dirname(OUTREACH_STATS_FILE))) {
+      fs.mkdirSync(path.dirname(OUTREACH_STATS_FILE), { recursive: true });
+    }
+    if (fs.existsSync(OUTREACH_STATS_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(OUTREACH_STATS_FILE, 'utf8'));
+      // Only restore sentToday if it's the same calendar day
+      const today = new Date().toDateString();
+      return {
+        sentToday:        saved.todayDate === today ? (parseInt(saved.sentToday) || 0) : 0,
+        sentThisSession:  0,                  // always resets on restart — that's intentional
+        todayDate:        today,
+      };
+    }
+  } catch { /* start fresh */ }
+  return { sentToday: 0, sentThisSession: 0, todayDate: new Date().toDateString() };
+}
+
+function saveOutreachStats(stats) {
+  try {
+    fs.writeFileSync(OUTREACH_STATS_FILE, JSON.stringify({
+      sentToday:   stats.sentToday,
+      todayDate:   stats.todayDate,
+      savedAt:     new Date().toISOString(),
+    }, null, 2), 'utf8');
+  } catch { /* silently skip */ }
+}
+
 const { v4: uuidv4 } = require('uuid');
 const db         = require('../db');
 const auditLogger = require('./audit-logger');
@@ -58,14 +91,15 @@ const agentState = {
 };
 
 // Live stats — updated in real-time by scraper callbacks + outreach
+const _restoredOutreach = loadOutreachStats();
 const liveStats = {
   outreach: {
     active: false,
     lastSentTo: null,
     lastSentAt: null,
-    sentThisSession: 0,
-    sentToday: 0,
-    todayDate: new Date().toDateString(),
+    sentThisSession: 0,                          // always starts at 0 — counts only this session
+    sentToday:  _restoredOutreach.sentToday,     // restored from disk — survives restarts
+    todayDate:  _restoredOutreach.todayDate,
   },
   db: {
     ai_leads:         { total: 0, pending: 0 },
@@ -76,27 +110,30 @@ const liveStats = {
   },
 };
 
-// Reset daily counters at midnight
+// Reset daily counters at midnight and persist the rollover
 function checkDailyReset() {
   const today = new Date().toDateString();
   if (today !== liveStats.outreach.todayDate) {
     liveStats.outreach.sentToday  = 0;
     liveStats.outreach.todayDate  = today;
+    saveOutreachStats(liveStats.outreach);
   }
 }
 
 // Refresh DB volumes (called every 30s)
 async function refreshDbStats() {
   try {
-    const [a, j, s] = await Promise.all([
+    const [a, j, s, e] = await Promise.all([
       db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new') AS pending FROM ai_leads`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
       db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new' OR status='pending') AS pending FROM job_leads`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
       db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new') AS pending FROM scraped_contacts`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
+      db.query(`SELECT COUNT(*) AS total FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach','outreach_sent') AND status='success'`).catch(() => ({ rows: [{ total: 0 }] })),
     ]);
     liveStats.db.ai_leads         = { total: parseInt(a.rows[0].total) || 0, pending: parseInt(a.rows[0].pending) || 0 };
     liveStats.db.job_leads        = { total: parseInt(j.rows[0].total) || 0, pending: parseInt(j.rows[0].pending) || 0 };
     liveStats.db.scraped_contacts = { total: parseInt(s.rows[0].total) || 0, pending: parseInt(s.rows[0].pending) || 0 };
     liveStats.db.grand_total      = liveStats.db.ai_leads.total + liveStats.db.job_leads.total + liveStats.db.scraped_contacts.total;
+    liveStats.db.totalEmailsAllTime = parseInt(e.rows[0].total) || 0;
     liveStats.db.lastRefresh      = new Date().toISOString();
   } catch { /* silently skip */ }
 }
@@ -280,6 +317,7 @@ async function sendLeadOutreach(leadId, prospect) {
     liveStats.outreach.sentToday++;
     liveStats.outreach.lastSentTo  = prospect.email;
     liveStats.outreach.lastSentAt  = new Date().toISOString();
+    saveOutreachStats(liveStats.outreach);
     await logActivity('email_sent', `Cold outreach → ${prospect.email} [${prospect.jobType}]`, 'lead', leadId, 'success', { to: prospect.email, type: prospect.jobType });
     return result;
   } catch (err) {
@@ -371,6 +409,7 @@ async function runScrapedContactsOutreach() {
       liveStats.outreach.lastSentTo  = c.email;
       liveStats.outreach.lastSentAt  = new Date().toISOString();
       liveStats.outreach.active      = true;
+      saveOutreachStats(liveStats.outreach);
       await logActivity('scrape_outreach', `Outreach → ${c.email} [${c.business_type || 'BPO'}]`, 'scraped_contact', c.id, 'success', { to: c.email });
     } catch (err) {
       await logActivity('scrape_outreach', `Failed → ${c.email}: ${err.message}`, 'scraped_contact', c.id, 'error');

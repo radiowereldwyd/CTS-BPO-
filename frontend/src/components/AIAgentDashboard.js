@@ -345,7 +345,7 @@ export default function AIAgentDashboard({ token }) {
                 {[
                   { l: 'Sent today', v: fmt(outreach.sentToday), c: '#0ea5e9' },
                   { l: 'Sent this session', v: fmt(outreach.sentThisSession), c: '#6366f1' },
-                  { l: 'All time', v: fmt(live?.totalEmailsSent), c: '#f59e0b' },
+                  { l: 'All time', v: fmt(db.totalEmailsAllTime), c: '#f59e0b' },
                   { l: 'Last sent', v: timeAgo(outreach.lastSentAt), c: '#64748b' },
                 ].map(r => (
                   <div key={r.l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid #f1f5f9' }}>

@@ -17,7 +17,40 @@
 
 const axios   = require('axios');
 const cheerio = require('cheerio');
+const fs      = require('fs');
+const path    = require('path');
 const db      = require('../db');
+
+// ── Stats persistence — survives backend restarts ────────────────────────────
+const STATS_FILE = path.join(__dirname, '../../data/scraper-stats.json');
+
+function loadPersistedStats() {
+  try {
+    if (!fs.existsSync(path.dirname(STATS_FILE))) {
+      fs.mkdirSync(path.dirname(STATS_FILE), { recursive: true });
+    }
+    if (fs.existsSync(STATS_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
+      return {
+        totalQueries:       parseInt(saved.totalQueries)       || 0,
+        totalContactsAdded: parseInt(saved.totalContactsAdded) || 0,
+        cyclesCompleted:    parseInt(saved.cyclesCompleted)    || 0,
+      };
+    }
+  } catch { /* ignore parse errors — start fresh */ }
+  return { totalQueries: 0, totalContactsAdded: 0, cyclesCompleted: 0 };
+}
+
+function savePersistedStats(stats) {
+  try {
+    fs.writeFileSync(STATS_FILE, JSON.stringify({
+      totalQueries:       stats.totalQueries,
+      totalContactsAdded: stats.totalContactsAdded,
+      cyclesCompleted:    stats.cyclesCompleted,
+      savedAt:            new Date().toISOString(),
+    }, null, 2), 'utf8');
+  } catch { /* silently skip */ }
+}
 
 // ── Config ─────────────────────────────────────────────────────────────────
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
@@ -585,15 +618,16 @@ async function runOnePair(pair) {
 
 // ── Continuous loop (runs forever until stopContinuous()) ─────────────────────
 let _continuousRunning = false;
+const _saved = loadPersistedStats();
 const _continuousStats = {
   running: false,
   source: null,
   sourceLabel: null,
   query: null,
   lastFound: 0,
-  totalQueries: 0,
-  totalContactsAdded: 0,
-  cyclesCompleted: 0,
+  totalQueries:       _saved.totalQueries,
+  totalContactsAdded: _saved.totalContactsAdded,
+  cyclesCompleted:    _saved.cyclesCompleted,
   lastQueryTs: null,
   recentQueries: [], // last 50 [{source, query, found, ts}]
 };
@@ -652,6 +686,11 @@ async function runContinuous(onUpdate) {
       ts: new Date().toISOString(),
     });
     if (_continuousStats.recentQueries.length > 50) _continuousStats.recentQueries.pop();
+
+    // Persist totals every 5 queries or whenever new contacts are found
+    if (realFound > 0 || _continuousStats.totalQueries % 5 === 0) {
+      savePersistedStats(_continuousStats);
+    }
 
     if (onUpdate) onUpdate({ type: 'done', ...pair, found: realFound });
 
