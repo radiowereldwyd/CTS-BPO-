@@ -25,6 +25,10 @@ const ACTION_ICONS = {
   ai_job_complete:         '✔️',
   ai_job_error:            '⚠️',
   outreach_sent:           '📨',
+  web_scrape:              '🕷️',
+  scrape_outreach:         '📬',
+  scrape_followup:         '🔂',
+  ai_outreach:             '📧',
 };
 
 const STATUS_COLORS = {
@@ -77,25 +81,30 @@ function StatCard({ label, value, sub, color }) {
 }
 
 export default function AIAgentDashboard({ token }) {
-  const [status, setStatus]       = useState(null);
-  const [activities, setActivities] = useState([]);
-  const [leads, setLeads]         = useState([]);
-  const [activeTab, setActiveTab] = useState('activity');
-  const [triggering, setTriggering] = useState('');
-  const [triggerMsg, setTriggerMsg] = useState('');
-  const [loading, setLoading]     = useState(true);
+  const [status, setStatus]           = useState(null);
+  const [activities, setActivities]   = useState([]);
+  const [leads, setLeads]             = useState([]);
+  const [scrapedStats, setScrapedStats] = useState(null);
+  const [scrapedContacts, setScrapedContacts] = useState([]);
+  const [activeTab, setActiveTab]     = useState('activity');
+  const [triggering, setTriggering]   = useState('');
+  const [triggerMsg, setTriggerMsg]   = useState('');
+  const [loading, setLoading]         = useState(true);
 
   const fetchAll = useCallback(async () => {
     const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
     try {
-      const [s, a, l] = await Promise.all([
-        fetch(`${API}/api/ai-agent/status`,         { headers: h }).then(r => r.json()),
-        fetch(`${API}/api/ai-agent/activity?limit=80`, { headers: h }).then(r => r.json()),
-        fetch(`${API}/api/ai-agent/leads`,           { headers: h }).then(r => r.json()),
+      const [s, a, l, sc] = await Promise.all([
+        fetch(`${API}/api/ai-agent/status`,                { headers: h }).then(r => r.json()),
+        fetch(`${API}/api/ai-agent/activity?limit=80`,     { headers: h }).then(r => r.json()),
+        fetch(`${API}/api/ai-agent/leads`,                 { headers: h }).then(r => r.json()),
+        fetch(`${API}/api/ai-agent/scraped-contacts`,      { headers: h }).then(r => r.json()).catch(() => ({})),
       ]);
       setStatus(s);
       setActivities(a.activities || []);
       setLeads(l.leads || []);
+      setScrapedStats(sc.stats || null);
+      setScrapedContacts(sc.contacts || []);
     } catch (e) {
       console.error('Agent fetch error:', e);
     } finally {
@@ -177,11 +186,12 @@ export default function AIAgentDashboard({ token }) {
 
       {/* Stats */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
-        <StatCard label="Leads Found"        value={status?.totalLeadsFound || 0}        color="#6366f1" sub={`Last search: ${status?.lastLeadSearch ? timeAgo(status.lastLeadSearch) : 'not yet'}`} />
-        <StatCard label="Emails Sent"        value={status?.totalEmailsSent || 0}         color="#0ea5e9" sub="Cold outreach + follow-ups" />
-        <StatCard label="Apps Processed"     value={status?.totalAppProcessed || 0}       color="#10b981" sub={`Last check: ${status?.lastAppCheck ? timeAgo(status.lastAppCheck) : 'not yet'}`} />
-        <StatCard label="Contracts Assigned" value={status?.totalContractsAssigned || 0}  color="#f59e0b" sub={`Last run: ${status?.lastContractAssign ? timeAgo(status.lastContractAssign) : 'not yet'}`} />
-        <StatCard label="Total Leads in DB"  value={leads.length}                         color="#8b5cf6" sub="All discovered leads" />
+        <StatCard label="Leads Found"        value={status?.totalLeadsFound || 0}                      color="#6366f1" sub={`Last search: ${status?.lastLeadSearch ? timeAgo(status.lastLeadSearch) : 'not yet'}`} />
+        <StatCard label="Emails Sent"        value={status?.totalEmailsSent || 0}                       color="#0ea5e9" sub="Cold outreach + follow-ups" />
+        <StatCard label="Apps Processed"     value={status?.totalAppProcessed || 0}                     color="#10b981" sub={`Last check: ${status?.lastAppCheck ? timeAgo(status.lastAppCheck) : 'not yet'}`} />
+        <StatCard label="Contracts Assigned" value={status?.totalContractsAssigned || 0}                color="#f59e0b" sub={`Last run: ${status?.lastContractAssign ? timeAgo(status.lastContractAssign) : 'not yet'}`} />
+        <StatCard label="Scraped Contacts"   value={scrapedStats?.total || 0}                           color="#ec4899" sub={`${scrapedStats?.pending || 0} pending · ${scrapedStats?.contacted || 0} contacted`} />
+        <StatCard label="Unique Domains"     value={scrapedStats?.unique_domains || 0}                  color="#8b5cf6" sub={`${scrapedStats?.sources || 0} data sources`} />
       </div>
 
       {/* Manual Trigger Panel */}
@@ -189,11 +199,15 @@ export default function AIAgentDashboard({ token }) {
         <div style={{ fontWeight: 800, fontSize: 14, color: '#0f172a', marginBottom: 14 }}>Manual Triggers — Force Agent Tasks Now</div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {[
-            { key: 'lead_search',  label: '🔍 Run Lead Search',      bg: '#6366f1', fg: '#fff' },
-            { key: 'followup',     label: '📩 Send Follow-ups',       bg: '#0ea5e9', fg: '#fff' },
-            { key: 'applications', label: '✅ Process Applications',   bg: '#10b981', fg: '#fff' },
-            { key: 'contracts',    label: '📋 Assign Contracts',       bg: '#f59e0b', fg: '#fff' },
-            { key: 'all',          label: '⚡ Run Everything Now',     bg: '#0f172a', fg: '#fff' },
+            { key: 'lead_search',       label: '🔍 Lead Search',           bg: '#6366f1', fg: '#fff' },
+            { key: 'web_scrape',        label: '🕷️ Run Web Scraper',        bg: '#ec4899', fg: '#fff' },
+            { key: 'scrape_outreach',   label: '📬 Scrape Outreach',        bg: '#db2777', fg: '#fff' },
+            { key: 'ai_lead_outreach',  label: '📧 AI Lead Outreach',       bg: '#0ea5e9', fg: '#fff' },
+            { key: 'prospect_outreach', label: '📤 Prospect Outreach',      bg: '#7c3aed', fg: '#fff' },
+            { key: 'followup',          label: '📩 Follow-ups',             bg: '#0284c7', fg: '#fff' },
+            { key: 'applications',      label: '✅ Applications',            bg: '#10b981', fg: '#fff' },
+            { key: 'contracts',         label: '📋 Contracts',              bg: '#f59e0b', fg: '#fff' },
+            { key: 'all',               label: '⚡ Run Everything Now',      bg: '#0f172a', fg: '#fff' },
           ].map(({ key, label, bg, fg }) => (
             <button key={key} className="trigger-btn" style={{ background: bg, color: fg }} disabled={!!triggering} onClick={() => trigger(key)}>
               {triggering === key ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span> : null}
@@ -204,18 +218,21 @@ export default function AIAgentDashboard({ token }) {
         {triggerMsg && <div style={{ marginTop: 12, padding: '10px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#166534', fontWeight: 600 }}>{triggerMsg}</div>}
 
         {/* Schedule info */}
-        <div style={{ marginTop: 16, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+        <div style={{ marginTop: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           {[
-            { label: 'Lead Search',         freq: 'Every 2 hours', next: status?.lastLeadSearch },
-            { label: 'Follow-up Emails',    freq: 'Every 6 hours', next: status?.lastFollowUp },
-            { label: 'App Processing',      freq: 'Every 30 mins', next: status?.lastAppCheck },
-            { label: 'Contract Assignment', freq: 'Every 1 hour',  next: status?.lastContractAssign },
-          ].map(({ label, freq, next }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+            { label: 'Web Scraper',         freq: 'Every 6 hours',  next: scrapedStats?.last_scraped,     color: '#ec4899' },
+            { label: 'Scrape Outreach',     freq: 'Every 5 mins',   next: null,                            color: '#db2777' },
+            { label: 'Lead Search',         freq: 'Every 30 mins',  next: status?.lastLeadSearch,         color: '#6366f1' },
+            { label: 'AI Outreach',         freq: 'Every 5 mins',   next: null,                            color: '#0ea5e9' },
+            { label: 'Follow-up Emails',    freq: 'Every 2 hours',  next: status?.lastFollowUp,           color: '#0284c7' },
+            { label: 'App Processing',      freq: 'Every 30 mins',  next: status?.lastAppCheck,           color: '#10b981' },
+            { label: 'Contract Assignment', freq: 'Every 1 hour',   next: status?.lastContractAssign,     color: '#f59e0b' },
+          ].map(({ label, freq, next, color }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#f8fafc', borderRadius: 8, border: `1px solid ${color}30` }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{label}</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>{freq} · last: {next ? timeAgo(next) : 'pending'}</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>{freq} · {next ? timeAgo(next) : 'pending'}</div>
               </div>
             </div>
           ))}
@@ -224,12 +241,16 @@ export default function AIAgentDashboard({ token }) {
 
       {/* Tab Navigation */}
       <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-        <div style={{ borderBottom: '1px solid #e2e8f0', display: 'flex' }}>
-          {['activity', 'leads'].map(tab => (
-            <button key={tab} className={`tab-btn${activeTab === tab ? ' active' : ''}`} onClick={() => setActiveTab(tab)}>
-              {tab === 'activity' ? `📋 Activity Log (${activities.length})` : `🎯 Leads Discovered (${leads.length})`}
-            </button>
-          ))}
+        <div style={{ borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap' }}>
+          <button className={`tab-btn${activeTab === 'activity' ? ' active' : ''}`} onClick={() => setActiveTab('activity')}>
+            📋 Activity Log ({activities.length})
+          </button>
+          <button className={`tab-btn${activeTab === 'leads' ? ' active' : ''}`} onClick={() => setActiveTab('leads')}>
+            🎯 Leads ({leads.length})
+          </button>
+          <button className={`tab-btn${activeTab === 'scraped' ? ' active' : ''}`} onClick={() => setActiveTab('scraped')}>
+            🕷️ Scraped Contacts ({scrapedContacts.length})
+          </button>
         </div>
 
         {/* Activity Log */}
@@ -298,6 +319,58 @@ export default function AIAgentDashboard({ token }) {
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>{timeAgo(l.created_at)}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* Scraped Contacts Tab */}
+        {activeTab === 'scraped' && (
+          <div>
+            {/* Stats bar */}
+            {scrapedStats && (
+              <div style={{ display: 'flex', gap: 12, padding: '14px 20px', background: '#fdf4ff', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+                {[
+                  { label: 'Total', val: scrapedStats.total, color: '#7c3aed' },
+                  { label: 'Pending', val: scrapedStats.pending, color: '#0ea5e9' },
+                  { label: 'Contacted', val: scrapedStats.contacted, color: '#f59e0b' },
+                  { label: 'Follow-up 1', val: scrapedStats.followup1, color: '#f97316' },
+                  { label: 'Follow-up 2', val: scrapedStats.followup2, color: '#ef4444' },
+                  { label: 'Bounced', val: scrapedStats.bounced, color: '#94a3b8' },
+                  { label: 'Converted', val: scrapedStats.converted, color: '#10b981' },
+                  { label: 'Unique Domains', val: scrapedStats.unique_domains, color: '#ec4899' },
+                ].map(s => (
+                  <div key={s.label} style={{ textAlign: 'center', padding: '4px 12px', background: '#fff', borderRadius: 8, border: `1px solid ${s.color}30` }}>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: s.color }}>{s.val || 0}</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Header */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 120px 110px 90px 90px', gap: 8, padding: '10px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1 }}>
+              <span>Company / Domain</span><span>Email</span><span>Business Type</span><span>Location</span><span>Source</span><span>Status</span>
+            </div>
+            {scrapedContacts.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🕷️</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>No scraped contacts yet</div>
+                <div style={{ fontSize: 13 }}>Click <strong>Run Web Scraper</strong> above to start filling the database with leads from Google Places, CSE, and DuckDuckGo.</div>
+              </div>
+            ) : scrapedContacts.map(c => {
+              const srcColor = { google_places: '#4285f4', google_cse: '#34a853', duckduckgo: '#de5833', serpapi_bpo: '#10b981' }[c.source] || '#94a3b8';
+              const stColor  = { new: '#0ea5e9', contacted: '#f59e0b', followup1: '#f97316', followup2: '#ef4444', bounced: '#94a3b8', converted: '#10b981' }[c.status] || '#94a3b8';
+              return (
+                <div key={c.id} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 120px 110px 90px 90px', gap: 8, padding: '12px 20px', borderBottom: '1px solid #f1f5f9', alignItems: 'center', fontSize: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.company || c.domain}</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{c.domain}</div>
+                  </div>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155' }}>{c.email}</div>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#64748b' }}>{c.business_type || '—'}</div>
+                  <div style={{ color: '#64748b' }}>{c.city || ''}{c.country ? `, ${c.country}` : ''}</div>
+                  <div><span style={{ background: `${srcColor}18`, color: srcColor, padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{(c.source || '').replace('_', ' ')}</span></div>
+                  <div><span style={{ background: `${stColor}18`, color: stColor, padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{c.status}</span></div>
                 </div>
               );
             })}

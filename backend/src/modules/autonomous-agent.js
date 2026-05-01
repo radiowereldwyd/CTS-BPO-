@@ -20,6 +20,7 @@ const emailOutreach = require('./email-outreach');
 const aiProcessor   = require('./ai-job-processor');
 const gmailReader   = require('./gmail-reader');
 const jobSearch     = require('./job-search');
+const webScraper    = require('./web-scraper');
 
 const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 const APP_URL     = process.env.APP_URL || 'https://your-app.replit.app';
@@ -99,6 +100,9 @@ async function ensureTables() {
   await jobSearch.ensureTable();
   await db.query(`ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS followup1_sent_at TIMESTAMPTZ`).catch(() => {});
   await db.query(`ALTER TABLE job_leads ADD COLUMN IF NOT EXISTS followup2_sent_at TIMESTAMPTZ`).catch(() => {});
+
+  // scraped_contacts — multi-source web scraper results
+  await webScraper.ensureTable();
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -261,6 +265,107 @@ async function runAiLeadOutreach() {
   if (sent > 0) {
     await logActivity('ai_outreach', `Batch outreach: sent ${sent} emails from ai_leads`, null, null, 'success', { sent });
   }
+}
+
+// ── 2c. Web Scraper — multi-source lead discovery ─────────────────────────
+async function runWebScraper() {
+  try {
+    const inserted = await webScraper.runAllScrapers();
+    agentState.totalLeadsFound += inserted;
+    await logActivity('web_scrape', `Multi-source scrape complete — ${inserted} new contacts stored`, null, null, 'success', { inserted });
+  } catch (e) {
+    await logActivity('web_scrape', `Scraper error: ${e.message}`, null, null, 'error');
+  }
+}
+
+// ── 2d. Batch outreach to scraped_contacts ────────────────────────────────
+async function runScrapedContactsOutreach() {
+  const rows = await db.query(`
+    SELECT id, company, email, domain, business_type, city, country FROM scraped_contacts
+    WHERE status = 'new'
+      AND email IS NOT NULL
+      AND bounced_at IS NULL
+    ORDER BY created_at ASC
+    LIMIT 500
+  `).catch(() => ({ rows: [] }));
+
+  if (rows.rows.length === 0) return;
+
+  let sent = 0;
+  for (const c of rows.rows) {
+    try {
+      const isBounced = await db.query(
+        `SELECT id FROM scraped_contacts WHERE LOWER(email)=LOWER($1) AND bounced_at IS NOT NULL LIMIT 1`,
+        [c.email]
+      ).catch(() => ({ rows: [] }));
+      if (isBounced.rows.length > 0) {
+        await db.query(`UPDATE scraped_contacts SET status='bounced', bounced_at=NOW() WHERE id=$1`, [c.id]).catch(() => {});
+        continue;
+      }
+
+      await emailOutreach.sendClientColdOutreach({
+        name:    c.company || c.domain,
+        company: c.company || c.domain,
+        email:   c.email,
+        jobType: c.business_type || 'business process outsourcing',
+        city:    c.city || null,
+        country: c.country || null,
+      });
+      await db.query(
+        `UPDATE scraped_contacts SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
+        [c.id]
+      );
+      agentState.totalEmailsSent++;
+      sent++;
+      await logActivity('scrape_outreach', `Outreach → ${c.email} [${c.business_type || 'BPO'}]`, 'scraped_contact', c.id, 'success', { to: c.email });
+    } catch (err) {
+      await logActivity('scrape_outreach', `Failed → ${c.email}: ${err.message}`, 'scraped_contact', c.id, 'error');
+    }
+  }
+
+  if (sent > 0) {
+    await logActivity('scrape_outreach', `Batch outreach: sent ${sent} emails from scraped_contacts`, null, null, 'success', { sent });
+  }
+}
+
+// ── 2e. Follow-up sequence for scraped_contacts ───────────────────────────
+async function runScrapedContactsFollowUps() {
+  const day3 = await db.query(`
+    SELECT id, email, company, business_type FROM scraped_contacts
+    WHERE status = 'contacted'
+      AND outreach_sent_at < NOW() - INTERVAL '3 days'
+      AND followup1_sent_at IS NULL
+      AND bounced_at IS NULL
+    LIMIT 500
+  `).catch(() => ({ rows: [] }));
+
+  for (const c of day3.rows) {
+    try {
+      await emailOutreach.sendClientFollowUp({ email: c.email, company: c.company, jobType: c.business_type, followUpNumber: 1 });
+      await db.query(`UPDATE scraped_contacts SET followup1_sent_at=NOW(), status='followup1', updated_at=NOW() WHERE id=$1`, [c.id]);
+      agentState.totalEmailsSent++;
+    } catch {}
+  }
+
+  const day7 = await db.query(`
+    SELECT id, email, company, business_type FROM scraped_contacts
+    WHERE status = 'followup1'
+      AND followup1_sent_at < NOW() - INTERVAL '4 days'
+      AND followup2_sent_at IS NULL
+      AND bounced_at IS NULL
+    LIMIT 500
+  `).catch(() => ({ rows: [] }));
+
+  for (const c of day7.rows) {
+    try {
+      await emailOutreach.sendClientFollowUp({ email: c.email, company: c.company, jobType: c.business_type, followUpNumber: 2 });
+      await db.query(`UPDATE scraped_contacts SET followup2_sent_at=NOW(), status='followup2', updated_at=NOW() WHERE id=$1`, [c.id]);
+      agentState.totalEmailsSent++;
+    } catch {}
+  }
+
+  const total = day3.rows.length + day7.rows.length;
+  if (total > 0) await logActivity('scrape_followup', `Sent ${total} follow-ups for scraped_contacts`);
 }
 
 // ── 3. Follow-up Sequence ─────────────────────────────────────────────────
@@ -917,13 +1022,15 @@ async function startAgent() {
   console.log('🤖 CTS BPO Autonomous AI Agent — ONLINE');
 
   // Run immediately on startup (staggered to avoid hammering)
-  setTimeout(() => runLeadSearch().catch(console.error),       5_000);
-  setTimeout(() => runJobLeadScan().catch(console.error),     15_000);
-  setTimeout(() => processApplications().catch(console.error),20_000);
-  setTimeout(() => assignContracts().catch(console.error),    25_000);
-  setTimeout(() => processAIJobs().catch(console.error),      30_000);
-  setTimeout(() => runAiLeadOutreach().catch(console.error),  40_000);
-  setTimeout(() => runJobLeadOutreach().catch(console.error), 50_000);
+  setTimeout(() => runLeadSearch().catch(console.error),                  5_000);
+  setTimeout(() => runJobLeadScan().catch(console.error),                 15_000);
+  setTimeout(() => processApplications().catch(console.error),           20_000);
+  setTimeout(() => assignContracts().catch(console.error),               25_000);
+  setTimeout(() => processAIJobs().catch(console.error),                 30_000);
+  setTimeout(() => runAiLeadOutreach().catch(console.error),             40_000);
+  setTimeout(() => runJobLeadOutreach().catch(console.error),            50_000);
+  setTimeout(() => runWebScraper().catch(console.error),                 60_000);
+  setTimeout(() => runScrapedContactsOutreach().catch(console.error),   120_000);
 
   // ── Schedules ──
   // Lead search every 30 minutes (ai_leads — runs ALL 12 queries, 100 results each)
@@ -984,6 +1091,21 @@ async function startAgent() {
   // Run once on startup after 30s
   setTimeout(() => gmailReader.processBounces().catch(console.error), 30000);
 
+  // Multi-source web scraper — every 6 hours (Google Places + CSE + DuckDuckGo + SerpAPI BPO)
+  cron.schedule('0 */6 * * *', () => {
+    runWebScraper().catch(e => logActivity('web_scrape', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
+  // Outreach to scraped_contacts every 5 minutes (offset by ~2.5 min from ai/job crons)
+  cron.schedule('2-57/5 * * * *', () => {
+    runScrapedContactsOutreach().catch(e => logActivity('scrape_outreach', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
+  // Follow-ups for scraped_contacts every 2 hours
+  cron.schedule('15 */2 * * *', () => {
+    runScrapedContactsFollowUps().catch(e => logActivity('scrape_followup', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
   // Daily heartbeat log
   cron.schedule('0 8 * * *', () => {
     logActivity('heartbeat', `Daily check — leads: ${agentState.totalLeadsFound}, emails: ${agentState.totalEmailsSent}, apps: ${agentState.totalAppProcessed}, contracts: ${agentState.totalContractsAssigned}`);
@@ -1002,19 +1124,25 @@ async function triggerNow(task) {
     case 'bounce_check':      await gmailReader.processBounces(); break;
     case 'prospect_scan':     await runJobLeadScan(); break;
     case 'prospect_outreach': await runJobLeadOutreach(); break;
-    case 'ai_lead_outreach':  await runAiLeadOutreach(); break;
-    case 'prospect_followup': await runJobLeadFollowUps(); break;
+    case 'ai_lead_outreach':       await runAiLeadOutreach(); break;
+    case 'prospect_followup':      await runJobLeadFollowUps(); break;
+    case 'web_scrape':             await runWebScraper(); break;
+    case 'scrape_outreach':        await runScrapedContactsOutreach(); break;
+    case 'scrape_followup':        await runScrapedContactsFollowUps(); break;
     case 'all':
       await gmailReader.processBounces();
       await runLeadSearch();
       await runJobLeadScan();
+      await runWebScraper();
       await runAiLeadOutreach();
       await runJobLeadOutreach();
+      await runScrapedContactsOutreach();
       await processApplications();
       await assignContracts();
       await processAIJobs();
       await runFollowUpSequence();
       await runJobLeadFollowUps();
+      await runScrapedContactsFollowUps();
       await runPaymentChase();
       break;
     default: throw new Error(`Unknown task: ${task}`);
@@ -1026,4 +1154,4 @@ function getStatus() {
   return { ...agentState };
 }
 
-module.exports = { startAgent, triggerNow, getStatus, processAIJobs, runPaymentChase };
+module.exports = { startAgent, triggerNow, getStatus, processAIJobs, runPaymentChase, webScraper };

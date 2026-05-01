@@ -8,6 +8,22 @@
 - **PDF:** pdfkit (branded invoice generation)
 - **WhatsApp/SMS:** Twilio (optional — needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM)
 
+## New Features (May 2026)
+
+### Web Scraper — Multi-Source Lead Acquisition
+- Module: `backend/src/modules/web-scraper.js`
+- Table: `scraped_contacts` (company, domain, email, phone, address, city, country, business_type, source, status)
+- Sources:
+  1. **Google Places API (new v1)** — 15 queries/run × 20 businesses × 7 email variants = 2,100 contacts/run. Uses existing `GOOGLE_API_KEY`. Searches 25 business types across 25 cities. Stays within $200/mo free credit.
+  2. **Google Custom Search API** — 10 queries/run, 10 results each, needs `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` (free: 100 queries/day)
+  3. **DuckDuckGo HTML scraping** — 12 queries/run, no auth needed, cheerio parsing
+  4. **SerpAPI BPO queries** — 5 additional targeted BPO prospect queries using existing `SERPAPI_KEY`
+- Cron: every 6 hours; outreach from scraped_contacts: every 5 mins; follow-ups: every 2 hours
+- Admin trigger: `web_scrape`, `scrape_outreach`, `scrape_followup`
+- Frontend: "Scraped Contacts" tab in AIAgentDashboard with stats + full contact table
+- Env vars: `PLACES_QUERIES_PER_RUN` (default 15), `CSE_QUERIES_PER_RUN` (default 10), `DDG_QUERIES_PER_RUN` (default 12), `SCRAPE_DELAY_MS` (default 1200)
+- New secret needed: `GOOGLE_CSE_ID` — create at cse.google.com with your GOOGLE_API_KEY
+
 ## New Features (April 2026)
 
 ### 1. Analytics & Revenue Dashboard (`/analytics`)

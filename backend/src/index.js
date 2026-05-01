@@ -1205,6 +1205,33 @@ app.post('/api/ai-agent/trigger/:task', requireAuth, requireAdmin, async (req, r
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
+// GET /api/ai-agent/scraped-contacts — returns scraped_contacts stats + recent rows
+app.get('/api/ai-agent/scraped-contacts', requireAuth, async (req, res) => {
+  try {
+    const [stats, recent] = await Promise.all([
+      db.query(`
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE status='new') AS pending,
+          COUNT(*) FILTER (WHERE status='contacted') AS contacted,
+          COUNT(*) FILTER (WHERE status='followup1') AS followup1,
+          COUNT(*) FILTER (WHERE status='followup2') AS followup2,
+          COUNT(*) FILTER (WHERE status='bounced') AS bounced,
+          COUNT(*) FILTER (WHERE status='converted') AS converted,
+          COUNT(DISTINCT source) AS sources,
+          COUNT(DISTINCT domain) AS unique_domains,
+          MAX(created_at) AS last_scraped
+        FROM scraped_contacts
+      `),
+      db.query(`
+        SELECT id, company, domain, email, business_type, city, country, source, status, outreach_sent_at, created_at
+        FROM scraped_contacts ORDER BY created_at DESC LIMIT 200
+      `),
+    ]);
+    res.json({ stats: stats.rows[0], contacts: recent.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Client Portal Routes ──────────────────────────────────────────────────────
 app.use('/api/client', clientPortalRouter);
 
