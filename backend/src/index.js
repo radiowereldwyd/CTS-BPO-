@@ -1184,7 +1184,7 @@ app.get('/api/ai-agent/live', requireAuth, async (req, res) => {
           // Leads added per day (last 7 days)
           db.query(`SELECT DATE(created_at) AS day, COUNT(*) AS count FROM ai_leads WHERE created_at > NOW()-INTERVAL '7 days' GROUP BY day ORDER BY day DESC`),
           // Emails sent per day (last 7 days from activity log)
-          db.query(`SELECT DATE(created_at) AS day, COUNT(*) AS count FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach') AND created_at > NOW()-INTERVAL '7 days' GROUP BY day ORDER BY day DESC`),
+          db.query(`SELECT DATE(created_at) AS day, COUNT(*) AS count FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach') AND status='success' AND target_id IS NOT NULL AND created_at > NOW()-INTERVAL '7 days' GROUP BY day ORDER BY day DESC`),
           // Contacts added per day
           db.query(`SELECT DATE(created_at) AS day, COUNT(*) AS count FROM scraped_contacts WHERE created_at > NOW()-INTERVAL '7 days' GROUP BY day ORDER BY day DESC`),
         ]);

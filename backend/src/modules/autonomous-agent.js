@@ -261,8 +261,8 @@ async function refreshDbStats() {
       db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new') AS pending FROM ai_leads`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
       db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new' OR status='pending') AS pending FROM job_leads`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
       db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new') AS pending FROM scraped_contacts`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
-      db.query(`SELECT COUNT(*) AS total FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach','outreach_sent') AND status='success'`).catch(() => ({ rows: [{ total: 0 }] })),
-      db.query(`SELECT COUNT(*) AS total FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach','outreach_sent') AND status='success' AND created_at >= CURRENT_DATE`).catch(() => ({ rows: [{ total: 0 }] })),
+      db.query(`SELECT COUNT(*) AS total FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach') AND status='success' AND target_id IS NOT NULL`).catch(() => ({ rows: [{ total: 0 }] })),
+      db.query(`SELECT COUNT(*) AS total FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach') AND status='success' AND target_id IS NOT NULL AND created_at >= CURRENT_DATE`).catch(() => ({ rows: [{ total: 0 }] })),
     ]);
     liveStats.db.ai_leads           = { total: parseInt(a.rows[0].total) || 0, pending: parseInt(a.rows[0].pending) || 0 };
     liveStats.db.job_leads          = { total: parseInt(j.rows[0].total) || 0, pending: parseInt(j.rows[0].pending) || 0 };
@@ -486,8 +486,16 @@ async function sendLeadOutreach(leadId, prospect) {
     await logActivity('email_sent', `Cold outreach → ${prospect.email} [${prospect.jobType}]`, 'lead', leadId, 'success', { to: prospect.email, type: prospect.jobType });
     return result;
   } catch (err) {
-    if (isAuthError(err)) circuitTrip(err.message);
-    await logActivity('email_sent', `Failed to send to ${prospect.email}: ${err.message}`, 'lead', leadId, 'error');
+    if (isAuthError(err)) {
+      circuitTrip(err.message);
+      // Mark lead as failed so it won't be retried on the next cycle
+      await db.query(`UPDATE ai_leads SET status='email_failed', updated_at=NOW() WHERE id=$1`, [leadId]).catch(() => {});
+      // Circuit-trip event is already logged inside circuitTrip(); don't spam activity log
+      console.error(`[EMAIL] Auth fail for ${prospect.email}: ${err.message}`);
+    } else {
+      // Non-auth failure (transient) — log it but don't mark lead, allow retry
+      await logActivity('email_sent', `Failed to send to ${prospect.email}: ${err.message}`, 'lead', leadId, 'error');
+    }
   }
 }
 
@@ -645,7 +653,11 @@ async function runScrapedContactsOutreach() {
       await logActivity('scrape_outreach', `Outreach → ${c.email} [${c.business_type || 'BPO'}]`, 'scraped_contact', c.id, 'success', { to: c.email });
       await sleep(4000); // 4s between emails
     } catch (err) {
-      if (isAuthError(err)) { circuitTrip(err.message); break; }
+      if (isAuthError(err)) {
+        circuitTrip(err.message);
+        console.error(`[EMAIL] Auth fail (scrape) for ${c.email}: ${err.message}`);
+        break; // stop the batch — circuit is now open
+      }
       await logActivity('scrape_outreach', `Failed → ${c.email}: ${err.message}`, 'scraped_contact', c.id, 'error');
     }
   }
