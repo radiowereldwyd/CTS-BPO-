@@ -364,15 +364,47 @@ async function runWebScraper() {
   }
 }
 
+// ── BPO relevance regex — at least one signal required before outreach ──────
+const BPO_RELEVANCE_RE = /(outsourc|data.?entr|data.?captur|transcri|translat|virtual.?assist|back.?offic|document.?process|invoice.?process|payroll|medical.?bill|claims.?process|accounts.?payable|digitiz|digitisa|bookkeep|bpo|content.?moderat|speech.?to.?text|record.?manag|data.?migrat|hr.?admin|legal.?transcri|remote.?admin)/i;
+
+// Business types from Google Places that are HIGH-VALUE BPO prospects
+const HIGH_VALUE_TYPES = new Set([
+  'law firm', 'medical clinic', 'dental practice', 'accounting firm',
+  'insurance company', 'financial services company', 'healthcare company',
+  'pharmaceutical company', 'recruitment agency', 'it services company',
+  'logistics company', 'management consulting firm', 'hr consulting firm',
+  'property management company',
+]);
+
+function isContactRelevant(c) {
+  // CSE / DDG / SerpAPI queries are already BPO-targeted — always eligible
+  if (['google_cse', 'duckduckgo', 'serpapi_bpo'].includes(c.source)) return true;
+  // Google Places: check snippet/query or high-value type
+  const haystack = `${c.snippet||''} ${c.query_used||''} ${c.business_type||''}`;
+  if (BPO_RELEVANCE_RE.test(haystack)) return true;
+  if (HIGH_VALUE_TYPES.has((c.business_type||'').toLowerCase())) return true;
+  return false;
+}
+
 // ── 2d. Batch outreach to scraped_contacts ────────────────────────────────
+// ONE email per company domain, relevance-gated, marks ALL domain rows contacted.
 async function runScrapedContactsOutreach() {
+  // Pick ONE representative contact per domain (prefer info@ then contact@)
+  // Only look at domains not yet outreached
   const rows = await db.query(`
-    SELECT id, company, email, domain, business_type, city, country FROM scraped_contacts
+    SELECT DISTINCT ON (domain)
+      id, company, email, domain, business_type, city, country, source, snippet, query_used
+    FROM scraped_contacts
     WHERE status = 'new'
       AND email IS NOT NULL
       AND bounced_at IS NULL
-    ORDER BY created_at ASC
-    LIMIT 500
+      AND domain IS NOT NULL
+    ORDER BY domain,
+      CASE WHEN email LIKE 'info@%' THEN 0
+           WHEN email LIKE 'contact@%' THEN 1
+           ELSE 2 END,
+      created_at ASC
+    LIMIT 20
   `).catch(() => ({ rows: [] }));
 
   if (rows.rows.length === 0) return;
@@ -380,12 +412,14 @@ async function runScrapedContactsOutreach() {
   let sent = 0;
   for (const c of rows.rows) {
     try {
-      const isBounced = await db.query(
-        `SELECT id FROM scraped_contacts WHERE LOWER(email)=LOWER($1) AND bounced_at IS NOT NULL LIMIT 1`,
-        [c.email]
-      ).catch(() => ({ rows: [] }));
-      if (isBounced.rows.length > 0) {
-        await db.query(`UPDATE scraped_contacts SET status='bounced', bounced_at=NOW() WHERE id=$1`, [c.id]).catch(() => {});
+      // Relevance gate — skip companies with no BPO need signals
+      if (!isContactRelevant(c)) {
+        // Mark ALL emails for this domain as irrelevant so we skip them next time
+        await db.query(
+          `UPDATE scraped_contacts SET status='irrelevant', updated_at=NOW() WHERE domain=$1`,
+          [c.domain]
+        ).catch(() => {});
+        console.log(`⏭️  [OUTREACH] Skipping ${c.domain} — no BPO relevance signal`);
         continue;
       }
 
@@ -397,10 +431,18 @@ async function runScrapedContactsOutreach() {
         city:    c.city || null,
         country: c.country || null,
       });
+
+      // Mark the sent email with outreach_sent_at (used by follow-up to reach same person)
       await db.query(
         `UPDATE scraped_contacts SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
         [c.id]
       );
+      // Mark ALL OTHER emails for this domain as 'contacted' WITHOUT outreach_sent_at
+      // so they're skipped in future runs but don't trigger duplicate follow-ups
+      await db.query(
+        `UPDATE scraped_contacts SET status='contacted', updated_at=NOW() WHERE domain=$1 AND id!=$2 AND status='new'`,
+        [c.domain, c.id]
+      ).catch(() => {});
       agentState.totalEmailsSent++;
       sent++;
       checkDailyReset();
@@ -422,37 +464,55 @@ async function runScrapedContactsOutreach() {
 }
 
 // ── 2e. Follow-up sequence for scraped_contacts ───────────────────────────
+// ONE follow-up per domain — uses the same contact that received the cold email
 async function runScrapedContactsFollowUps() {
+  // Day-3 follow-up: pick ONE contact per domain (the one we emailed — outreach_sent_at IS NOT NULL)
   const day3 = await db.query(`
-    SELECT id, email, company, business_type FROM scraped_contacts
+    SELECT DISTINCT ON (domain) id, email, company, business_type, domain
+    FROM scraped_contacts
     WHERE status = 'contacted'
+      AND outreach_sent_at IS NOT NULL
       AND outreach_sent_at < NOW() - INTERVAL '3 days'
       AND followup1_sent_at IS NULL
       AND bounced_at IS NULL
-    LIMIT 500
+      AND domain IS NOT NULL
+    ORDER BY domain, outreach_sent_at ASC
+    LIMIT 20
   `).catch(() => ({ rows: [] }));
 
   for (const c of day3.rows) {
     try {
       await emailOutreach.sendClientFollowUp({ email: c.email, company: c.company, jobType: c.business_type, followUpNumber: 1 });
-      await db.query(`UPDATE scraped_contacts SET followup1_sent_at=NOW(), status='followup1', updated_at=NOW() WHERE id=$1`, [c.id]);
+      // Mark ALL same-domain rows so no other address gets a follow-up
+      await db.query(
+        `UPDATE scraped_contacts SET followup1_sent_at=NOW(), status='followup1', updated_at=NOW() WHERE domain=$1`,
+        [c.domain]
+      );
       agentState.totalEmailsSent++;
     } catch {}
   }
 
+  // Day-7 follow-up
   const day7 = await db.query(`
-    SELECT id, email, company, business_type FROM scraped_contacts
+    SELECT DISTINCT ON (domain) id, email, company, business_type, domain
+    FROM scraped_contacts
     WHERE status = 'followup1'
+      AND followup1_sent_at IS NOT NULL
       AND followup1_sent_at < NOW() - INTERVAL '4 days'
       AND followup2_sent_at IS NULL
       AND bounced_at IS NULL
-    LIMIT 500
+      AND domain IS NOT NULL
+    ORDER BY domain, followup1_sent_at ASC
+    LIMIT 20
   `).catch(() => ({ rows: [] }));
 
   for (const c of day7.rows) {
     try {
       await emailOutreach.sendClientFollowUp({ email: c.email, company: c.company, jobType: c.business_type, followUpNumber: 2 });
-      await db.query(`UPDATE scraped_contacts SET followup2_sent_at=NOW(), status='followup2', updated_at=NOW() WHERE id=$1`, [c.id]);
+      await db.query(
+        `UPDATE scraped_contacts SET followup2_sent_at=NOW(), status='followup2', updated_at=NOW() WHERE domain=$1`,
+        [c.domain]
+      );
       agentState.totalEmailsSent++;
     } catch {}
   }
@@ -1106,6 +1166,44 @@ async function runJobLeadFollowUps() {
 }
 
 // ── Start the agent ────────────────────────────────────────────────────────
+// ── One-time DB cleanup at startup ────────────────────────────────────────
+// Fixes existing records: marks duplicate same-domain "new" contacts as contacted
+// and marks clearly irrelevant domains so they're skipped by outreach.
+async function cleanupExistingContacts() {
+  try {
+    // 1. For each domain that already has a 'contacted' record, mark remaining 'new' ones contacted too
+    await db.query(`
+      UPDATE scraped_contacts sc
+      SET status = 'contacted', updated_at = NOW()
+      FROM (
+        SELECT DISTINCT domain FROM scraped_contacts WHERE status = 'contacted' AND domain IS NOT NULL
+      ) done
+      WHERE sc.domain = done.domain AND sc.status = 'new'
+    `);
+
+    // 2. Deduplicate remaining 'new': keep only info@/contact@ per domain, mark others 'contacted'
+    await db.query(`
+      UPDATE scraped_contacts
+      SET status = 'contacted', updated_at = NOW()
+      WHERE status = 'new'
+        AND domain IS NOT NULL
+        AND id NOT IN (
+          SELECT DISTINCT ON (domain) id
+          FROM scraped_contacts
+          WHERE status = 'new' AND domain IS NOT NULL
+          ORDER BY domain,
+            CASE WHEN email LIKE 'info@%' THEN 0
+                 WHEN email LIKE 'contact@%' THEN 1
+                 ELSE 2 END,
+            created_at ASC
+        )
+    `);
+    console.log('🧹 [AGENT] DB cleanup done — duplicate domain contacts consolidated');
+  } catch (e) {
+    console.warn('⚠️  [AGENT] Cleanup error (non-fatal):', e.message);
+  }
+}
+
 async function startAgent() {
   await ensureTables();
   agentState.running = true;
@@ -1113,6 +1211,9 @@ async function startAgent() {
 
   await logActivity('agent_start', `CTS BPO Autonomous AI Agent started — all systems active`);
   console.log('🤖 CTS BPO Autonomous AI Agent — ONLINE');
+
+  // Clean up existing duplicate domain records
+  setTimeout(() => cleanupExistingContacts().catch(console.error), 3_000);
 
   // Run immediately on startup (staggered to avoid hammering)
   setTimeout(() => runLeadSearch().catch(console.error),                  5_000);

@@ -61,35 +61,42 @@ const CSE_QUERIES_PER_RUN    = parseInt(process.env.CSE_QUERIES_PER_RUN    || '1
 const DDG_QUERIES_PER_RUN    = parseInt(process.env.DDG_QUERIES_PER_RUN    || '12', 10);
 const SCRAPE_DELAY_MS        = parseInt(process.env.SCRAPE_DELAY_MS        || '1200', 10);
 
-const EMAIL_PREFIXES = ['info', 'contact', 'hello', 'enquiries', 'admin', 'sales', 'support'];
+// Only ONE primary contact per company — no carpet-bombing all prefixes
+const EMAIL_PREFIXES = ['info', 'contact'];
+
+// ── BPO relevance keywords — a site must match at least one ────────────────
+// Used to score/filter before storing; only relevant companies get outreached
+const BPO_KEYWORDS = [
+  'data entry', 'data capture', 'data processing', 'transcription', 'translation',
+  'virtual assistant', 'back office', 'outsourc', 'bpo', 'document digitiz',
+  'document processing', 'invoice processing', 'payroll', 'medical billing',
+  'claims processing', 'accounts payable', 'hr admin', 'legal transcription',
+  'content moderation', 'speech to text', 'digitisation', 'digitization',
+  'remote admin', 'bookkeeping', 'record management', 'data migration',
+];
+
+function isRelevant(snippet, query, businessType) {
+  const haystack = `${snippet || ''} ${query || ''} ${businessType || ''}`.toLowerCase();
+  return BPO_KEYWORDS.some(kw => haystack.includes(kw));
+}
 
 // ── Target industries × cities ─────────────────────────────────────────────
+// Only high-value BPO prospect industries — NOT generic consumer businesses
 const BUSINESS_TYPES = [
   'law firm',
   'medical clinic',
   'dental practice',
   'accounting firm',
-  'real estate agency',
   'insurance company',
   'logistics company',
-  'manufacturing company',
   'management consulting firm',
-  'marketing agency',
   'HR consulting firm',
   'financial services company',
-  'property management company',
-  'engineering company',
   'pharmaceutical company',
   'recruitment agency',
   'IT services company',
   'healthcare company',
-  'educational institution',
-  'e-commerce company',
-  'hospitality group',
-  'construction company',
-  'retail chain',
-  'telecommunications company',
-  'food and beverage company',
+  'property management company',
 ];
 
 const SEARCH_CITIES = [
