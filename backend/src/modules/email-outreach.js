@@ -142,6 +142,7 @@ function getSenderMode() {
 }
 
 function isConfigured() { return !!getSenderMode(); }
+function areAllProvidersBroken() { return getSenderMode() === null; }
 
 // ── Gmail SMTP transporter ──────────────────────────────────────────────────
 let transporter = null;
@@ -177,8 +178,8 @@ async function sendMail({ to, subject, html, text, replyTo }) {
 
   const mode = getSenderMode();
   if (!mode) {
-    console.log(`[EMAIL CONSOLE] To: ${to} | Subject: ${subject}`);
-    return { preview: true };
+    console.warn(`[EMAIL] All providers broken — cannot send to ${to}, skipping`);
+    return { error: true, allProvidersBroken: true, sent: false };
   }
 
   const fromStr = `${FROM_NAME} <${FROM_EMAIL}>`;
@@ -260,7 +261,7 @@ async function sendMail({ to, subject, html, text, replyTo }) {
           return sendMail({ to, subject, html, text, replyTo }); // recurse with next provider
         }
         console.error(`[EMAIL] All providers broken — no working email provider configured`);
-        return { error: true, status, message: 'All email providers unavailable — check API credentials' };
+        return { error: true, allProvidersBroken: true, status, message: 'All email providers unavailable — check API credentials' };
       }
       // 422 / 400 / other 4xx = bad email address — log and skip, don't mark provider broken
       console.error(`[EMAIL] ${mode} ${status} error sending to ${to}: ${msg}`);
@@ -274,12 +275,18 @@ async function sendMail({ to, subject, html, text, replyTo }) {
       markBroken('gmail');
       return { error: true, status: 535, message: `Gmail auth failed: ${err.message}` };
     }
-    // Gmail daily sending limit (550 5.4.5) — mark as broken for this session
+    // Gmail daily sending limit (550 5.4.5) — mark as broken, then fall through to check remaining providers
     const isGmailDailyLimit = mode === 'gmail' && (smtpCode === 550 || /550.*5\.4\.5|Daily.*sending.*limit|user sending limit/i.test(err.message));
     if (isGmailDailyLimit) {
       console.error(`[EMAIL] Gmail daily sending limit reached — marking broken for this session`);
       markBroken('gmail');
-      return { error: true, status: 550, message: 'Gmail daily limit reached' };
+      const nextMode = getSenderMode();
+      if (nextMode) {
+        console.log(`[EMAIL] Retrying via fallback provider: ${nextMode}`);
+        return sendMail({ to, subject, html, text, replyTo });
+      }
+      console.error(`[EMAIL] All providers broken — no working email provider configured`);
+      return { error: true, allProvidersBroken: true, status: 550, message: 'Gmail daily limit reached — all providers exhausted' };
     }
     // For API providers (not Gmail), connection errors mean the provider is unreachable — mark broken & fall through
     if (mode !== 'gmail' && (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND')) {
@@ -291,7 +298,7 @@ async function sendMail({ to, subject, html, text, replyTo }) {
         return sendMail({ to, subject, html, text, replyTo });
       }
       console.error(`[EMAIL] All providers broken — no working email provider configured`);
-      return { error: true, status: 0, message: 'All email providers unavailable' };
+      return { error: true, allProvidersBroken: true, status: 0, message: 'All email providers unavailable' };
     }
     console.error(`[EMAIL] ${mode} SMTP/network error to ${to}: ${err.message}`);
     return { error: true, status: 0, message: err.message };
@@ -797,7 +804,7 @@ async function sendOutreachEmail(prospect, templateName = 'bpoApplication') {
     return { sent: false, simulated: true, to: prospect.email, subject };
   }
   if (result.skipped) return { sent: false, skipped: true, reason: result.reason, to: prospect.email };
-  if (result.error) return { sent: false, error: result.message, to: prospect.email };
+  if (result.error) return { sent: false, error: result.message, allProvidersBroken: !!result.allProvidersBroken, to: prospect.email };
 
   await auditLogger.log('outreach.sent', 'prospect', null,
     `Sent to ${prospect.email} [${templateName}] via ${result.mode}`, null, 'info');
@@ -1256,7 +1263,7 @@ CTS BPO Solutions`,
 
   const _r = await sendMail({ to: email, subject: v.subject, text, html });
   if (_r.preview) { console.log('[EMAIL STUB] Cold outreach →', email); return { sent: false, simulated: true, to: email }; }
-  if (_r.skipped || _r.error) return { sent: false, to: email };
+  if (_r.skipped || _r.error) return { sent: false, allProvidersBroken: !!_r.allProvidersBroken, to: email };
   return { sent: true, to: email };
 }
 
@@ -1654,6 +1661,7 @@ module.exports = {
   sendPortalSetupEmail, sendClientDelivery, sendClientPaymentReminder, sendSubcontractorPayout,
   templates, TEMPLATE_META, VALID_TEMPLATES,
   isConfigured,
+  areAllProvidersBroken,
   getSenderMode,
   isEmailPaused,
   setEmailPaused,

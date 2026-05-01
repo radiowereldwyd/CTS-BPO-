@@ -473,6 +473,7 @@ async function sendLeadOutreach(leadId, prospect) {
     const result = await emailOutreach.sendClientColdOutreach(prospect);
     if (!result || result.sent === false) {
       if (result?.skipped) return null; // daily cap or paused
+      if (result?.allProvidersBroken) return { allProvidersBroken: true }; // signal to break batch
       await logActivity('email_sent', `Provider rejected send → ${prospect.email}`, 'lead', leadId, 'error');
       return null;
     }
@@ -507,6 +508,10 @@ async function sendLeadOutreach(leadId, prospect) {
 // ── 2b. Batch outreach to ai_leads — ONE per domain, max 10 per run ──────────
 async function runAiLeadOutreach() {
   if (!circuitCheck()) return;
+  if (emailOutreach.areAllProvidersBroken()) {
+    console.log('[OUTREACH] All email providers down — skipping ai_leads batch');
+    return;
+  }
 
   // DISTINCT ON domain — newest leads first (Clutch/OA scrapes go to head of queue)
   const newLeads = await db.query(`
@@ -534,6 +539,10 @@ async function runAiLeadOutreach() {
       email:   lead.contact_email,
       jobType: lead.job_type || 'business process outsourcing',
     });
+    if (result?.allProvidersBroken) {
+      console.log('[OUTREACH] All providers broken — stopping ai_leads batch early, leads will retry next cycle');
+      break;
+    }
     if (result) {
       sent++;
       // Mark ALL same-domain ai_leads as outreach_sent
@@ -586,6 +595,10 @@ function isContactRelevant(c) {
 // ONE email per company domain, relevance-gated, marks ALL domain rows contacted.
 async function runScrapedContactsOutreach() {
   if (!circuitCheck()) return;
+  if (emailOutreach.areAllProvidersBroken()) {
+    console.log('[OUTREACH] All email providers down — skipping scraped_contacts batch');
+    return;
+  }
   // Pick ONE representative contact per domain (prefer info@ then contact@)
   // Only look at domains not yet outreached
   // Newest domains first — contacts from latest Clutch/OA scrapes go to head of queue
@@ -625,7 +638,7 @@ async function runScrapedContactsOutreach() {
       }
 
       if (!circuitCheck()) break;
-      await emailOutreach.sendClientColdOutreach({
+      const sendResult = await emailOutreach.sendClientColdOutreach({
         name:    c.company || c.domain,
         company: c.company || c.domain,
         email:   c.email,
@@ -633,6 +646,15 @@ async function runScrapedContactsOutreach() {
         city:    c.city || null,
         country: c.country || null,
       });
+      if (!sendResult || sendResult.sent === false) {
+        if (sendResult?.allProvidersBroken) {
+          console.log('[OUTREACH] All providers broken — stopping scraped_contacts batch early');
+          break;
+        }
+        if (sendResult?.skipped) break; // daily cap
+        await logActivity('scrape_outreach', `Provider rejected send → ${c.email}`, 'scraped_contact', c.id, 'error');
+        continue;
+      }
       emailCircuit.failures = 0;
 
       // Mark the sent email with outreach_sent_at (used by follow-up to reach same person)
@@ -1267,6 +1289,10 @@ async function runJobLeadScan() {
 // Picks up to 10 uncontacted job_leads — ONE per domain — with circuit breaker.
 async function runJobLeadOutreach() {
   if (!circuitCheck()) return;
+  if (emailOutreach.areAllProvidersBroken()) {
+    console.log('[OUTREACH] All email providers down — skipping job_leads batch');
+    return;
+  }
 
   const newLeads = await db.query(`
     SELECT DISTINCT ON (contact_email)
@@ -1302,8 +1328,11 @@ async function runJobLeadOutreach() {
         jobType: lead.job_type || 'business process outsourcing',
       });
       if (!sendResult || sendResult.sent === false) {
-        // Email provider rejected (4xx) — skip this lead, try next cycle
-        if (sendResult?.skipped) continue; // daily cap or paused — stop batch
+        if (sendResult?.skipped) break; // daily cap or paused — stop entire batch
+        if (sendResult?.allProvidersBroken) {
+          console.log('[OUTREACH] All providers broken — stopping job_leads batch early, leads will retry next cycle');
+          break;
+        }
         await logActivity('prospect_outreach', `Provider rejected send → ${lead.contact_email}`, 'job_lead', lead.id, 'error');
         continue;
       }
