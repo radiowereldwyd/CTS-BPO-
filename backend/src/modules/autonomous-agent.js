@@ -71,6 +71,41 @@ const AI_WORKER_ID = 0; // sentinel: sub_id=0 means the AI Worker
 
 // ── BPO lead search queries ────────────────────────────────────────────────
 const LEAD_QUERIES = [
+  // ══ PRIORITY 1: Clutch.co — active BPO buyers who reviewed competitors ═══
+  // Clutch review pages identify companies actively paying for BPO services
+  { q: 'site:clutch.co "bpo" "data entry" reviews "contact"', type: 'data-entry' },
+  { q: 'site:clutch.co "transcription" OR "translation" outsourcing reviews', type: 'transcription' },
+  { q: 'site:clutch.co "virtual assistant" outsourcing "contact" reviews', type: 'virtual-assistant' },
+  { q: 'site:clutch.co "content moderation" OR "data capture" BPO reviews', type: 'content-moderation' },
+  { q: 'site:clutch.co "finance" OR "invoice" OR "accounts payable" outsource', type: 'finance-admin' },
+  { q: 'site:clutch.co "South Africa" BPO outsourcing company reviews', type: 'general' },
+  // Clutch reviews of the 14 competitor firms → reviewer companies are warm leads
+  { q: 'site:clutch.co/profile/helpware reviews "data entry" OR "transcription"', type: 'data-entry' },
+  { q: 'site:clutch.co/profile/ardem-incorporated reviews "invoice" OR "data"', type: 'finance-admin' },
+  { q: 'site:clutch.co/profile/oworkers reviews "data labeling" OR "data entry"', type: 'data-entry' },
+  { q: 'site:clutch.co/profile/suntec-india reviews "data" OR "transcription"', type: 'transcription' },
+  { q: 'site:clutch.co "outsourcing" "bpo" "data entry" "contact us" -site:linkedin.com', type: 'data-entry' },
+  { q: 'clutch.co "top bpo companies" "data entry" "contact" South Africa', type: 'general' },
+
+  // ══ PRIORITY 2: Outsource Accelerator — BPO marketplace buyers ════════
+  { q: 'site:outsourceaccelerator.com "data entry" "contact" outsourcing company', type: 'data-entry' },
+  { q: 'site:outsourceaccelerator.com "transcription" OR "translation" BPO contact', type: 'transcription' },
+  { q: 'site:outsourceaccelerator.com "virtual assistant" outsourcing contact', type: 'virtual-assistant' },
+  { q: 'site:outsourceaccelerator.com "finance" OR "invoice processing" outsource', type: 'finance-admin' },
+  { q: 'site:outsourceaccelerator.com "South Africa" BPO company contact', type: 'general' },
+  { q: 'outsourceaccelerator.com "looking for" "bpo" OR "outsourcing" "data entry"', type: 'data-entry' },
+  { q: 'outsourceaccelerator.com "content moderation" OR "data capture" company contact', type: 'content-moderation' },
+  { q: 'outsourceaccelerator.com "affordable" "bpo" "outsourcing" "get a quote"', type: 'general' },
+
+  // ══ PRIORITY 3: Direct competitor client mining ════════════════════════
+  // Find companies that mention these competitors + show buying intent
+  { q: '"Helpware" review "data entry" OR "transcription" "contact" -site:clutch.co', type: 'data-entry' },
+  { q: '"ARDEM" review "invoice" OR "data capture" "contact" -site:clutch.co', type: 'finance-admin' },
+  { q: '"oWorkers" review "data" "contact" outsourcing alternative', type: 'data-entry' },
+  { q: '"Softtek" BPO review "contact" OR "alternative" outsourcing services', type: 'general' },
+  { q: '"Remote CoWorker" review "virtual assistant" "contact" alternative', type: 'virtual-assistant' },
+  { q: '"Unity Communications" review BPO "contact" "data entry" alternative', type: 'customer-support' },
+
   // ── Original operator-rich queries ──────────────────────────────────────
   { q: '"outsource" "data entry" "contact us" OR "get a quote" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
   { q: '"transcription service" "outsource" OR "BPO" "company" "quote" -site:linkedin.com', type: 'transcription' },
