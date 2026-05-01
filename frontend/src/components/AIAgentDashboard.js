@@ -405,6 +405,17 @@ export default function AIAgentDashboard({ token }) {
             </div>
           </div>
 
+          {/* SerpAPI rate-limit banner */}
+          {scraper.rateLimited && (
+            <div style={{ background: '#fffbeb', border: '2px solid #f59e0b', borderRadius: 12, padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 20 }}>⏳</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#b45309', letterSpacing: 1, textTransform: 'uppercase' }}>SerpAPI Daily Quota Hit — Searches Paused</div>
+                <div style={{ fontSize: 12, color: '#78350f', marginTop: 2 }}>Resuming in {scraper.rateLimitedMinsLeft} min — scraper will restart automatically</div>
+              </div>
+            </div>
+          )}
+
           {/* Current scraper query highlight */}
           {scraper.running && scraper.query && (
             <div style={{ background: '#fdf4ff', border: '2px solid #c084fc', borderRadius: 12, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>

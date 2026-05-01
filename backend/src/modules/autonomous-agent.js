@@ -69,6 +69,14 @@ const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 const APP_URL     = process.env.APP_URL || 'https://your-app.replit.app';
 const AI_WORKER_ID = 0; // sentinel: sub_id=0 means the AI Worker
 
+// SerpAPI rate-limit cooldown — set when a 429 is received; cleared after 1 hour
+let _serpApiCooledUntil = 0; // epoch ms
+function isSerpApiCooling() { return Date.now() < _serpApiCooledUntil; }
+function serpApiRateLimit() {
+  _serpApiCooledUntil = Date.now() + 60 * 60 * 1000; // 1-hour cooldown
+  console.warn('⚠️ [SERPAPI] Rate limit hit — pausing all searches for 1 hour');
+}
+
 // ── BPO lead search queries ────────────────────────────────────────────────
 const LEAD_QUERIES = [
   // ══ PRIORITY 1: Clutch.co — active BPO buyers who reviewed competitors ═══
@@ -367,9 +375,17 @@ async function runLeadSearch() {
     return;
   }
 
-  // Use all queries for maximum coverage (not just 3 random)
+  // Skip entire cycle if we're in the SerpAPI cooldown window
+  if (isSerpApiCooling()) {
+    const minsLeft = Math.ceil((_serpApiCooledUntil - Date.now()) / 60000);
+    console.log(`⏳ [SERPAPI] Still cooling — ${minsLeft}m left, skipping lead search`);
+    return;
+  }
+
   const queries = LEAD_QUERIES;
   let newLeads = 0;
+  let queried = 0;
+  let consecutive429 = 0;
 
   for (const { q, type } of queries) {
     try {
@@ -377,6 +393,8 @@ async function runLeadSearch() {
         params: { q, api_key: SERPAPI_KEY, num: 100, hl: 'en', gl: 'za' },
         timeout: 15000,
       });
+      consecutive429 = 0; // reset on success
+      queried++;
 
       const results = resp.data?.organic_results || [];
 
@@ -389,14 +407,12 @@ async function runLeadSearch() {
 
         const emailFromSnippet = extractEmailFromText(r.snippet) || extractEmailFromText(r.title);
 
-        // Generate variants: if snippet has explicit email, just use that; else all 7 prefixes
         const emailsToTry = emailFromSnippet
           ? [emailFromSnippet]
           : buildEmailVariants(domain);
 
         for (let i = 0; i < emailsToTry.length; i++) {
           const contactEmail = emailsToTry[i];
-          // Unique URL per variant (suffix #prefix for secondary variants)
           const variantUrl = i === 0 ? url : `${url}#${EMAIL_PREFIXES[i]}`;
           try {
             const ins = await db.query(
@@ -406,7 +422,6 @@ async function runLeadSearch() {
                RETURNING id`,
               [r.title || 'BPO Lead', domain, variantUrl, domain, contactEmail, type, r.snippet || '']
             );
-
             if (ins.rows.length > 0) {
               newLeads++;
               agentState.totalLeadsFound++;
@@ -415,12 +430,30 @@ async function runLeadSearch() {
         }
       }
     } catch (err) {
-      await logActivity('lead_search', `Search failed: ${err.message}`, null, null, 'error');
+      const is429 = err?.response?.status === 429 || err?.message?.includes('429');
+      if (is429) {
+        consecutive429++;
+        if (consecutive429 >= 2) {
+          // SerpAPI daily quota exhausted — bail out, set 1-hour cooldown, log once
+          serpApiRateLimit();
+          await logActivity('lead_search',
+            `SerpAPI rate limit hit after ${queried} queries — pausing searches for 1 hour`,
+            null, null, 'warning', { queriedSoFar: queried, newLeads });
+          agentState.lastLeadSearch = new Date().toISOString();
+          return;
+        }
+        // 1 consecutive 429: silently skip, try next query
+        continue;
+      }
+      // Non-rate-limit error: log it but keep going
+      console.error(`[LEAD SEARCH] Query error: ${err.message}`);
     }
   }
 
   agentState.lastLeadSearch = new Date().toISOString();
-  await logActivity('lead_search', `Searched ${queries.length} queries — ${newLeads} new leads found`, null, null, 'success', { newLeads, queries: queries.map(q => q.type) });
+  await logActivity('lead_search',
+    `Searched ${queried} queries — ${newLeads} new leads found`,
+    null, null, 'success', { newLeads, queries: queries.map(q => q.type) });
 }
 
 // ── 2. Send Cold Outreach to Lead ─────────────────────────────────────────
@@ -1188,8 +1221,20 @@ async function runJobLeadScan() {
     await logActivity('prospect_scan', 'Skipped — SERPAPI_KEY not configured', null, null, 'skipped');
     return;
   }
+  if (isSerpApiCooling()) {
+    const minsLeft = Math.ceil((_serpApiCooledUntil - Date.now()) / 60000);
+    console.log(`⏳ [SERPAPI] Still cooling — ${minsLeft}m left, skipping prospect scan`);
+    return;
+  }
   try {
-    const result = await jobSearch.scanForJobs(); // runs first 5 queries by default
+    const result = await jobSearch.scanForJobs();
+    // If all queries returned 429 errors, engage the cooldown
+    const all429 = result.errors.length > 0 && result.errors.every(e => e.error?.includes('429'));
+    if (all429) {
+      serpApiRateLimit();
+      await logActivity('prospect_scan', 'SerpAPI rate limit hit — pausing searches for 1 hour', null, null, 'warning');
+      return;
+    }
     await logActivity(
       'prospect_scan',
       `Client prospect scan complete — ${result.total} new leads found`,
@@ -1531,9 +1576,14 @@ async function triggerNow(task) {
 // ── Status ─────────────────────────────────────────────────────────────────
 function getStatus() {
   checkDailyReset();
+  const serpCooling = isSerpApiCooling();
   return {
     ...agentState,
-    scraper: webScraper.getContinuousStats(),
+    scraper: {
+      ...webScraper.getContinuousStats(),
+      rateLimited: serpCooling,
+      rateLimitedMinsLeft: serpCooling ? Math.ceil((_serpApiCooledUntil - Date.now()) / 60000) : 0,
+    },
     outreach: { ...liveStats.outreach },
     db: { ...liveStats.db },
   };
