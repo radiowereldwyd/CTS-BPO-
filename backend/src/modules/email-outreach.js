@@ -15,7 +15,7 @@ const SMTP_PORT       = parseInt(process.env.SMTP_PORT  || '587', 10);
 const SENDGRID_KEY    = process.env.SENDGRID_API_KEY    || '';
 const MAILGUN_KEY     = process.env.MAILGUN_API_KEY     || '';
 const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN      || '';
-const FROM_NAME       = 'Calvin | CTS BPO Solutions';
+const FROM_NAME       = 'Calvin Thomas';
 const FROM_EMAIL      = process.env.FROM_EMAIL || GMAIL_USER || 'cts.bposolutions@gmail.com';
 const REPLY_EMAIL     = 'cts.bposolutions@gmail.com';
 const WEBSITE         = 'cts.bposolutions@gmail.com';
@@ -61,12 +61,17 @@ function getTransporter() {
       auth: { user: GMAIL_USER, pass: GMAIL_APP_PASS },
       pool: true, maxConnections: 5, maxMessages: 100,
     });
+    // Remove the X-Mailer header so recipients can't see "nodemailer"
+    transporter.use('compile', (mail, next) => {
+      mail.data.headers = { ...(mail.data.headers || {}), 'X-Mailer': undefined };
+      next();
+    });
   }
   return transporter;
 }
 
 // ── Core send function — routes to correct provider ─────────────────────────
-async function sendMail({ to, subject, html, replyTo }) {
+async function sendMail({ to, subject, html, text, replyTo }) {
   if (dailyCapReached()) {
     console.warn(`[EMAIL] Daily cap of ${MAX_DAILY_EMAILS} reached — skipping send to ${to}`);
     return { skipped: true, reason: 'daily_cap' };
@@ -82,12 +87,14 @@ async function sendMail({ to, subject, html, replyTo }) {
 
   try {
     if (mode === 'sendgrid') {
+      const content = [{ type: 'text/html', value: html }];
+      if (text) content.unshift({ type: 'text/plain', value: text });
       await axios.post('https://api.sendgrid.com/v3/mail/send', {
         personalizations: [{ to: [{ email: to }] }],
         from: { email: FROM_EMAIL, name: FROM_NAME },
         reply_to: { email: replyTo || REPLY_EMAIL },
         subject,
-        content: [{ type: 'text/html', value: html }],
+        content,
       }, {
         headers: { Authorization: `Bearer ${SENDGRID_KEY}`, 'Content-Type': 'application/json' },
         timeout: 10000,
@@ -100,6 +107,7 @@ async function sendMail({ to, subject, html, replyTo }) {
       form.append('to', to);
       form.append('subject', subject);
       form.append('html', html);
+      if (text) form.append('text', text);
       if (replyTo) form.append('h:Reply-To', replyTo);
       await axios.post(
         `https://api.mailgun.net/v3/${MAILGUN_DOMAIN}/messages`,
@@ -110,7 +118,9 @@ async function sendMail({ to, subject, html, replyTo }) {
     } else {
       // Gmail SMTP
       const t = getTransporter();
-      await t.sendMail({ from: fromStr, to, subject, html, replyTo: replyTo || REPLY_EMAIL });
+      const mailOpts = { from: fromStr, to, subject, html, replyTo: replyTo || REPLY_EMAIL };
+      if (text) mailOpts.text = text;
+      await t.sendMail(mailOpts);
     }
 
     dailySentCount++;
@@ -949,73 +959,233 @@ async function sendSubcontractorReminder({ name, email, jobTitle, dueDate, jobId
 
 // ── Autonomous Agent Email Functions ─────────────────────────────────────────
 
-async function sendClientColdOutreach({ name, company, email, jobType }) {
-  const subject = `CTS BPO Solutions — Professional ${jobType ? jobType.replace(/-/g,' ') : 'BPO'} services for ${company || 'your business'}`;
-  const html = `
-<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:24px 0;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.10);">
-  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:36px 44px;text-align:center;">
-    <img src="${LOGO_B64}" alt="CTS BPO" width="240" style="display:block;margin:0 auto 16px;max-width:240px;height:auto;">
-    <h1 style="margin:0;color:#fff;font-size:22px;font-weight:800;">Professional BPO Services — Built for Your Business</h1>
-    <p style="margin:10px 0 0;color:#94a3b8;font-size:13px;">Your Worldwide Premier BPO Partner</p>
-  </td></tr>
-  <tr><td style="padding:36px 44px;">
-    <p style="margin:0 0 18px;font-size:15px;color:#1e293b;">Dear ${esc(company || name || 'Business Owner')},</p>
-    <div style="background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:0 10px 10px 0;padding:18px 22px;margin:0 0 20px;">
-      <p style="margin:0;font-size:14px;color:#0f172a;line-height:1.85;">
-        My name is Calvin from <strong>CTS BPO Solutions</strong>. We specialise in <strong>${jobType ? jobType.replace(/-/g,' ') : 'business process outsourcing'}</strong> and we help businesses like yours reduce operational overhead while maintaining world-class quality. We have a verified <strong style="color:#10b981;">98.6% quality success rate</strong> across 200+ active clients in South Africa, the UK and beyond.
-      </p>
-    </div>
-    <div style="background:#f0fdf4;border-left:4px solid #10b981;border-radius:0 10px 10px 0;padding:18px 22px;margin:0 0 28px;">
-      <p style="margin:0;font-size:14px;color:#0f172a;line-height:1.85;">
-        We handle <strong>data entry, transcription, translation, virtual assistance, customer support, finance processing, content moderation, document digitisation</strong> and more — all completed by our vetted remote professionals and AI-verified before delivery. Our turnaround is typically <strong>24–48 hours</strong>, and pricing is transparent with no hidden fees.
-      </p>
-    </div>
-    <p style="margin:0 0 28px;font-size:14px;color:#334155;line-height:1.8;">I would love the opportunity to discuss how we can support your operations. Would you be open to a quick 15-minute call this week?</p>
-    <div style="text-align:center;margin-bottom:28px;">
-      <a href="mailto:cts.bposolutions@gmail.com?subject=Enquiry: BPO Services" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;padding:14px 36px;border-radius:10px;font-weight:800;font-size:15px;text-decoration:none;box-shadow:0 4px 16px rgba(99,102,241,0.35);">Reply to This Email</a>
-    </div>
-    <p style="margin:0;font-size:13px;color:#64748b;">Kind regards,<br><strong style="color:#0f172a;">Calvin</strong><br>CTS BPO Solutions<br>cts.bposolutions@gmail.com</p>
-  </td></tr>
-  <tr><td style="background:#f8fafc;padding:16px 44px;text-align:center;border-top:1px solid #e2e8f0;">
-    <p style="margin:0;font-size:11px;color:#94a3b8;">If you prefer not to receive future communications, simply reply with "unsubscribe".</p>
-  </td></tr>
-</table></td></tr></table></body></html>`;
+// ── Human-looking plain email wrapper ─────────────────────────────────────
+// Looks like a normal Outlook/Gmail message — no branding, no images, no CTA buttons
+function humanEmailHtml(bodyHtml) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;color:#1a1a1a;line-height:1.75">
+<div style="max-width:580px;padding:36px 24px">
+${bodyHtml}
+</div>
+</body></html>`;
+}
 
-  const _r = await sendMail({ to: email, subject, html });
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+// ── Cold outreach — 8 rotating human variants ───────────────────────────────
+async function sendClientColdOutreach({ name, company, email, jobType, city, country }) {
+  const co  = esc(company || name || '');
+  const svc = (jobType || 'data entry and back-office tasks').replace(/-/g, ' ');
+  const loc = city ? ` (${esc(city)})` : country ? ` (${esc(country)})` : '';
+  const firstName = (name || '').split(/[\s,]+/)[0] || '';
+  const greeting = firstName ? `Hi ${esc(firstName)},` : pick(['Hi,', 'Hello,', 'Good day,']);
+
+  const variants = [
+    {
+      subject: pick([`quick question about ${co}`, `${co} — a quick note`, `outsourcing for ${co}?`]),
+      body: `${greeting}
+
+I came across ${co}${loc} and thought it was worth a quick message.
+
+We handle ${svc} work for businesses — data capture, transcription, document processing, that sort of thing. Fast turnaround, priced well below what an in-house team costs. Happy to send a free sample of our work so you can judge the quality before committing to anything.
+
+Worth a look?
+
+Calvin
+CTS BPO Solutions
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`${svc} help for ${co}`, `could we take some work off your plate?`, `data processing for ${co}`]),
+      body: `${greeting}
+
+Saw ${co}${loc} and had a feeling you might have some ${svc} tasks piling up. We deal with exactly that — a small remote team that handles overflow data and document work for companies who'd rather not hire full-time staff for it.
+
+We're quick — usually 24 to 48 hours — and our error rate is low. Could do a free test run if you'd like to see what we do.
+
+Just reply if you want to know more.
+
+Calvin
+cts.bposolutions@gmail.com`,
+    },
+    {
+      subject: pick([`${co} — just a quick note`, `could we help with ${svc}?`, `question for ${co}`]),
+      body: `${greeting}
+
+This is Calvin from CTS BPO. We help companies with ${svc} — things like data entry, document digitisation, transcription and admin support.
+
+I noticed ${co}${loc} and thought there might be a fit. No big sales pitch — if you've got overflow work you'd rather not deal with in-house, we can handle it at a fraction of what it normally costs.
+
+Happy to prove it with a free task. Interested?
+
+Calvin Thomas
+CTS BPO Solutions`,
+    },
+    {
+      subject: pick([`${svc} — can we help ${co}?`, `a quick question`, `freeing up some time at ${co}`]),
+      body: `${greeting}
+
+Quick note — we're a BPO company that takes on ${svc} work for businesses. Data processing, transcriptions, translations, virtual admin. Usually 24–48hr turnaround.
+
+Came across ${co}${loc} and thought it might be worth asking if there's any of that kind of work we could help with. If yes, I'll happily do the first task free so you can check our quality.
+
+If it's not a fit, no hard feelings. Let me know either way.
+
+Calvin
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`are you outsourcing your ${svc}?`, `${co} — worth a conversation?`, `quick question for the team at ${co}`]),
+      body: `${greeting}
+
+I'll keep this short — we do ${svc} outsourcing for companies that need the work done well and don't want to grow their headcount to do it.
+
+Noticed ${co}${loc} and figured it was worth asking if that's something you'd ever consider. We work with businesses across South Africa and the UK. Turnaround is quick, quality's solid.
+
+Happy to do a no-strings free task to show you what we do. Just say the word.
+
+Calvin Thomas
+CTS BPO Solutions
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`${co} — data & admin support`, `outsourcing support for ${co}`, `could we save ${co} some time?`]),
+      body: `${greeting}
+
+My name's Calvin — I run a small BPO operation that handles ${svc} work for businesses that need it done without adding to their payroll.
+
+I came across ${co}${loc} and thought there might be a fit. We do data entry, transcription, translation, invoice processing, document work — you name it. Fast, quality-checked, affordable.
+
+If it's relevant, I can send a free sample task so you can see the output before deciding anything. Either way, happy to chat.
+
+Calvin
+CTS BPO Solutions`,
+    },
+    {
+      subject: pick([`this might be useful for ${co}`, `${svc} — outsourced quickly and affordably`, `quick note for ${co}`]),
+      body: `${greeting}
+
+Spotted ${co}${loc} and thought I'd reach out — we do ${svc} outsourcing for companies who'd rather not manage it in-house.
+
+We're a lean team but we're fast — most jobs come back in 24 to 48 hours, fully checked. Costs a lot less than hiring. If you've got any recurring data or document work, it might be worth a chat.
+
+Happy to do a free trial run. No obligation.
+
+Calvin Thomas
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`hey — ${svc} for ${co}?`, `a thought for ${co}`, `${co} — we might be able to help`]),
+      body: `${greeting}
+
+Not sure if the timing's right, but we help businesses with ${svc} work — data capture, transcription, back-office admin, document processing.
+
+I came across ${co}${loc} and thought it could be useful. We offer a free first task so you can check what our output looks like — no risk, no obligation.
+
+If there's interest, I'm easy to reach at ${REPLY_EMAIL}. If not, no worries at all.
+
+Calvin
+CTS BPO Solutions`,
+    },
+  ];
+
+  const v = pick(variants);
+  const text = v.body;
+  const html = humanEmailHtml(v.body.split('\n').map(l => l.trim() ? `<p style="margin:0 0 14px">${esc(l)}</p>` : '<p style="margin:0 0 14px">&nbsp;</p>').join('\n'));
+
+  const _r = await sendMail({ to: email, subject: v.subject, text, html });
   if (_r.preview) { console.log('[EMAIL STUB] Cold outreach →', email); return { sent: false, simulated: true, to: email }; }
   if (_r.skipped || _r.error) return { sent: false, to: email };
   return { sent: true, to: email };
 }
 
+// ── Follow-ups — 6 rotating human variants ──────────────────────────────────
 async function sendClientFollowUp({ email, company, jobType, followUpNumber }) {
-  const day = followUpNumber === 1 ? 'three days' : 'a week';
-  const subject = `Following up — CTS BPO Services for ${company || 'your business'}`;
-  const html = `
-<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
-<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#f0f4f8;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:24px 0;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.10);">
-  <tr><td style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:32px 44px;text-align:center;">
-    <img src="${LOGO_B64}" alt="CTS BPO" width="200" style="display:block;margin:0 auto 14px;height:auto;">
-    <h1 style="margin:0;color:#fff;font-size:20px;font-weight:800;">Quick follow-up from CTS BPO</h1>
-  </td></tr>
-  <tr><td style="padding:36px 44px;">
-    <p style="margin:0 0 16px;font-size:14px;color:#1e293b;">Dear ${esc(company || 'Business Owner')},</p>
-    <p style="margin:0 0 18px;font-size:14px;color:#334155;line-height:1.8;">I reached out ${day} ago about our professional <strong>${jobType ? jobType.replace(/-/g,' ') : 'BPO'}</strong> services and wanted to follow up in case my previous email got buried. CTS BPO Solutions specialises in helping businesses reduce back-office costs while maintaining 98.6% quality accuracy.</p>
-    <p style="margin:0 0 28px;font-size:14px;color:#334155;line-height:1.8;">If you have any back-office work that needs to be done — even a small test project — we would love the opportunity to demonstrate our quality at no risk. Simply reply to this email and we will set up a quick call.</p>
-    <div style="text-align:center;">
-      <a href="mailto:cts.bposolutions@gmail.com?subject=BPO Services Enquiry" style="display:inline-block;background:#6366f1;color:#fff;padding:13px 32px;border-radius:10px;font-weight:800;font-size:14px;text-decoration:none;">Get in Touch</a>
-    </div>
-    <p style="margin:28px 0 0;font-size:13px;color:#64748b;">Warm regards,<br><strong style="color:#0f172a;">Calvin — CTS BPO Solutions</strong></p>
-  </td></tr>
-</table></td></tr></table></body></html>`;
+  const co    = esc(company || 'there');
+  const svc   = (jobType || 'outsourcing').replace(/-/g, ' ');
+  const isOne = followUpNumber === 1;
 
-  const _r = await sendMail({ to: email, subject, html });
+  const variants = [
+    {
+      subject: pick([`still open if you're interested`, `just checking in`, `following up on my last note`]),
+      body: `Hi ${co},
+
+Just following up on my note from ${isOne ? 'a few days' : 'last week'} about ${svc} support.
+
+The free task offer is still on the table if you'd like to see what our output looks like. Zero cost, no strings.
+
+Let me know if it's worth talking.
+
+Calvin
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`${co} — did my message land?`, `re: ${svc} help`, `quick follow-up`]),
+      body: `Hi,
+
+Sent a note to ${co} ${isOne ? 'a few days' : 'about a week'} ago about ${svc} work — just checking it didn't get lost.
+
+If there's any kind of data or document task you need done, I'm happy to turn one around for free so you can judge the quality. No commitment needed.
+
+Worth a try?
+
+Calvin Thomas
+CTS BPO Solutions`,
+    },
+    {
+      subject: pick([`one more thought`, `${svc} — last note from me`, `still happy to help if useful`]),
+      body: `Hi,
+
+${isOne ? 'Sent a message a couple of days ago' : 'Reached out last week'} about helping ${co} with ${svc} tasks. Figured I'd try once more in case the timing is better now.
+
+Happy to do a small task free of charge — data entry, transcription, a document, whatever's on your desk. If you like what comes back, great. If not, no hard feelings.
+
+Calvin
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`following up — ${co}`, `quick one`, `${svc} — just in case`]),
+      body: `Hi,
+
+Quick follow-up from ${isOne ? 'earlier this week' : 'last week'} — I mentioned we do ${svc} outsourcing and offered a free sample task.
+
+Still happy to do that if you'd like a look. Just reply and tell me what you need done.
+
+Calvin
+CTS BPO Solutions`,
+    },
+    {
+      subject: pick([`checking in on my last email`, `${co} — did this reach you?`, `last follow-up from me`]),
+      body: `Hi ${co},
+
+${isOne ? 'Sent you a short note a few days ago' : 'I reached out about a week ago'} about ${svc} support. I'll keep this one even shorter.
+
+We do the work quickly, it's well-priced, and I'll do the first task at no charge. If that sounds like anything useful, just reply.
+
+Calvin Thomas
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`last message — promise`, `one last note from CTS BPO`, `${svc} — just wanted to close the loop`]),
+      body: `Hi,
+
+Last message from me regarding ${svc} support for ${co} — just didn't want to leave it without a proper follow-up.
+
+If the timing's ever right, the free task offer stands. We handle the work quickly and affordably.
+
+Either way, I wish ${co} all the best.
+
+Calvin Thomas
+CTS BPO Solutions
+${REPLY_EMAIL}`,
+    },
+  ];
+
+  const v = pick(variants);
+  const text = v.body;
+  const html = humanEmailHtml(v.body.split('\n').map(l => l.trim() ? `<p style="margin:0 0 14px">${esc(l)}</p>` : '<p style="margin:0 0 14px">&nbsp;</p>').join('\n'));
+
+  const _r = await sendMail({ to: email, subject: v.subject, text, html });
   if (_r.preview) { console.log('[EMAIL STUB] Follow-up →', email, `(#${followUpNumber})`); return { sent: false, simulated: true, to: email }; }
   if (_r.skipped || _r.error) return { sent: false, to: email };
   return { sent: true, to: email };
