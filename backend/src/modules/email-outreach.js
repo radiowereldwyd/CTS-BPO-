@@ -12,7 +12,6 @@ const GMAIL_USER      = process.env.GMAIL_USER         || process.env.SMTP_USER 
 const GMAIL_APP_PASS  = (process.env.GMAIL_APP_PASSWORD  || process.env.SMTP_PASS || '').replace(/\s+/g, '');
 const SMTP_HOST       = process.env.SMTP_HOST           || 'smtp.gmail.com';
 const SMTP_PORT       = parseInt(process.env.SMTP_PORT  || '587', 10);
-const SENDGRID_KEY    = process.env.SENDGRID_API_KEY    || '';
 const MAILGUN_KEY     = process.env.MAILGUN_API_KEY     || '';
 const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN      || '';
 const MAILJET_API_KEY    = process.env.MAILJET_API_KEY     || '';
@@ -28,7 +27,7 @@ const EMAIL_RATE_MS   = parseInt(process.env.EMAIL_RATE_MS || '200', 10);
 
 // Per-provider daily caps (99% threshold = stop before hard limits)
 // MailerLite free: 1000/day | Mailjet: 299/day | Gmail: 500/day | SendGrid free: 100/day | Mailgun: 99/day
-const PROVIDER_CAPS = { mailerlite: 399, mailjet: 299, gmail: 500, sendgrid: 100, mailgun: 99 };
+const PROVIDER_CAPS = { mailerlite: 399, mailjet: 299, gmail: 500, mailgun: 99 };
 function getProviderCap() { return PROVIDER_CAPS[getSenderMode()] || 500; }
 function getStopAt()      { return Math.floor(getProviderCap() * 0.99); }   // 99% rule
 
@@ -110,13 +109,11 @@ function isEmailPaused() { return emailPaused; }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Sender detection — priority: MailerLite > Mailgun > Mailjet > SendGrid > Gmail ──────
-// MailerLite first: highest free cap (1000/day), transactional API
+// ── Sender detection — priority: MailerLite > Mailgun > Mailjet > Gmail ──────
 function getSenderMode() {
   if (MAILERLITE_API_KEY)                 return 'mailerlite';
   if (MAILGUN_KEY && MAILGUN_DOMAIN)      return 'mailgun';
   if (MAILJET_API_KEY && MAILJET_SEC_KEY) return 'mailjet';
-  if (SENDGRID_KEY)                       return 'sendgrid';
   if (GMAIL_USER && GMAIL_APP_PASS)       return 'gmail';
   return null;
 }
@@ -181,20 +178,6 @@ async function sendMail({ to, subject, html, text, replyTo }) {
           Accept: 'application/json',
         },
         timeout: 12000,
-      });
-
-    } else if (mode === 'sendgrid') {
-      const content = [{ type: 'text/html', value: html }];
-      if (text) content.unshift({ type: 'text/plain', value: text });
-      await axios.post('https://api.sendgrid.com/v3/mail/send', {
-        personalizations: [{ to: [{ email: to }] }],
-        from: { email: FROM_EMAIL, name: FROM_NAME },
-        reply_to: { email: replyTo || REPLY_EMAIL },
-        subject,
-        content,
-      }, {
-        headers: { Authorization: `Bearer ${SENDGRID_KEY}`, 'Content-Type': 'application/json' },
-        timeout: 10000,
       });
 
     } else if (mode === 'mailjet') {

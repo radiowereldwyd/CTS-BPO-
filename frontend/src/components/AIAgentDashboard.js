@@ -461,12 +461,11 @@ export default function AIAgentDashboard({ token }) {
               </div>
             )}
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
               {(emailStats?.providers || [
                 { name: 'MailerLite', configured: false },
                 { name: 'Mailgun',    configured: false },
                 { name: 'Mailjet',    configured: false },
-                { name: 'SendGrid',   configured: false },
                 { name: 'Gmail',      configured: false },
               ]).map(p => {
                 const pct      = p.dailyCap ? Math.min(100, Math.round((p.sentToday / p.dailyCap) * 100)) : null;
