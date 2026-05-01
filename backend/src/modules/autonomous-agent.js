@@ -246,21 +246,25 @@ function checkDailyReset() {
   }
 }
 
-// Refresh DB volumes (called every 30s)
+// Refresh DB volumes (called every 15s) — all counters sourced directly from DB
 async function refreshDbStats() {
   try {
-    const [a, j, s, e] = await Promise.all([
+    const [a, j, s, eAll, eToday] = await Promise.all([
       db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new') AS pending FROM ai_leads`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
       db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new' OR status='pending') AS pending FROM job_leads`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
       db.query(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='new') AS pending FROM scraped_contacts`).catch(() => ({ rows: [{ total: 0, pending: 0 }] })),
       db.query(`SELECT COUNT(*) AS total FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach','outreach_sent') AND status='success'`).catch(() => ({ rows: [{ total: 0 }] })),
+      db.query(`SELECT COUNT(*) AS total FROM ai_activity_log WHERE action_type IN ('email_sent','scrape_outreach','prospect_outreach','ai_outreach','outreach_sent') AND status='success' AND created_at >= CURRENT_DATE`).catch(() => ({ rows: [{ total: 0 }] })),
     ]);
-    liveStats.db.ai_leads         = { total: parseInt(a.rows[0].total) || 0, pending: parseInt(a.rows[0].pending) || 0 };
-    liveStats.db.job_leads        = { total: parseInt(j.rows[0].total) || 0, pending: parseInt(j.rows[0].pending) || 0 };
-    liveStats.db.scraped_contacts = { total: parseInt(s.rows[0].total) || 0, pending: parseInt(s.rows[0].pending) || 0 };
-    liveStats.db.grand_total      = liveStats.db.ai_leads.total + liveStats.db.job_leads.total + liveStats.db.scraped_contacts.total;
-    liveStats.db.totalEmailsAllTime = parseInt(e.rows[0].total) || 0;
-    liveStats.db.lastRefresh      = new Date().toISOString();
+    liveStats.db.ai_leads           = { total: parseInt(a.rows[0].total) || 0, pending: parseInt(a.rows[0].pending) || 0 };
+    liveStats.db.job_leads          = { total: parseInt(j.rows[0].total) || 0, pending: parseInt(j.rows[0].pending) || 0 };
+    liveStats.db.scraped_contacts   = { total: parseInt(s.rows[0].total) || 0, pending: parseInt(s.rows[0].pending) || 0 };
+    liveStats.db.grand_total        = liveStats.db.ai_leads.total + liveStats.db.job_leads.total + liveStats.db.scraped_contacts.total;
+    liveStats.db.totalEmailsAllTime = parseInt(eAll.rows[0].total) || 0;
+    liveStats.db.sentToday          = parseInt(eToday.rows[0].total) || 0;
+    liveStats.db.lastRefresh        = new Date().toISOString();
+    // Keep outreach.sentToday in sync with the authoritative DB value
+    liveStats.outreach.sentToday    = liveStats.db.sentToday;
   } catch { /* silently skip */ }
 }
 
@@ -1203,13 +1207,13 @@ async function runJobLeadOutreach() {
   if (!circuitCheck()) return;
 
   const newLeads = await db.query(`
-    SELECT DISTINCT ON (COALESCE(domain, contact_email))
-      id, title, company, contact_email, contact_name, job_type, source_url, domain
+    SELECT DISTINCT ON (contact_email)
+      id, title, company, contact_email, contact_name, job_type, source_url
     FROM job_leads
     WHERE status = 'new'
       AND contact_email IS NOT NULL
       AND contact_email != ''
-    ORDER BY COALESCE(domain, contact_email), created_at ASC
+    ORDER BY contact_email, created_at ASC
     LIMIT 10
   `).catch(() => ({ rows: [] }));
 
@@ -1237,18 +1241,11 @@ async function runJobLeadOutreach() {
       });
       emailCircuit.failures = 0;
 
-      // Mark all same-domain job_leads as contacted
-      if (lead.domain) {
-        await db.query(
-          `UPDATE job_leads SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE domain=$1 AND status='new'`,
-          [lead.domain]
-        ).catch(() => {});
-      } else {
-        await db.query(
-          `UPDATE job_leads SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
-          [lead.id]
-        );
-      }
+      // Mark this job_lead as contacted (job_leads has no domain column — update by id)
+      await db.query(
+        `UPDATE job_leads SET status='contacted', outreach_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
+        [lead.id]
+      );
       sent++;
       checkDailyReset();
       liveStats.outreach.sentThisSession++;
@@ -1474,8 +1471,8 @@ async function startAgent() {
     });
   }, 45_000);
 
-  // DB volume refresh every 30 seconds
-  setInterval(() => refreshDbStats().catch(() => {}), 30_000);
+  // DB volume refresh every 15 seconds — keeps all dashboard counters current
+  setInterval(() => refreshDbStats().catch(() => {}), 15_000);
   setTimeout(() => refreshDbStats().catch(() => {}), 5_000); // initial refresh
 
   // Outreach to scraped_contacts every 5 minutes (offset by ~2.5 min from ai/job crons)

@@ -185,8 +185,8 @@ export default function AIAgentDashboard({ token }) {
     fetchLive();
     fetchActivity();
     fetchEmailStats();
-    const iv1 = setInterval(fetchLive, 2000);
-    const iv2 = setInterval(fetchActivity, 5000);
+    const iv1 = setInterval(fetchLive, 15000);
+    const iv2 = setInterval(fetchActivity, 15000);
     const iv3 = setInterval(fetchEmailStats, 15000);
     return () => { clearInterval(iv1); clearInterval(iv2); clearInterval(iv3); };
   }, [fetchLive, fetchActivity, fetchEmailStats]);
