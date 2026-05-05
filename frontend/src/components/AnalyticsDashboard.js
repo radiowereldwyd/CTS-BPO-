@@ -70,7 +70,11 @@ export default function AnalyticsDashboard({ token }) {
     }
   }, [token]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 15000);
+    return () => clearInterval(iv);
+  }, [load]);
 
   if (loading) return <div style={{padding:40,textAlign:'center',color:'#64748b'}}>Loading analytics…</div>;
   if (error)   return <div style={{padding:40,textAlign:'center',color:'#ef4444'}}>Error: {error}</div>;

@@ -91,7 +91,7 @@ export default function SubcontractorHub({ token }) {
 
   useEffect(() => {
     load();
-    const iv = setInterval(load, 30000);
+    const iv = setInterval(load, 15000);
     return () => clearInterval(iv);
   }, [load]);
 

@@ -94,7 +94,7 @@ export default function TargetedScraper({ token }) {
 
   useEffect(() => {
     loadEmailStats();
-    const t = setInterval(loadEmailStats, 30000);
+    const t = setInterval(loadEmailStats, 15000);
     return () => clearInterval(t);
   }, []); // eslint-disable-line
 

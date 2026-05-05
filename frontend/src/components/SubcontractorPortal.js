@@ -54,7 +54,7 @@ function SubcontractorPortal({ user, token, onLogout }) {
 
   useEffect(() => {
     fetchAll();
-    const iv = setInterval(fetchAll, 30000);
+    const iv = setInterval(fetchAll, 15000);
     return () => clearInterval(iv);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);

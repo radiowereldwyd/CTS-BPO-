@@ -1060,7 +1060,7 @@ async function sendSubcontractorRecruitment({ name, email }) {
           <img src="${LOGO_B64}" alt="CTS BPO" style="height:40px;width:auto;">
         </td>
         <td style="text-align:right;vertical-align:middle;">
-          <p style="color:#94a3b8;font-size:12px;margin:0;">cts.bposolutions@gmail.com</p>
+          <p style="color:#94a3b8;font-size:12px;margin:0;">${REPLY_EMAIL}</p>
           <p style="color:#64748b;font-size:11px;margin:4px 0 0;">© ${new Date().getFullYear()} CTS BPO Solutions. All rights reserved.</p>
         </td>
       </tr>
@@ -1114,7 +1114,7 @@ async function sendSubcontractorReminder({ name, email, jobTitle, dueDate, jobId
     <p style="font-size:15px;color:#334155;">Kind regards,<br><strong>Calvin &amp; The CTS BPO Operations Team</strong></p>
   </td></tr>
   <tr><td style="background:#0f172a;padding:20px 40px;text-align:center;">
-    <p style="color:#94a3b8;font-size:12px;margin:0;">CTS BPO Solutions &nbsp;|&nbsp; cts.bposolutions@gmail.com</p>
+    <p style="color:#94a3b8;font-size:12px;margin:0;">CTS BPO Solutions &nbsp;|&nbsp; ${REPLY_EMAIL}</p>
     <p style="color:#64748b;font-size:11px;margin:6px 0 0;">Reply to this email to contact your operations manager.</p>
   </td></tr>
 </table></body></html>`;
@@ -1174,7 +1174,7 @@ We're quick — usually 24 to 48 hours — and our error rate is low. Could do a
 Just reply if you want to know more.
 
 Calvin
-cts.bposolutions@gmail.com`,
+${REPLY_EMAIL}`,
     },
     {
       subject: pick([`${co} — just a quick note`, `could we help with ${svc}?`, `question for ${co}`]),

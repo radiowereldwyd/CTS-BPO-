@@ -18,7 +18,11 @@ function Payments() {
   const [loading, setLoading] = useState(false);
   const [checkoutLink, setCheckoutLink] = useState(null);
 
-  useEffect(() => { loadHistory(); }, []);
+  useEffect(() => {
+    loadHistory();
+    const iv = setInterval(loadHistory, 15000);
+    return () => clearInterval(iv);
+  }, []); // eslint-disable-line
 
   async function loadHistory() {
     try {

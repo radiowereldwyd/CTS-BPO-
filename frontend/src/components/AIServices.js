@@ -54,7 +54,9 @@ export default function AIServices() {
 
   useEffect(() => {
     loadStatus();
-  }, []);
+    const iv = setInterval(loadStatus, 15000);
+    return () => clearInterval(iv);
+  }, []); // eslint-disable-line
 
   async function loadStatus() {
     try {

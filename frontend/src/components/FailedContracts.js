@@ -12,7 +12,7 @@ function FailedContracts({ token }) {
 
   useEffect(() => {
     fetchFailures();
-    const interval = setInterval(fetchFailures, 30000);
+    const interval = setInterval(fetchFailures, 15000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);

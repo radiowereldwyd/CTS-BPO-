@@ -1056,9 +1056,9 @@ async function processAIJobs() {
       let clientName  = 'Valued Client';
       try {
         const cr = await db.query(
-          `SELECT al.email, al.company_name
+          `SELECT al.contact_email AS email, al.company AS company_name
            FROM ai_leads al
-           JOIN contracts c ON c.client_id = al.id::text::integer
+           JOIN contracts c ON c.client_id = al.id
            WHERE c.id = $1`,
           [job.contract_id]
         ).catch(() => ({ rows: [] }));
@@ -1116,17 +1116,28 @@ async function runPaymentChase() {
     ? `https://${process.env.REPLIT_DEV_DOMAIN}`
     : (process.env.APP_URL || '');
 
-  // Helper: get client email + name for a job via its contract_id → ai_leads
+  // Helper: get client email + name for a job via its contract_id → contracts → ai_leads
   async function getClientInfo(contractId) {
     if (!contractId) return null;
     try {
+      // Try joining through contracts table first (proper path)
       const r = await db.query(
         `SELECT al.contact_email AS email, al.company AS name
          FROM ai_leads al
-         WHERE al.id = $1`,
+         JOIN contracts c ON c.client_id = al.id
+         WHERE c.id = $1`,
         [contractId]
       );
-      return r.rows[0] || null;
+      if (r.rows[0]) return r.rows[0];
+      // Fallback: try treating contract_id as a direct job contract reference
+      const r2 = await db.query(
+        `SELECT al.contact_email AS email, al.company AS name
+         FROM ai_leads al
+         JOIN subcontractor_jobs sj ON sj.contract_id = al.id::text
+         WHERE sj.id = $1`,
+        [contractId]
+      );
+      return r2.rows[0] || null;
     } catch { return null; }
   }
 

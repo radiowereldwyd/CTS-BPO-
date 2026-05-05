@@ -50,10 +50,15 @@ export default function ClientPortal() {
 
   useEffect(() => {
     if (!token || token === 'portal') { setError('Invalid access link.'); setLoading(false); return; }
-    fetch(`${API}/api/client/portal/${token}`)
-      .then(r => r.ok ? r.json() : r.text().then(t => { throw new Error(t); }))
-      .then(d => { setData(d); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
+    function loadPortal() {
+      fetch(`${API}/api/client/portal/${token}`)
+        .then(r => r.ok ? r.json() : r.text().then(t => { throw new Error(t); }))
+        .then(d => { setData(d); setLoading(false); })
+        .catch(e => { setError(e.message); setLoading(false); });
+    }
+    loadPortal();
+    const iv = setInterval(loadPortal, 15000);
+    return () => clearInterval(iv);
   }, [token]);
 
   async function handleUpload() {

@@ -1,11 +1,11 @@
 {
-  "sentToday": 756,
-  "todayDate": "Fri May 01 2026",
-  "savedAt": "2026-05-01T12:40:00.393Z",
-  "provider": "mailerlite",
+  "sentToday": 44,
+  "todayDate": "Tue May 05 2026",
+  "savedAt": "2026-05-05T13:45:23.013Z",
+  "provider": "gmail",
   "gmail": {
-    "sentToday": 343,
-    "todayDate": "Fri May 01 2026"
+    "sentToday": 5,
+    "todayDate": "Tue May 05 2026"
   },
   "mailjet": {
     "sentToday": 0,
