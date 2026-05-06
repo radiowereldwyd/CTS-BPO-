@@ -1522,8 +1522,10 @@ app.post('/api/targeted-scrape/send', requireAuth, requireAdmin, pdfUpload.singl
       `SELECT id, email, company FROM scraped_contacts WHERE id = ANY($1::int[])`,
       [ids]
     );
-    const contacts = result.rows;
-    if (!contacts.length) return res.status(404).json({ error: 'No matching contacts found' });
+    // Only send to contacts that have a valid email address
+    const contacts = result.rows.filter(c => c.email && c.email.trim().length > 0);
+    const skippedNoEmail = result.rows.length - contacts.length;
+    if (!contacts.length) return res.status(404).json({ error: 'None of the selected contacts have an email address' });
 
     const nodemailer = require('nodemailer');
     const GMAIL_USER     = process.env.GMAIL_USER || '';
@@ -1601,7 +1603,7 @@ app.post('/api/targeted-scrape/send', requireAuth, requireAdmin, pdfUpload.singl
       await new Promise(r => setTimeout(r, 4000)); // 4s between sends
     }
 
-    res.json({ ok: true, sent, failed, total: contacts.length });
+    res.json({ ok: true, sent, failed, total: contacts.length, skippedNoEmail });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

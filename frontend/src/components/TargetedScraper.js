@@ -210,7 +210,8 @@ export default function TargetedScraper({ token }) {
     setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   }
   function toggleAll() {
-    setSelected(selected.size === contacts.length ? new Set() : new Set(contacts.map(c => c.id)));
+    const withEmail = contacts.filter(c => c.email).map(c => c.id);
+    setSelected(selected.size === withEmail.length ? new Set() : new Set(withEmail));
   }
 
   function handleFile(file) { if (!file) return; setPdfFile(file); setPdfName(file.name); }
@@ -397,23 +398,40 @@ export default function TargetedScraper({ token }) {
                 </tr>
               </thead>
               <tbody>
-                {contacts.map(c => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9', background: selected.has(c.id) ? '#eef2ff' : 'transparent' }}>
-                    <td style={td}><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleContact(c.id)} /></td>
-                    <td style={{ ...td, fontWeight: 500, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.company || c.domain}</td>
-                    <td style={{ ...td, color: '#4f46e5' }}>{c.email}</td>
-                    <td style={{ ...td, color: '#64748b' }}>{c.domain}</td>
-                    <td style={td}>{c.business_type || '—'}</td>
-                    <td style={td}>{c.country || '—'}</td>
-                    <td style={td}>
-                      <span style={{
-                        padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
-                        background: c.status === 'contacted' ? '#dcfce7' : '#f1f5f9',
-                        color:      c.status === 'contacted' ? '#166534' : '#64748b',
-                      }}>{c.status}</span>
-                    </td>
-                  </tr>
-                ))}
+                {contacts.map(c => {
+                  const hasEmail = !!(c.email && c.email.trim());
+                  return (
+                    <tr key={c.id} style={{
+                      borderBottom: '1px solid #f1f5f9',
+                      background: !hasEmail ? '#fafafa' : selected.has(c.id) ? '#eef2ff' : 'transparent',
+                      opacity: hasEmail ? 1 : 0.45,
+                    }}>
+                      <td style={td}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(c.id)}
+                          onChange={() => hasEmail && toggleContact(c.id)}
+                          disabled={!hasEmail}
+                          title={hasEmail ? undefined : 'No email address — cannot send'}
+                        />
+                      </td>
+                      <td style={{ ...td, fontWeight: 500, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.company || c.domain}</td>
+                      <td style={{ ...td, color: hasEmail ? '#4f46e5' : '#94a3b8', fontStyle: hasEmail ? 'normal' : 'italic' }}>
+                        {hasEmail ? c.email : 'no email'}
+                      </td>
+                      <td style={{ ...td, color: '#64748b' }}>{c.domain}</td>
+                      <td style={td}>{c.business_type || '—'}</td>
+                      <td style={td}>{c.country || '—'}</td>
+                      <td style={td}>
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                          background: c.status === 'contacted' ? '#dcfce7' : '#f1f5f9',
+                          color:      c.status === 'contacted' ? '#166534' : '#64748b',
+                        }}>{c.status}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -508,7 +526,9 @@ export default function TargetedScraper({ token }) {
 
           {sendResult && (
             <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, background: '#f0fdf4', color: '#166534', fontSize: 13, fontWeight: 600 }}>
-              ✅ Sent to {sendResult.sent} contacts{sendResult.failed > 0 ? ` · ${sendResult.failed} failed` : ''}.
+              ✅ Sent to {sendResult.sent} contacts
+              {sendResult.failed > 0 ? ` · ${sendResult.failed} failed` : ''}
+              {sendResult.skippedNoEmail > 0 ? ` · ${sendResult.skippedNoEmail} skipped (no email)` : ''}.
             </div>
           )}
 
