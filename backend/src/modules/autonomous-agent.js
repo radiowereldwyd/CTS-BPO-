@@ -1124,6 +1124,44 @@ async function processAIJobs() {
 //   A) Auto-release payouts for delivered jobs older than 48h (cron-safe replacement for setTimeout)
 //   B) Send client payment reminders: day 3, day 7, day 14
 //   C) Flag jobs as overdue after 14 days with no client confirmation
+// ── Auto-purge bounced contacts ───────────────────────────────────────────
+// Permanently deletes bounced records from both tables once 10+ accumulate.
+// Keeps the database clean and stops bounce notifications filling the inbox.
+const BOUNCE_PURGE_THRESHOLD = 10;
+
+async function autoPurgeBounced() {
+  try {
+    // Count bounced records across both tables
+    const [leadsCount, scCount] = await Promise.all([
+      db.query(`SELECT COUNT(*) AS n FROM ai_leads        WHERE bounced_at IS NOT NULL OR status='bounced'`),
+      db.query(`SELECT COUNT(*) AS n FROM scraped_contacts WHERE bounced_at IS NOT NULL OR status='bounced'`),
+    ]);
+    const totalLeadsBounced = parseInt(leadsCount.rows[0]?.n || 0);
+    const totalScBounced    = parseInt(scCount.rows[0]?.n    || 0);
+    const total = totalLeadsBounced + totalScBounced;
+
+    if (total < BOUNCE_PURGE_THRESHOLD) return; // not enough to bother yet
+
+    // Permanently delete them from both tables
+    const [delLeads, delSc] = await Promise.all([
+      db.query(`DELETE FROM ai_leads        WHERE bounced_at IS NOT NULL OR status='bounced'`),
+      db.query(`DELETE FROM scraped_contacts WHERE bounced_at IS NOT NULL OR status='bounced'`),
+    ]);
+    const deletedLeads = delLeads.rowCount || 0;
+    const deletedSc    = delSc.rowCount    || 0;
+    const deletedTotal = deletedLeads + deletedSc;
+
+    await logActivity(
+      'bounce_process',
+      `Auto-purged ${deletedTotal} bounced contacts (${deletedLeads} leads + ${deletedSc} scraped) — inbox kept clean`,
+      'system', null, 'success'
+    );
+    console.log(`🗑️  [BOUNCE PURGE] Deleted ${deletedTotal} bounced records (threshold: ${BOUNCE_PURGE_THRESHOLD})`);
+  } catch (e) {
+    console.warn('[BOUNCE PURGE] Error:', e.message);
+  }
+}
+
 async function runPaymentChase() {
   if (!db.isConnected()) return;
 
@@ -1581,12 +1619,18 @@ async function startAgent() {
   });
   setTimeout(() => runPaymentChase().catch(console.error), 25000);
 
-  // Bounce processing every 20 minutes — delete bounce emails and blacklist failed addresses
+  // Bounce processing every 20 minutes — detect bounces, blacklist, then auto-purge
   cron.schedule('*/20 * * * *', () => {
-    gmailReader.processBounces().catch(e => logActivity('bounce_process', `Cron error: ${e.message}`, null, null, 'error'));
+    gmailReader.processBounces()
+      .then(() => autoPurgeBounced())
+      .catch(e => logActivity('bounce_process', `Cron error: ${e.message}`, null, null, 'error'));
   });
   // Run once on startup after 30s
-  setTimeout(() => gmailReader.processBounces().catch(console.error), 30000);
+  setTimeout(() => {
+    gmailReader.processBounces()
+      .then(() => autoPurgeBounced())
+      .catch(console.error);
+  }, 30000);
 
   // ── Continuous scraper (non-stop, no cron) ──
   // Starts 45s after boot, runs forever cycling through 675+ queries across 4 sources
@@ -1632,7 +1676,7 @@ async function triggerNow(task) {
     case 'contracts':         await assignContracts(); break;
     case 'ai_jobs':           await processAIJobs(); break;
     case 'payment_chase':     await runPaymentChase(); break;
-    case 'bounce_check':      await gmailReader.processBounces(); break;
+    case 'bounce_check':      await gmailReader.processBounces(); await autoPurgeBounced(); break;
     case 'prospect_scan':     await runJobLeadScan(); break;
     case 'prospect_outreach': await runJobLeadOutreach(); break;
     case 'ai_lead_outreach':       await runAiLeadOutreach(); break;
