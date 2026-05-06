@@ -19,8 +19,8 @@ const MAILJET_API_KEY    = process.env.MAILJET_API_KEY     || '';
 const MAILJET_SEC_KEY    = process.env.MAILJET_SECRET_KEY  || '';
 const MAILERLITE_API_KEY = process.env.MAILERLITE_API_KEY  || '';
 const BREVO_API_KEY      = process.env.BREVO_API_KEY        || '';
-const FROM_NAME       = 'Calvin Thomas';
-const FROM_EMAIL      = process.env.FROM_EMAIL || GMAIL_USER || 'cts.bposolutions@gmail.com';
+const FROM_NAME       = process.env.FROM_NAME  || 'CTS BPO';
+const FROM_EMAIL      = process.env.FROM_EMAIL || GMAIL_USER || 'cts.cybersolutions@gmail.com';
 const REPLY_EMAIL     = 'cts.cybersolutions@gmail.com';
 const WEBSITE         = 'cts.bposolutions@gmail.com';
 
