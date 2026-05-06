@@ -1301,58 +1301,65 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
     const session = webScraper.getTargetedSession();
     let contacts = [];
 
-    const kw       = req.query.keywords || session.keywords  || null;
-    const country  = req.query.country  || session.country   || null;
-    const industry = req.query.industry || session.industry  || null;
-
-    if (kw || country || industry) {
-      // NOTE: most records have null country/business_type — so we search populated fields
-      // (email, domain, company) for keywords and treat country/industry as soft filters
-      // (null records pass through — only records with a DIFFERENT value are excluded).
-      const conditions = [];
-      const params     = [];
-      let idx = 1;
-
+    // Session always takes priority — show contacts from the current/last scrape session
+    // Only fall back to global DB search if there is no session at all.
+    if (session.sessionId) {
+      const sourceTag = `targeted_${session.sessionId}`;
+      // Allow keyword sub-filter within the session (explicit query param only — never from session metadata)
+      const kw = req.query.keywords || null;
+      let q = `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, bpo_likely, bpo_provider, created_at
+               FROM scraped_contacts WHERE source = $1`;
+      const params = [sourceTag];
       if (kw) {
         const like = `%${kw.toLowerCase()}%`;
-        // Search all text fields including the always-populated email/domain/company
-        conditions.push(
-          `(LOWER(company)      LIKE $${idx}   OR LOWER(email)      LIKE $${idx+1}` +
-          ` OR LOWER(domain)    LIKE $${idx+2} OR LOWER(business_type) LIKE $${idx+3}` +
-          ` OR LOWER(COALESCE(snippet,''))    LIKE $${idx+4}` +
-          ` OR LOWER(COALESCE(query_used,'')) LIKE $${idx+5})`
-        );
-        params.push(like, like, like, like, like, like);
-        idx += 6;
+        q += ` AND (LOWER(company) LIKE $2 OR LOWER(email) LIKE $2 OR LOWER(domain) LIKE $2 OR LOWER(COALESCE(snippet,'')) LIKE $2)`;
+        params.push(like);
       }
-      if (country) {
-        // Include records where country matches OR is unknown (null/empty)
-        conditions.push(`(country IS NULL OR country = '' OR LOWER(country) LIKE $${idx})`);
-        params.push(`%${country.toLowerCase()}%`);
-        idx++;
-      }
-      if (industry) {
-        // Include records where business_type matches OR is unknown
-        conditions.push(`(business_type IS NULL OR business_type = '' OR LOWER(business_type) LIKE $${idx})`);
-        params.push(`%${industry.toLowerCase()}%`);
-        idx++;
-      }
+      q += ` ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`;
+      contacts = (await db.query(q, params)).rows;
+    } else {
+      // No session — pure DB search using EXPLICIT query params only (no session metadata bleed)
+      const kw       = req.query.keywords || null;
+      const country  = req.query.country  || null;
+      const industry = req.query.industry || null;
 
-      const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-      const result = await db.query(
-        `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, bpo_likely, bpo_provider, created_at
-         FROM scraped_contacts ${where} ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`,
-        params
-      );
-      contacts = result.rows;
-    } else if (session.sessionId) {
-      const sourceTag = `targeted_${session.sessionId}`;
-      const result = await db.query(
-        `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, bpo_likely, bpo_provider, created_at
-         FROM scraped_contacts WHERE source = $1 ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`,
-        [sourceTag]
-      );
-      contacts = result.rows;
+      if (kw || country || industry) {
+        const conditions = [];
+        const params     = [];
+        let idx = 1;
+
+        if (kw) {
+          const like = `%${kw.toLowerCase()}%`;
+          conditions.push(
+            `(LOWER(company) LIKE $${idx} OR LOWER(email) LIKE $${idx+1}` +
+            ` OR LOWER(domain) LIKE $${idx+2} OR LOWER(business_type) LIKE $${idx+3}` +
+            ` OR LOWER(COALESCE(snippet,'')) LIKE $${idx+4}` +
+            ` OR LOWER(COALESCE(query_used,'')) LIKE $${idx+5})`
+          );
+          params.push(like, like, like, like, like, like);
+          idx += 6;
+        }
+        if (country) {
+          // STRICT: only records where country actually matches — don't include null-country records
+          conditions.push(`LOWER(country) LIKE $${idx}`);
+          params.push(`%${country.toLowerCase()}%`);
+          idx++;
+        }
+        if (industry) {
+          // STRICT: only records where business_type actually matches
+          conditions.push(`LOWER(business_type) LIKE $${idx}`);
+          params.push(`%${industry.toLowerCase()}%`);
+          idx++;
+        }
+
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+        const result = await db.query(
+          `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, bpo_likely, bpo_provider, created_at
+           FROM scraped_contacts ${where} ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`,
+          params
+        );
+        contacts = result.rows;
+      }
     }
 
     res.json({ session, contacts });

@@ -927,9 +927,20 @@ async function runTargetedScrape({ country, industry, keywords, limit = 100, ses
     // ── SerpAPI ──────────────────────────────────────────────────────────────
     const SERPAPI_KEY = process.env.SERPAPI_KEY;
     if (SERPAPI_KEY) {
+      // Map country names to Google country codes (gl parameter) for geo-targeted results
+      const COUNTRY_GL = {
+        'south africa': 'za', 'nigeria': 'ng', 'kenya': 'ke', 'ghana': 'gh',
+        'united states': 'us', 'usa': 'us', 'united kingdom': 'gb', 'uk': 'gb',
+        'australia': 'au', 'canada': 'ca', 'germany': 'de', 'netherlands': 'nl',
+        'singapore': 'sg', 'uae': 'ae', 'dubai': 'ae', 'india': 'in',
+        'new zealand': 'nz', 'ireland': 'ie', 'france': 'fr', 'spain': 'es',
+      };
+      const glCode = country ? (COUNTRY_GL[(country || '').toLowerCase()] || null) : null;
       try {
+        const serpParams = { q, api_key: SERPAPI_KEY, engine: 'google', num: 100, hl: 'en' };
+        if (glCode) serpParams.gl = glCode;
         const res = await axios.get('https://serpapi.com/search', {
-          params: { q, api_key: SERPAPI_KEY, engine: 'google', num: 100, hl: 'en' },
+          params: serpParams,
           timeout: 20000,
         });
         const results = res.data.organic_results || [];

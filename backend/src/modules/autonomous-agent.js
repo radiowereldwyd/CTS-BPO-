@@ -1679,6 +1679,84 @@ async function startAgent() {
   cron.schedule('0 8 * * *', () => {
     logActivity('heartbeat', `Daily check — leads: ${agentState.totalLeadsFound}, emails: ${agentState.totalEmailsSent}, apps: ${agentState.totalAppProcessed}, contracts: ${agentState.totalContractsAssigned}`);
   });
+
+  // ── System health monitor every 15 minutes — auto-detects and logs issues ──
+  cron.schedule('*/15 * * * *', () => {
+    runSystemHealthCheck().catch(e => console.error('[MONITOR] Health check error:', e.message));
+  });
+  setTimeout(() => runSystemHealthCheck().catch(() => {}), 60_000);
+}
+
+// ── Auto system health monitor ───────────────────────────────────────────────
+async function runSystemHealthCheck() {
+  const issues  = [];
+  const fixes   = [];
+
+  // 1. Check email provider health
+  try {
+    const stats = emailOutreach.getOutreachStats ? emailOutreach.getOutreachStats() : null;
+    const mode  = emailOutreach.getSenderMode ? emailOutreach.getSenderMode() : null;
+    if (!mode) {
+      issues.push('⚠️ All email providers are broken — no emails can be sent');
+      // Auto-fix: try resetting broken providers so they can be retried
+      if (emailOutreach.resetBrokenProviders) {
+        emailOutreach.resetBrokenProviders();
+        fixes.push('🔧 Auto-reset broken email providers — will retry on next send');
+      }
+    } else {
+      const cap  = { gmail: 500, brevo: 300, mailjet: 299, mailgun: 99, mailerlite: 399 }[mode] || 500;
+      const sent = stats?.sent || 0;
+      const pct  = Math.round((sent / cap) * 100);
+      if (pct >= 99) {
+        issues.push(`📧 ${mode} at daily limit (${sent}/${cap}) — provider will auto-switch tomorrow`);
+      }
+    }
+  } catch (e) {
+    issues.push(`Email health check failed: ${e.message}`);
+  }
+
+  // 2. Check database connectivity
+  try {
+    await db.query('SELECT 1');
+  } catch (e) {
+    issues.push(`🔴 Database connection error: ${e.message}`);
+  }
+
+  // 3. Check for bounced email spike (>20% bounce rate in last 100 sends)
+  try {
+    const res = await db.query(
+      `SELECT COUNT(*) as bounced FROM scraped_contacts WHERE bounced_at >= NOW() - INTERVAL '24 hours'`
+    );
+    const bounced = parseInt(res.rows[0].bounced) || 0;
+    if (bounced > 50) {
+      issues.push(`📭 High bounce rate: ${bounced} bounced emails in the last 24h — check sender reputation`);
+    }
+  } catch {}
+
+  // 4. Check scraper is running
+  try {
+    const scraperStats = webScraper.getContinuousStats ? webScraper.getContinuousStats() : null;
+    if (scraperStats && scraperStats.lastRunAt) {
+      const lastRun = new Date(scraperStats.lastRunAt);
+      const minsAgo = Math.floor((Date.now() - lastRun.getTime()) / 60000);
+      if (minsAgo > 120) {
+        issues.push(`🕷️ Scraper has not run in ${minsAgo} minutes — may be stalled`);
+      }
+    }
+  } catch {}
+
+  // 5. Log summary
+  if (issues.length > 0) {
+    const msg = `System Monitor: ${issues.length} issue(s) detected\n${issues.join('\n')}${fixes.length ? '\n' + fixes.join('\n') : ''}`;
+    await logActivity('system_monitor', msg, null, null, issues.length > 0 && fixes.length === issues.length ? 'success' : 'warning');
+    console.warn(`[MONITOR] 🔍 ${issues.length} issue(s):\n${issues.join('\n')}`);
+    if (fixes.length) console.log(`[MONITOR] 🔧 Auto-fixes applied:\n${fixes.join('\n')}`);
+  }
+  // Always log a clean-health event once per hour (on the 00 minute)
+  const min = new Date().getMinutes();
+  if (issues.length === 0 && min < 15) {
+    await logActivity('system_monitor', `✅ All systems healthy — email: ${emailOutreach.getSenderMode?.() || 'none'}, DB: connected`).catch(() => {});
+  }
 }
 
 // ── Manual trigger (admin API) ─────────────────────────────────────────────

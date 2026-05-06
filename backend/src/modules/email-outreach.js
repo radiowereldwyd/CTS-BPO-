@@ -1809,4 +1809,6 @@ module.exports = {
   isEmailPaused,
   setEmailPaused,
   getDailyStats: () => { checkDailyReset(); const mode = getSenderMode(); return { sent: dailySentCount, cap: getProviderCap(), stopAt: getStopAt(), mode, paused: emailPaused, broken: [..._brokenProviders] }; },
+  getOutreachStats: () => { checkDailyReset(); return { sent: dailySentCount, mode: getSenderMode(), broken: [..._brokenProviders] }; },
+  resetBrokenProviders: () => { _brokenProviders.clear(); console.log('[EMAIL] 🔧 Auto-monitor reset broken providers — will retry all on next send'); },
 };
