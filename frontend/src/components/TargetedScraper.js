@@ -121,84 +121,99 @@ export default function TargetedScraper({ token }) {
     } catch { return []; }
   }, []); // eslint-disable-line
 
-  async function handleSearch() {
-    if (!country && !industry && !keywords.trim()) {
-      setError('Please fill in at least one field.'); return;
-    }
-    setError('');
-    setSearched(true);
-    setSelected(new Set());
-    await pollStatus();
-  }
-
-  async function handleActivate() {
+  // ── Single unified pipeline: Scrape → AI Compose → Ready to Send ─────────
+  async function handleScrapeAndCompose() {
     if (!country && !industry && !keywords.trim()) {
       setError('Please fill in at least one field.'); return;
     }
     setError('');
     setSendResult(null);
-    setLoading(true);
+    setAiLoading(true);
     setSearched(true);
     setSelected(new Set());
+
+    // Step 1 — kick off a fresh scrape
+    setAiStatus('🔍 Starting targeted scrape for new contacts…');
+    setLoading(true);
     try {
       await axios.post(`${API}/api/targeted-scrape/start`,
         { country, industry, keywords, limit },
         { headers: authHeader }
       );
-      pollStatus();
-      pollRef.current = setInterval(pollStatus, 4000);
     } catch (err) {
       const msg = err.response?.data?.error || err.message;
-      if (msg.includes('already running')) {
-        pollStatus();
-      } else {
+      if (!msg.includes('already running')) {
         setError(msg);
+        setLoading(false);
+        setAiLoading(false);
+        setAiStatus('');
+        return;
       }
-      setLoading(false);
+      // already running — just poll
     }
-  }
 
-  // ── AI Compose & Send All ─────────────────────────────────────────────────
-  async function handleAiCompose() {
-    if (!country && !industry && !keywords.trim()) {
-      setError('Please fill in at least one search field first.'); return;
-    }
-    setError('');
-    setAiStatus('Searching contacts…');
-    setAiLoading(true);
-    setSendResult(null);
+    // Step 2 — poll until scrape finishes, updating status as contacts arrive
+    setAiStatus('⏳ Scraping in progress — discovering contacts…');
+    await new Promise(resolve => {
+      const interval = setInterval(async () => {
+        const data = await pollStatus();
+        const kw  = kwRef.current;
+        const co  = countryRef.current;
+        const in_ = industryRef.current;
+        const params = new URLSearchParams();
+        if (kw)  params.set('keywords', kw);
+        if (co)  params.set('country', co);
+        if (in_) params.set('industry', in_);
+        try {
+          const res = await axios.get(`${API}/api/targeted-scrape/status?${params.toString()}`, { headers: authHeader });
+          if (!res.data.session?.active) {
+            clearInterval(interval);
+            setLoading(false);
+            resolve(data);
+          } else {
+            const n = res.data.session?.found || 0;
+            setAiStatus(`⏳ Scraping in progress — ${n} contacts found so far…`);
+          }
+        } catch {
+          clearInterval(interval);
+          setLoading(false);
+          resolve(data);
+        }
+      }, 4000);
+    });
 
-    // 1. Run the search to get fresh contacts
-    setSearched(true);
+    // Step 3 — search the database now (scrape just finished)
+    setAiStatus('📋 Loading discovered contacts…');
     const found = await pollStatus();
+
     if (!found.length) {
       setAiLoading(false);
       setAiStatus('');
-      setError('No contacts found — try "Scrape + Search" to discover new ones.');
+      setError('No contacts found. Try different keywords, country or industry.');
       return;
     }
 
-    // 2. Auto-select all found contacts
-    setSelected(new Set(found.map(c => c.id)));
+    // Step 4 — auto-select all eligible contacts
+    const eligible = found.filter(c => c.email && c.status !== 'bounced');
+    setSelected(new Set(eligible.map(c => c.id)));
 
-    // 3. Ask Gemini to write the email
-    setAiStatus('AI is writing your email…');
+    // Step 5 — AI writes the email
+    setAiStatus(`🤖 AI is writing a personalised email for ${eligible.length} contacts…`);
     try {
       const res = await axios.post(`${API}/api/ai/compose-email`,
-        { industry, country, contactCount: found.length },
+        { industry, country, contactCount: eligible.length },
         { headers: authHeader }
       );
       setSubject(res.data.subject || subject);
       setBody(res.data.body || body);
-      setAiStatus(`✅ AI drafted an email for ${found.length} contacts — review below and click Send.`);
-    } catch (err) {
-      // Fallback: keep default template, still select all contacts
-      setAiStatus(`✅ Found ${found.length} contacts — review the default template below and click Send.`);
+      setAiStatus(`✅ Ready — ${eligible.length} contacts selected, email drafted. Review and click Send All.`);
+    } catch {
+      setAiStatus(`✅ Ready — ${eligible.length} contacts selected. Review the email below and click Send All.`);
     }
 
     setAiLoading(false);
 
-    // 4. Scroll to the send panel
+    // Step 6 — scroll to send panel
     setTimeout(() => sendRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
   }
 
@@ -291,39 +306,30 @@ export default function TargetedScraper({ token }) {
             placeholder='Type any word — e.g. specials, discount, healthcare, schools'
             style={inputStyle}
             disabled={isRunning}
-            onKeyDown={e => { if (e.key === 'Enter') handleSearch(); }}
+            onKeyDown={e => { if (e.key === 'Enter') handleScrapeAndCompose(); }}
           />
         </label>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button onClick={handleSearch} disabled={isRunning || loading || aiLoading} style={{ ...btnPrimary, background: '#0ea5e9' }}>
-            🔍 Search Database
-          </button>
-          <button onClick={handleActivate} disabled={isRunning || loading || aiLoading} style={btnPrimary}>
-            {isRunning ? '⏳ Scraping in Progress…' : '🚀 Scrape + Search (adds new contacts)'}
-          </button>
-
-          {/* ── AI Button ─────────────────────────────────────────────── */}
           <button
-            onClick={handleAiCompose}
-            disabled={isRunning || loading || aiLoading}
+            onClick={handleScrapeAndCompose}
+            disabled={aiLoading || loading}
             style={{
               ...btnPrimary,
-              background: aiLoading ? '#7c3aed' : 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
-              boxShadow: aiLoading ? 'none' : '0 2px 8px rgba(124,58,237,0.35)',
-              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '11px 24px',
+              fontSize: 15,
+              background: aiLoading
+                ? '#7c3aed'
+                : 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 60%, #0ea5e9 100%)',
+              boxShadow: aiLoading ? 'none' : '0 3px 12px rgba(99,102,241,0.4)',
+              display: 'flex', alignItems: 'center', gap: 8,
+              letterSpacing: '0.01em',
             }}
           >
             {aiLoading
-              ? <><span style={spinner} />AI Working…</>
-              : <>🤖 AI Compose &amp; Send All</>}
+              ? <><span style={spinner} />Working…</>
+              : <>🤖 Scrape, Compose &amp; Send</>}
           </button>
-
-          {isRunning && (
-            <span style={{ color: '#64748b', fontSize: 13 }}>
-              Found {foundCount} / {session?.limit} new contacts…
-            </span>
-          )}
         </div>
 
         {/* AI status message */}
