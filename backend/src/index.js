@@ -1519,6 +1519,28 @@ app.post('/api/targeted-scrape/bpo-partner-scan', requireAuth, async (req, res) 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/email/test — send a test email via the active provider (admin only)
+app.post('/api/email/test', requireAuth, async (req, res) => {
+  try {
+    const { to } = req.body;
+    const target = to || 'cts.cybersolutions@gmail.com';
+    const { sendMail, getSenderMode } = require('./modules/email-outreach');
+    const mode = getSenderMode();
+    const result = await sendMail({
+      to: target,
+      subject: `✅ CTS BPO — Email Test (${mode || 'unknown'})`,
+      html: `<div style="font-family:sans-serif;max-width:540px;margin:0 auto;padding:24px">
+        <h2 style="color:#0f766e">CTS BPO Email System — Test Successful</h2>
+        <p>This is a test email sent via <strong>${mode || 'unknown'}</strong>.</p>
+        <p>If you received this, your email provider is configured correctly and ready to send outreach emails.</p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0"/>
+        <p style="color:#64748b;font-size:13px">Sent at ${new Date().toUTCString()}</p>
+      </div>`,
+    });
+    res.json({ ok: true, mode, to: target, result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/ai/compose-email — use Gemini to draft a cold outreach email
 app.post('/api/ai/compose-email', requireAuth, async (req, res) => {
   try {
