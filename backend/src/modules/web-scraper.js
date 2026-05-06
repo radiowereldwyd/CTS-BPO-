@@ -15,11 +15,13 @@
  *   - At default 15 queries × 4 runs/day = 60/day × $0.092 ≈ $5.52/day → well within $200/mo credit.
  */
 
-const axios   = require('axios');
-const cheerio = require('cheerio');
-const fs      = require('fs');
-const path    = require('path');
-const db      = require('../db');
+const axios        = require('axios');
+const cheerio      = require('cheerio');
+const fs           = require('fs');
+const path         = require('path');
+const db           = require('../db');
+const emailVerifier  = require('./email-verifier');
+const prospectScorer = require('./prospect-scorer');
 
 // ── Stats persistence — survives backend restarts ────────────────────────────
 const STATS_FILE    = path.join(__dirname, '../../data/scraper-stats.json');
@@ -222,6 +224,8 @@ async function ensureTable() {
       query_used      TEXT,
       snippet         TEXT,
       status          TEXT DEFAULT 'new',
+      mx_verified     BOOLEAN DEFAULT NULL,
+      prospect_score  INTEGER DEFAULT 0,
       outreach_sent_at  TIMESTAMPTZ,
       followup1_sent_at TIMESTAMPTZ,
       followup2_sent_at TIMESTAMPTZ,
@@ -232,6 +236,49 @@ async function ensureTable() {
   `);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_sc_status ON scraped_contacts(status)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_sc_domain ON scraped_contacts(domain)`);
+  // Migrations — add new columns to existing tables first, THEN create indexes on them
+  await db.query(`ALTER TABLE scraped_contacts ADD COLUMN IF NOT EXISTS mx_verified    BOOLEAN DEFAULT NULL`).catch(() => {});
+  await db.query(`ALTER TABLE scraped_contacts ADD COLUMN IF NOT EXISTS prospect_score INTEGER DEFAULT 0`).catch(() => {});
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_sc_score  ON scraped_contacts(prospect_score DESC)`).catch(() => {});
+}
+
+// ── Background MX verification + scoring pass ────────────────────────────────
+// Runs async after each scrape cycle — verifies domains and scores contacts.
+// Does NOT block the scraper; non-critical path.
+let _mxBatchRunning = false;
+async function runMxScoringBatch({ limit = 60 } = {}) {
+  if (_mxBatchRunning) return;
+  _mxBatchRunning = true;
+  try {
+    // Pick unverified contacts that haven't been outreached yet
+    const rows = await db.query(
+      `SELECT id, email, domain, company, business_type, source, snippet, query_used, city, country
+       FROM scraped_contacts
+       WHERE mx_verified IS NULL AND status = 'new'
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    if (rows.rows.length === 0) { _mxBatchRunning = false; return; }
+
+    let verified = 0, failed = 0;
+    for (const c of rows.rows) {
+      const domain = c.domain || (c.email || '').split('@')[1];
+      if (!domain) continue;
+      const ok    = await emailVerifier.hasMxRecords(domain);
+      const score = prospectScorer.scoreContact({ ...c, mx_verified: ok });
+      await db.query(
+        `UPDATE scraped_contacts SET mx_verified=$1, prospect_score=$2, updated_at=NOW() WHERE id=$3`,
+        [ok, score, c.id]
+      ).catch(() => {});
+      if (ok) verified++; else failed++;
+    }
+    console.log(`[MX] Batch verified ${rows.rows.length} contacts — ✅ ${verified} valid, ❌ ${failed} no-MX`);
+  } catch (err) {
+    console.warn('[MX] Scoring batch error:', err.message);
+  } finally {
+    _mxBatchRunning = false;
+  }
 }
 
 // ── Store results ────────────────────────────────────────────────────────────
@@ -766,6 +813,11 @@ async function runContinuous(onUpdate) {
       savePersistedStats(_continuousStats);
     }
 
+    // Every 20 queries, fire off an async MX verification + scoring pass on unprocessed contacts
+    if (_continuousStats.totalQueries % 20 === 0) {
+      runMxScoringBatch({ limit: 40 }).catch(() => {});
+    }
+
     if (onUpdate) onUpdate({ type: 'done', ...pair, found: realFound });
 
     // Rate-appropriate delay per source
@@ -940,6 +992,8 @@ module.exports = {
   getStats,
   buildEmailVariants,
   extractDomain,
+  // MX verification + scoring
+  runMxScoringBatch,
   // Continuous mode
   runContinuous,
   stopContinuous,

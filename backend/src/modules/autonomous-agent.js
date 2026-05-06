@@ -59,11 +59,12 @@ function saveOutreachStats(stats) {
 const { v4: uuidv4 } = require('uuid');
 const db         = require('../db');
 const auditLogger = require('./audit-logger');
-const emailOutreach = require('./email-outreach');
-const aiProcessor   = require('./ai-job-processor');
-const gmailReader   = require('./gmail-reader');
-const jobSearch     = require('./job-search');
-const webScraper    = require('./web-scraper');
+const emailOutreach  = require('./email-outreach');
+const aiProcessor    = require('./ai-job-processor');
+const gmailReader    = require('./gmail-reader');
+const jobSearch      = require('./job-search');
+const webScraper     = require('./web-scraper');
+const emailAnalytics = require('./email-analytics');
 
 const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 const APP_URL     = process.env.APP_URL || 'https://your-app.replit.app';
@@ -605,19 +606,21 @@ async function runScrapedContactsOutreach() {
   const rows = await db.query(`
     SELECT * FROM (
       SELECT DISTINCT ON (domain)
-        id, company, email, domain, business_type, city, country, source, snippet, query_used, created_at
+        id, company, email, domain, business_type, city, country, source,
+        snippet, query_used, mx_verified, prospect_score, created_at
       FROM scraped_contacts
       WHERE status = 'new'
         AND email IS NOT NULL
         AND bounced_at IS NULL
         AND domain IS NOT NULL
+        AND (mx_verified IS NULL OR mx_verified = TRUE)
       ORDER BY domain,
         CASE WHEN email LIKE 'info@%' THEN 0
              WHEN email LIKE 'contact@%' THEN 1
              ELSE 2 END,
         created_at DESC
     ) newest
-    ORDER BY created_at DESC
+    ORDER BY COALESCE(prospect_score, 0) DESC, created_at DESC
     LIMIT 20
   `).catch(() => ({ rows: [] }));
 
@@ -1486,14 +1489,23 @@ async function cleanupExistingContacts() {
 
 async function startAgent() {
   await ensureTables();
+  // Ensure scraped_contacts has new intelligence columns (mx_verified, prospect_score)
+  // Must run BEFORE any crons or queries reference these columns
+  await webScraper.ensureTable().catch(e => console.warn('[AGENT] webScraper.ensureTable():', e.message));
   agentState.running = true;
   agentState.startedAt = new Date().toISOString();
+
+  // Ensure email analytics tables exist (non-blocking)
+  emailAnalytics.ensureTables().catch(e => console.warn('[ANALYTICS] Table init error:', e.message));
 
   await logActivity('agent_start', `CTS BPO Autonomous AI Agent started — all systems active`);
   console.log('🤖 CTS BPO Autonomous AI Agent — ONLINE');
 
   // Clean up existing duplicate domain records
   setTimeout(() => cleanupExistingContacts().catch(console.error), 3_000);
+
+  // Run initial MX scoring batch on any unverified contacts already in DB
+  setTimeout(() => webScraper.runMxScoringBatch({ limit: 100 }).catch(() => {}), 35_000);
 
   // Run immediately on startup (staggered to avoid hammering)
   setTimeout(() => runLeadSearch().catch(console.error),                  5_000);

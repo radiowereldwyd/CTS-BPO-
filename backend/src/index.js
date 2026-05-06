@@ -22,6 +22,7 @@ const { requireAuth, requireAdmin } = require('./middleware/auth');
 const autonomousAgent = require('./modules/autonomous-agent');
 const webScraper      = require('./modules/web-scraper');
 const clientPortalRouter = require('./routes/client-portal');
+const emailAnalytics  = require('./modules/email-analytics');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -1734,6 +1735,37 @@ app.get('/api/subcontractors/performance', requireAuth, async (req, res) => {
             : parseFloat(p.avg_quality||0) >= 75 ? 'Silver' : 'Bronze',
       })),
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Email open tracking pixel ─────────────────────────────────────────────────
+// Public — no auth. Returns a 1×1 transparent GIF and records the open event.
+const PIXEL_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+app.get('/t/o/:token', async (req, res) => {
+  res.set({ 'Content-Type': 'image/gif', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' });
+  res.end(PIXEL_GIF);
+  emailAnalytics.recordOpen(req.params.token).catch(() => {});
+});
+
+// ── Email click redirect ───────────────────────────────────────────────────────
+// Public — no auth. Records click then redirects to the original URL.
+app.get('/t/c/:token', async (req, res) => {
+  emailAnalytics.recordClick(req.params.token).catch(() => {});
+  const target = req.query.u;
+  if (target) {
+    res.redirect(302, decodeURIComponent(target));
+  } else {
+    res.redirect(302, 'https://www.ctsbposolutions.com');
+  }
+});
+
+// ── Email analytics API ───────────────────────────────────────────────────────
+app.get('/api/analytics/email', requireAuth, async (req, res) => {
+  try {
+    const summary = await emailAnalytics.getPerformanceSummary();
+    res.json(summary);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

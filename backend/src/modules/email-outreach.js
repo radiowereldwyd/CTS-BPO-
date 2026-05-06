@@ -4,9 +4,10 @@
  * Sends via Gmail SMTP (App Password). Falls back to console log when unconfigured.
  */
 
-const nodemailer  = require('nodemailer');
-const axios       = require('axios');
-const auditLogger = require('./audit-logger');
+const nodemailer     = require('nodemailer');
+const axios          = require('axios');
+const auditLogger    = require('./audit-logger');
+const emailAnalytics = require('./email-analytics');
 
 const GMAIL_USER      = process.env.GMAIL_USER         || process.env.SMTP_USER || '';
 const GMAIL_APP_PASS  = (process.env.GMAIL_APP_PASSWORD  || process.env.SMTP_PASS || '').replace(/\s+/g, '');
@@ -1149,6 +1150,35 @@ ${bodyHtml}
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+// ── Rotating value propositions — one line injected into every outreach email ──
+const VALUE_PROPS = [
+  'We cut admin costs by 40–60% — same output, fraction of the headcount.',
+  '48-hour turnaround on most jobs. Faster than an in-house hire, for less.',
+  'No staff costs, no benefits, no office space — just clean work delivered.',
+  'Quality-checked twice before it leaves us. Error rate under 1%.',
+  'From overflow tasks to full outsourced departments — we scale with you.',
+  'We\'ve processed 10,000+ documents and data entries. The system is built.',
+  'Most clients recover our fee in the first month just from time saved.',
+  'South Africa-based team — native English, Western business hours if needed.',
+  'We work quietly in the background so your team can focus on what matters.',
+  'One point of contact. Direct communication. No account manager overhead.',
+  'Flexible pricing — pay per task or lock in a monthly rate. No minimums.',
+  'Clients typically see 3-5× ROI within the first 90 days.',
+];
+
+function pickValueProp() { return VALUE_PROPS[Math.floor(Math.random() * VALUE_PROPS.length)]; }
+
+// Build HTML body paragraphs from plain text + inject value prop before pixel
+function buildTrackedHtml(plainBody, valueProp, pixelHtml) {
+  const bodyLines = plainBody.split('\n').map(l =>
+    l.trim() ? `<p style="margin:0 0 14px">${esc(l)}</p>` : '<p style="margin:0 0 14px">&nbsp;</p>'
+  ).join('\n');
+  const vpHtml = valueProp
+    ? `<p style="margin:18px 0 14px;padding:10px 14px;background:#f0f9ff;border-left:3px solid #0ea5e9;color:#0f172a;font-size:13px;font-style:italic;border-radius:0 6px 6px 0">${esc(valueProp)}</p>`
+    : '';
+  return humanEmailHtml(bodyLines + vpHtml + (pixelHtml || ''));
+}
+
 // ── Cold outreach — 8 rotating human variants ───────────────────────────────
 async function sendClientColdOutreach({ name, company, email, jobType, city, country }) {
   const co  = esc(company || name || '');
@@ -1266,14 +1296,26 @@ CTS BPO Solutions`,
     },
   ];
 
-  const v = pick(variants);
-  const text = v.body;
-  const html = humanEmailHtml(v.body.split('\n').map(l => l.trim() ? `<p style="margin:0 0 14px">${esc(l)}</p>` : '<p style="margin:0 0 14px">&nbsp;</p>').join('\n'));
+  const variantIdx = await emailAnalytics.pickBestVariant(variants, 'cold_outreach');
+  const v          = variants[variantIdx];
+  const valueProp  = pickValueProp();
+
+  const token      = await emailAnalytics.createTrackingToken({
+    email, domain: email.split('@')[1] || null,
+    template: 'cold_outreach', variantId: variantIdx,
+  });
+  const pixelUrl  = emailAnalytics.openPixelUrl(token);
+  const pixelHtml = pixelUrl
+    ? `<img src="${pixelUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;opacity:0.01">`
+    : '';
+
+  const text = v.body + (valueProp ? `\n\n— ${valueProp}` : '');
+  const html = buildTrackedHtml(v.body, valueProp, pixelHtml);
 
   const _r = await sendMail({ to: email, subject: v.subject, text, html });
   if (_r.preview) { console.log('[EMAIL STUB] Cold outreach →', email); return { sent: false, simulated: true, to: email }; }
   if (_r.skipped || _r.error) return { sent: false, allProvidersBroken: !!_r.allProvidersBroken, to: email };
-  return { sent: true, to: email };
+  return { sent: true, to: email, variantId: variantIdx, token };
 }
 
 // ── Follow-ups — 6 rotating human variants ──────────────────────────────────
@@ -1358,14 +1400,26 @@ ${REPLY_EMAIL}`,
     },
   ];
 
-  const v = pick(variants);
-  const text = v.body;
-  const html = humanEmailHtml(v.body.split('\n').map(l => l.trim() ? `<p style="margin:0 0 14px">${esc(l)}</p>` : '<p style="margin:0 0 14px">&nbsp;</p>').join('\n'));
+  const variantIdx = await emailAnalytics.pickBestVariant(variants, 'followup');
+  const v          = variants[variantIdx];
+  const valueProp  = pickValueProp();
+
+  const token      = await emailAnalytics.createTrackingToken({
+    email, domain: email.split('@')[1] || null,
+    template: 'followup', variantId: variantIdx,
+  });
+  const pixelUrl  = emailAnalytics.openPixelUrl(token);
+  const pixelHtml = pixelUrl
+    ? `<img src="${pixelUrl}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;opacity:0.01">`
+    : '';
+
+  const text = v.body + (valueProp ? `\n\n— ${valueProp}` : '');
+  const html = buildTrackedHtml(v.body, valueProp, pixelHtml);
 
   const _r = await sendMail({ to: email, subject: v.subject, text, html });
   if (_r.preview) { console.log('[EMAIL STUB] Follow-up →', email, `(#${followUpNumber})`); return { sent: false, simulated: true, to: email }; }
   if (_r.skipped || _r.error) return { sent: false, to: email };
-  return { sent: true, to: email };
+  return { sent: true, to: email, variantId: variantIdx, token };
 }
 
 async function sendSubcontractorAcknowledgment({ name, email, amount }) {

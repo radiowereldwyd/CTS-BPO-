@@ -147,6 +147,7 @@ export default function AIAgentDashboard({ token }) {
   const [triggerMsg, setTriggerMsg] = useState('');
   const [loading, setLoading]       = useState(true);
   const [emailStats, setEmailStats] = useState(null);
+  const [emailAnalytics, setEmailAnalytics] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const feedRef  = useRef(null);
   const tokenRef = useRef(token);
@@ -176,24 +177,35 @@ export default function AIAgentDashboard({ token }) {
       setEmailStats(data);
     } catch {}
   };
+  const doFetchEmailAnalytics = async () => {
+    try {
+      const h = { Authorization: `Bearer ${tokenRef.current}` };
+      const data = await fetch(`${API}/api/analytics/email`, { headers: h }).then(r => r.json());
+      setEmailAnalytics(data);
+    } catch {}
+  };
 
   // Store latest versions in refs so the interval callbacks always call the current function
-  const liveRef       = useRef(doFetchLive);
-  const activityRef   = useRef(doFetchActivity);
-  const emailStatsRef = useRef(doFetchEmailStats);
-  liveRef.current       = doFetchLive;
-  activityRef.current   = doFetchActivity;
-  emailStatsRef.current = doFetchEmailStats;
+  const liveRef          = useRef(doFetchLive);
+  const activityRef      = useRef(doFetchActivity);
+  const emailStatsRef    = useRef(doFetchEmailStats);
+  const analyticsRef     = useRef(doFetchEmailAnalytics);
+  liveRef.current          = doFetchLive;
+  activityRef.current      = doFetchActivity;
+  emailStatsRef.current    = doFetchEmailStats;
+  analyticsRef.current     = doFetchEmailAnalytics;
 
   // Set up intervals ONCE on mount — never cleared until unmount
   useEffect(() => {
     liveRef.current();
     activityRef.current();
     emailStatsRef.current();
+    analyticsRef.current();
     const iv1 = setInterval(() => liveRef.current(),       15000);
     const iv2 = setInterval(() => activityRef.current(),   15000);
     const iv3 = setInterval(() => emailStatsRef.current(), 15000);
-    return () => { clearInterval(iv1); clearInterval(iv2); clearInterval(iv3); };
+    const iv4 = setInterval(() => analyticsRef.current(),  30000);
+    return () => { clearInterval(iv1); clearInterval(iv2); clearInterval(iv3); clearInterval(iv4); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function toggleEmailPause() {
@@ -306,11 +318,12 @@ export default function AIAgentDashboard({ token }) {
       </div>
 
       {/* ── TABS ───────────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', marginBottom: 20 }}>
+      <div style={{ display: 'flex', borderBottom: '2px solid #e2e8f0', marginBottom: 20, flexWrap: 'wrap' }}>
         <button className={`tab-btn${activeTab==='ops'?' active':''}`} onClick={()=>setActiveTab('ops')}>⚡ Live Ops</button>
         <button className={`tab-btn${activeTab==='daily'?' active':''}`} onClick={()=>setActiveTab('daily')}>📅 Daily Stats</button>
         <button className={`tab-btn${activeTab==='triggers'?' active':''}`} onClick={()=>setActiveTab('triggers')}>🎮 Triggers</button>
         <button className={`tab-btn${activeTab==='contacts'?' active':''}`} onClick={()=>setActiveTab('contacts')}>🕷️ Scraped Contacts</button>
+        <button className={`tab-btn${activeTab==='analytics'?' active':''}`} onClick={()=>{setActiveTab('analytics');analyticsRef.current();}}>📈 Email Analytics</button>
       </div>
 
       {/* ══════════════════ OPS TAB ══════════════════════════════════════════ */}
@@ -750,6 +763,148 @@ export default function AIAgentDashboard({ token }) {
       {/* ══════════════════ SCRAPED CONTACTS TAB ════════════════════════════ */}
       {activeTab === 'contacts' && (
         <ScrapedContactsPanel token={token} live={live} />
+      )}
+
+      {/* ══════════════════ EMAIL ANALYTICS TAB ══════════════════════════════ */}
+      {activeTab === 'analytics' && (
+        <EmailAnalyticsPanel data={emailAnalytics} />
+      )}
+    </div>
+  );
+}
+
+// ── Email Analytics Panel ─────────────────────────────────────────────────────
+function EmailAnalyticsPanel({ data }) {
+  if (!data) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>
+        <div style={{ fontWeight: 600 }}>Loading analytics...</div>
+        <div style={{ fontSize: 13, marginTop: 6 }}>Data appears once the first tracked email is sent.</div>
+      </div>
+    );
+  }
+
+  const s        = data.summary || {};
+  const variants = data.variants || [];
+  const recent   = data.recent   || [];
+
+  const templateGroups = {};
+  for (const v of variants) {
+    if (!templateGroups[v.template]) templateGroups[v.template] = [];
+    templateGroups[v.template].push(v);
+  }
+
+  const TEMPLATE_LABELS = { cold_outreach: '❄️ Cold Outreach', followup: '🔂 Follow-up' };
+
+  return (
+    <div style={{ fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif' }}>
+      {/* ── Overall KPI cards ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 14, marginBottom: 24 }}>
+        {[
+          { label: 'Total Tracked', val: parseInt(s.total_sent)||0,    color: '#6366f1', icon: '📬' },
+          { label: 'Opened',        val: parseInt(s.total_opened)||0,   color: '#0ea5e9', icon: '👁️' },
+          { label: 'Clicked',       val: parseInt(s.total_clicked)||0,  color: '#10b981', icon: '🖱️' },
+          { label: 'Open Rate',     val: `${s.overall_open_rate||0}%`,  color: '#f59e0b', icon: '📊' },
+          { label: 'Click Rate',    val: `${s.overall_click_rate||0}%`, color: '#ec4899', icon: '🎯' },
+        ].map(k => (
+          <div key={k.label} style={{ background: '#fff', border: `1px solid ${k.color}25`, borderRadius: 12, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+            <div style={{ fontSize: 22, marginBottom: 6 }}>{k.icon}</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: k.color, lineHeight: 1 }}>{k.val}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginTop: 4, letterSpacing: 0.8 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Per-variant performance tables ── */}
+      {Object.entries(templateGroups).map(([tpl, rows]) => {
+        const best = rows.reduce((b, r) =>
+          parseFloat(r.open_rate) + parseFloat(r.click_rate) > parseFloat(b.open_rate) + parseFloat(b.click_rate) ? r : b, rows[0]);
+        return (
+          <div key={tpl} style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 20, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg,#f8fafc,#f0f9ff)', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+                {TEMPLATE_LABELS[tpl] || tpl}
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>
+                {rows.length} variants · {rows.reduce((a,r)=>a+parseInt(r.sent_count||0),0)} total sent
+              </div>
+            </div>
+            {/* Header row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '60px 90px 90px 1fr 1fr', gap: 8, padding: '8px 20px', background: '#f8fafc', fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              <span>Variant</span><span>Sent</span><span>Opens</span><span>Open Rate</span><span>Click Rate</span>
+            </div>
+            {rows.map(r => {
+              const isBest = r.variant_id === best.variant_id;
+              const openRate  = parseFloat(r.open_rate)  || 0;
+              const clickRate = parseFloat(r.click_rate) || 0;
+              return (
+                <div key={r.variant_id} style={{ display: 'grid', gridTemplateColumns: '60px 90px 90px 1fr 1fr', gap: 8, padding: '11px 20px', borderBottom: '1px solid #f1f5f9', alignItems: 'center', background: isBest ? '#fafffe' : '#fff' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: '#0f172a' }}>#{r.variant_id}</span>
+                    {isBest && parseInt(r.sent_count) >= 5 && (
+                      <span style={{ background: '#fef3c7', color: '#d97706', fontSize: 9, fontWeight: 800, padding: '2px 5px', borderRadius: 4 }}>BEST</span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>{parseInt(r.sent_count)||0}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0ea5e9' }}>{parseInt(r.open_count)||0}</span>
+                  {/* Open rate bar */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: 1, background: '#e2e8f0', borderRadius: 999, height: 6, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.min(100, openRate * 3)}%`, background: '#0ea5e9', height: '100%', borderRadius: 999, transition: 'width 0.4s ease' }} />
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#0ea5e9', minWidth: 36 }}>{openRate}%</span>
+                    </div>
+                  </div>
+                  {/* Click rate bar */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: 1, background: '#e2e8f0', borderRadius: 999, height: 6, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.min(100, clickRate * 5)}%`, background: '#10b981', height: '100%', borderRadius: 999, transition: 'width 0.4s ease' }} />
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#10b981', minWidth: 36 }}>{clickRate}%</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+
+      {/* ── Recent tracked emails ── */}
+      {recent.length > 0 && (
+        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+          <div style={{ padding: '14px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 13, fontWeight: 800, color: '#0f172a' }}>
+            📬 Recent Tracked Emails <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>(latest 50)</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 100px 80px 60px 60px', gap: 8, padding: '8px 20px', background: '#f8fafc', fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
+            <span>Email</span><span>Template</span><span>Sent</span><span>Opened</span><span>Opens</span><span>Clicks</span>
+          </div>
+          <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            {recent.map(r => (
+              <div key={r.token} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 100px 80px 60px 60px', gap: 8, padding: '9px 20px', borderBottom: '1px solid #f8fafc', fontSize: 12, alignItems: 'center' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#334155' }}>{r.email || '—'}</span>
+                <span style={{ color: '#64748b' }}>{TEMPLATE_LABELS[r.template] || r.template} v{r.variant_id}</span>
+                <span style={{ color: '#94a3b8', fontSize: 11 }}>{r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</span>
+                <span style={{ color: r.opened_at ? '#0ea5e9' : '#94a3b8', fontWeight: r.opened_at ? 700 : 400 }}>
+                  {r.opened_at ? new Date(r.opened_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}
+                </span>
+                <span style={{ fontWeight: 700, color: parseInt(r.open_count) > 0 ? '#0ea5e9' : '#94a3b8' }}>{r.open_count || 0}</span>
+                <span style={{ fontWeight: 700, color: parseInt(r.click_count) > 0 ? '#10b981' : '#94a3b8' }}>{r.click_count || 0}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {variants.length === 0 && (
+        <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8', background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+          <div style={{ fontSize: 40, marginBottom: 10 }}>📬</div>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>No tracked emails yet</div>
+          <div style={{ fontSize: 13 }}>Analytics data will appear here after the first outreach email is sent via the new system. Open rates and variant performance will build up over time.</div>
+        </div>
       )}
     </div>
   );

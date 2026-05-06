@@ -8,6 +8,36 @@
 - **PDF:** pdfkit (branded invoice generation)
 - **WhatsApp/SMS:** Twilio (optional — needs TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM)
 
+## New Features (May 2026 — Intelligence Layers)
+
+### 1. Email Domain Verification (MX Records)
+- Module: `backend/src/modules/email-verifier.js`
+- DNS MX record lookup for every scraped domain; 7-day in-memory + file cache
+- Disposable domain blocklist (gmail.com, yahoo.com, etc.) auto-excluded
+- `runMxScoringBatch()` in web-scraper.js runs every 20 queries (background, async)
+- Results stored as `mx_verified BOOLEAN` on `scraped_contacts`; outreach query filters out `mx_verified = FALSE`
+
+### 2. AI Prospect Scoring
+- Module: `backend/src/modules/prospect-scorer.js`
+- Each contact scored 0–100: MX verified (+35), business type (+25), source quality (+25), BPO signals (+10), name completeness (+5)
+- Score stored as `prospect_score INTEGER` on `scraped_contacts`
+- Outreach pipeline sorted by `prospect_score DESC` — highest-value contacts emailed first
+
+### 3. Email Analytics & Auto-Improving Templates
+- Module: `backend/src/modules/email-analytics.js`
+- Tables: `email_tracking` (per-email open/click tokens), `template_performance` (per-variant aggregates)
+- Every outreach email gets a unique tracking token embedded as a 1×1 pixel GIF
+- Open tracking: `GET /t/o/:token` → serves pixel + records event (public, no auth)
+- Click tracking: `GET /t/c/:token?u=` → redirect + records event (public, no auth)
+- Auto-improve: `pickBestVariant()` uses Thompson sampling — variants with higher open+click rates chosen more often; untested variants get exploration bonus
+- Analytics API: `GET /api/analytics/email` (auth required)
+- Frontend: "📈 Email Analytics" tab in AI Agent Dashboard
+
+### 4. Value Proposition Layer
+- 12 rotating one-liner benefit statements injected into every cold outreach + follow-up email
+- Rendered as a styled teal callout block in the HTML email
+- Different prop each send — builds impression over multiple touches
+
 ## New Features (May 2026)
 
 ### Targeted Scraper Page (`/targeted-scraper`)
