@@ -321,6 +321,7 @@ async function storeContactsTargeted(contacts) {
            business_type = COALESCE(NULLIF(scraped_contacts.business_type,''), EXCLUDED.business_type),
            company       = COALESCE(NULLIF(scraped_contacts.company,''),        EXCLUDED.company),
            snippet       = COALESCE(NULLIF(scraped_contacts.snippet,''),        EXCLUDED.snippet)
+         WHERE scraped_contacts.status != 'bounced'
          RETURNING id`,
         [c.company||null, c.website||null, c.domain||null, c.email,
          c.phone||null, c.address||null, c.city||null, c.country||null,
@@ -1014,27 +1015,30 @@ async function runTargetedScrape({ country, industry, keywords, limit = 100, ses
 
       const attempts = [];
 
+      // ALL attempts exclude bounced contacts — never re-tag dead emails
+      const nb = `AND status != 'bounced'`;
+
       // Attempt 1: country + industry + keywords (strictest)
       if (countryKw && industryKw && keywordKw) {
-        attempts.push({ label: 'country+industry+keyword', q: `WHERE LOWER(country) LIKE $2 AND LOWER(business_type) LIKE $3 AND (LOWER(company) LIKE $4 OR LOWER(COALESCE(snippet,'')) LIKE $4)`, p: [sourceTag, countryKw, industryKw, keywordKw] });
+        attempts.push({ label: 'country+industry+keyword', q: `WHERE LOWER(country) LIKE $2 AND LOWER(business_type) LIKE $3 AND (LOWER(company) LIKE $4 OR LOWER(COALESCE(snippet,'')) LIKE $4) ${nb}`, p: [sourceTag, countryKw, industryKw, keywordKw] });
       }
       // Attempt 2: country + industry
       if (countryKw && industryKw) {
-        attempts.push({ label: 'country+industry', q: `WHERE LOWER(country) LIKE $2 AND LOWER(business_type) LIKE $3`, p: [sourceTag, countryKw, industryKw] });
+        attempts.push({ label: 'country+industry', q: `WHERE LOWER(country) LIKE $2 AND LOWER(business_type) LIKE $3 ${nb}`, p: [sourceTag, countryKw, industryKw] });
       }
       // Attempt 3: industry only (ignore country — many contacts have null country)
       if (industryKw) {
-        attempts.push({ label: 'industry-only', q: `WHERE LOWER(business_type) LIKE $2`, p: [sourceTag, industryKw] });
+        attempts.push({ label: 'industry-only', q: `WHERE LOWER(business_type) LIKE $2 ${nb}`, p: [sourceTag, industryKw] });
       }
       // Attempt 4: country only
       if (countryKw) {
-        attempts.push({ label: 'country-only', q: `WHERE LOWER(country) LIKE $2`, p: [sourceTag, countryKw] });
+        attempts.push({ label: 'country-only', q: `WHERE LOWER(country) LIKE $2 ${nb}`, p: [sourceTag, countryKw] });
       }
-      // Attempt 5: keywords in company/domain/snippet
+      // Attempt 5: keywords — but EXCLUDE keyword hits that are clearly bounced-domain matches
       if (keywordKw) {
-        attempts.push({ label: 'keyword-only', q: `WHERE (LOWER(company) LIKE $2 OR LOWER(domain) LIKE $2 OR LOWER(COALESCE(snippet,'')) LIKE $2)`, p: [sourceTag, keywordKw] });
+        attempts.push({ label: 'keyword-only', q: `WHERE (LOWER(company) LIKE $2 OR LOWER(domain) LIKE $2 OR LOWER(COALESCE(snippet,'')) LIKE $2) ${nb}`, p: [sourceTag, keywordKw] });
       }
-      // Attempt 6: broadest — any new uncontacted contact ordered by score
+      // Attempt 6: broadest — any uncontacted contact ordered by score
       attempts.push({ label: 'any-new', q: `WHERE status = 'new'`, p: [sourceTag] });
 
       let dbFound = 0;
