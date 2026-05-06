@@ -34,7 +34,7 @@ const TIERS = [
   },
   {
     name: 'Enterprise',
-    price: 'R50,000',
+    price: 'R30,000',
     perMonth: true,
     color: '#a855f7',
     features: [
