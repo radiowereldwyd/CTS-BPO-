@@ -1387,48 +1387,29 @@ app.post('/api/targeted-scrape/bpo-scan', requireAuth, async (req, res) => {
         `{"id":${c.id},"company":${JSON.stringify(c.company || c.domain || '')},"type":${JSON.stringify(c.business_type || '')},"context":${JSON.stringify((c.snippet || c.query_used || '').slice(0, 120))}}`
       ).join('\n');
 
-      const prompt =
-        `You are a sales analyst for CTS BPO, a South African outsourcing company. ` +
-        `We want to contact businesses that could BENEFIT from outsourcing admin tasks (data entry, document processing, transcription, virtual assistance, back-office work).\n\n` +
-        `For each company below, answer: is this a potential CLIENT for BPO services?\n` +
-        `Mark bpo_likely=TRUE for ANY real business that handles admin, paperwork, records, customer data, or HR internally — they could outsource that work to us.\n` +
-        `Mark bpo_likely=FALSE ONLY if the company name clearly shows it is itself a large BPO/outsourcing provider (e.g. Accenture, Conduent, Infosys BPO, Teleperformance).\n` +
-        `When in doubt, mark TRUE. Be very inclusive.\n\n` +
-        `Companies:\n${list}\n\n` +
-        `Reply ONLY with a JSON array — no explanation, no markdown:\n` +
-        `[{"id": <number>, "bpo_likely": true/false}]`;
+      // Rule-based: mark TRUE for every real business EXCEPT known giant BPO providers
+      // (Gemini is unreliable here — it ignores "when in doubt mark TRUE" instructions)
+      const EXCLUDE_NAMES = [
+        'accenture','teleperformance','conduent','infosys','wipro','cognizant',
+        'concentrix','alorica','convergys','synnex','sitel','tdcx','foundever',
+        'transcom','webhelp','atento','ttec','sutherland','hinduja','startek',
+        'ibm bpo','capgemini bpo','genpact','wns global','exlservice','firstsource',
+        'mphasis','hexaware','igate','serco','arvato','sodexo bpo'
+      ];
 
-      try {
-        const apiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-            signal: AbortSignal.timeout(25000),
-          }
-        );
-        if (!apiRes.ok) { console.error('[BPO-SCAN] Gemini error', apiRes.status); continue; }
-        const data = await apiRes.json();
-        const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-        const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-        let parsed = [];
-        try { parsed = JSON.parse(clean); } catch { continue; }
-
-        for (const item of parsed) {
-          if (typeof item.id !== 'number') continue;
-          await db.query(
-            `UPDATE scraped_contacts SET bpo_likely=$1, updated_at=NOW() WHERE id=$2`,
-            [item.bpo_likely === true, item.id]
-          ).catch(() => {});
-          classified++;
-        }
-      } catch (e) {
-        console.error('[BPO-SCAN] batch error:', e.message);
+      for (const c of batch) {
+        const nameL = (c.company || c.domain || '').toLowerCase();
+        const typeL = (c.business_type || '').toLowerCase();
+        // Only exclude if it's a known large BPO provider name
+        const isKnownProvider = EXCLUDE_NAMES.some(excl => nameL.includes(excl));
+        // Every other real business is a potential BPO client
+        const isBpoLikely = !isKnownProvider;
+        await db.query(
+          `UPDATE scraped_contacts SET bpo_likely=$1, updated_at=NOW() WHERE id=$2`,
+          [isBpoLikely, c.id]
+        ).catch(() => {});
+        classified++;
       }
-
-      // Small delay between batches to avoid rate limiting
-      if (i + BATCH < contacts.length) await new Promise(r => setTimeout(r, 1200));
     }
 
     res.json({ ok: true, scanned: contacts.length, classified });
@@ -1452,58 +1433,89 @@ app.post('/api/targeted-scrape/bpo-partner-scan', requireAuth, async (req, res) 
     const contacts = result.rows;
     if (!contacts.length) return res.status(404).json({ error: 'No contacts found' });
 
-    const BATCH = 15;
-    let classified = 0;
+    // Phase 1: keyword matching — instant and reliable
+    const PARTNER_KEYWORDS = [
+      'bpo','outsourc','call center','call centre','contact center','contact centre',
+      'transcription','virtual assistant','virtual staff','staffing','recruitment agency',
+      'data entry','back office','back-office','offshore','nearshore','onshore staffing',
+      'telemarketing','lead generation service','answering service','helpdesk','help desk',
+      'managed service','payroll processing','payroll service','bookkeeping service',
+      'accounting service','admin support','administrative support','document processing',
+      'data processing','remote staff','remote worker','outsourcing','shared service',
+      'business process','workforce solution','talent solution','temp agency',
+      'executive search','headhunting','contract staffing','it outsourc','hr outsourc',
+      'customer service outsourc','chat support','email support','inbox management'
+    ];
 
-    for (let i = 0; i < contacts.length; i += BATCH) {
-      const batch = contacts.slice(i, i + BATCH);
-      const list = batch.map(c =>
-        `{"id":${c.id},"company":${JSON.stringify(c.company || c.domain || '')},"type":${JSON.stringify(c.business_type || '')},"context":${JSON.stringify((c.snippet || c.query_used || '').slice(0, 120))}}`
-      ).join('\n');
+    let keywordMatches = 0;
+    const unmatchedIds = [];
 
-      const prompt =
-        `You are a business development analyst for CTS BPO, a South African outsourcing company.\n` +
-        `We want to find BPO and outsourcing COMPANIES that might hire us as a subcontractor when they have overflow work.\n\n` +
-        `For each company below, answer: is this company a BPO provider, outsourcing firm, call centre, transcription service, virtual assistant company, staffing agency, or similar?\n` +
-        `Mark bpo_provider=TRUE if the company itself provides outsourcing, BPO, transcription, data entry, call centre, virtual assistance, or staffing services.\n` +
-        `Mark bpo_provider=FALSE if it is a regular end-user business (law firm, retailer, hospital, etc.).\n` +
-        `When in doubt, mark FALSE.\n\n` +
-        `Companies:\n${list}\n\n` +
-        `Reply ONLY with a JSON array — no explanation, no markdown:\n` +
-        `[{"id": <number>, "bpo_provider": true/false}]`;
-
-      try {
-        const apiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-            signal: AbortSignal.timeout(25000),
-          }
-        );
-        if (!apiRes.ok) { console.error('[PARTNER-SCAN] Gemini error', apiRes.status); continue; }
-        const data = await apiRes.json();
-        const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-        const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-        let parsed = [];
-        try { parsed = JSON.parse(clean); } catch { continue; }
-
-        for (const item of parsed) {
-          if (typeof item.id !== 'number') continue;
-          await db.query(
-            `UPDATE scraped_contacts SET bpo_provider=$1, updated_at=NOW() WHERE id=$2`,
-            [item.bpo_provider === true, item.id]
-          ).catch(() => {});
-          classified++;
-        }
-      } catch (e) {
-        console.error('[PARTNER-SCAN] batch error:', e.message);
+    for (const c of contacts) {
+      const haystack = [c.company, c.domain, c.business_type, c.snippet, c.query_used]
+        .filter(Boolean).join(' ').toLowerCase();
+      const isPartner = PARTNER_KEYWORDS.some(kw => haystack.includes(kw));
+      if (isPartner) {
+        await db.query(
+          `UPDATE scraped_contacts SET bpo_provider=TRUE, updated_at=NOW() WHERE id=$1`, [c.id]
+        ).catch(() => {});
+        keywordMatches++;
+      } else {
+        unmatchedIds.push(c.id);
+        // Mark as not-a-provider by default (Gemini will re-examine a sample)
+        await db.query(
+          `UPDATE scraped_contacts SET bpo_provider=FALSE, updated_at=NOW() WHERE id=$1`, [c.id]
+        ).catch(() => {});
       }
-      if (i + BATCH < contacts.length) await new Promise(r => setTimeout(r, 1200));
     }
 
-    res.json({ ok: true, scanned: contacts.length, classified });
+    // Phase 2: Gemini re-examines unmatched contacts (up to 60) to catch non-obvious partners
+    let geminiMatches = 0;
+    if (GOOGLE_API_KEY && unmatchedIds.length) {
+      const sample = unmatchedIds.slice(0, 60);
+      const sampleContacts = contacts.filter(c => sample.includes(c.id));
+      const BATCH = 15;
+      for (let i = 0; i < sampleContacts.length; i += BATCH) {
+        const batch = sampleContacts.slice(i, i + BATCH);
+        const list = batch.map(c =>
+          `{"id":${c.id},"company":${JSON.stringify(c.company || c.domain || '')},"type":${JSON.stringify(c.business_type || '')},"context":${JSON.stringify((c.snippet || c.query_used || '').slice(0, 120))}}`
+        ).join('\n');
+        const prompt =
+          `You are a subcontracting business development analyst.\n` +
+          `CTS BPO wants to partner with other companies that provide outsourcing services.\n\n` +
+          `For each company, answer only: does this company SELL outsourcing or staffing services to other businesses?\n` +
+          `Answer TRUE for: staffing agencies, recruitment firms, HR consultancies, managed service providers, IT support companies, accounting/bookkeeping firms, consulting firms, professional employer organisations, employer of record services, payroll companies, secretarial services, any company clearly serving other businesses with professional support.\n` +
+          `Answer FALSE only for pure consumer businesses like restaurants, retail shops, salons, or gyms.\n\n` +
+          `Companies:\n${list}\n\n` +
+          `Reply ONLY with a JSON array:\n[{"id": <number>, "bpo_provider": true/false}]`;
+        try {
+          const apiRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+              signal: AbortSignal.timeout(25000) }
+          );
+          if (!apiRes.ok) continue;
+          const data = await apiRes.json();
+          const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+          const clean = raw.replace(/^```json\s*/i,'').replace(/^```\s*/i,'').replace(/```\s*$/i,'').trim();
+          let parsed = [];
+          try { parsed = JSON.parse(clean); } catch { continue; }
+          for (const item of parsed) {
+            if (typeof item.id !== 'number') continue;
+            if (item.bpo_provider === true) {
+              await db.query(
+                `UPDATE scraped_contacts SET bpo_provider=TRUE, updated_at=NOW() WHERE id=$1`, [item.id]
+              ).catch(() => {});
+              geminiMatches++;
+            }
+          }
+        } catch (e) { console.error('[PARTNER-SCAN] Gemini batch error:', e.message); }
+        if (i + BATCH < sampleContacts.length) await new Promise(r => setTimeout(r, 800));
+      }
+    }
+
+    const totalFound = keywordMatches + geminiMatches;
+    res.json({ ok: true, scanned: contacts.length, classified: totalFound, keywordMatches, geminiMatches });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
