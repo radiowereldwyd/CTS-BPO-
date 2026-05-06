@@ -1494,11 +1494,25 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/brochure/intro-letter.pdf — download the CTS BPO branded intro letter
+app.get('/api/brochure/intro-letter.pdf', requireAuth, async (req, res) => {
+  try {
+    const { generateIntroLetter } = require('./modules/pdf-intro-letter');
+    const buf = await generateIntroLetter({ recipientCompany: req.query.company || '' });
+    res.set({
+      'Content-Type':        'application/pdf',
+      'Content-Disposition': 'attachment; filename="CTS-BPO-Introduction.pdf"',
+      'Content-Length':      buf.length,
+    });
+    res.send(buf);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/targeted-scrape/send — send a message + optional PDF to selected contacts
-// multipart/form-data: subject, body, contactIds (JSON array), pdf (optional file)
+// multipart/form-data: subject, body, contactIds (JSON array), pdf (optional file), useIntroLetter ('true'/'false')
 app.post('/api/targeted-scrape/send', requireAuth, requireAdmin, pdfUpload.single('pdf'), async (req, res) => {
   try {
-    const { subject, body, contactIds } = req.body;
+    const { subject, body, contactIds, useIntroLetter } = req.body;
     const ids = JSON.parse(contactIds || '[]');
     if (!ids.length) return res.status(400).json({ error: 'No contacts selected' });
     if (!subject || !body) return res.status(400).json({ error: 'subject and body are required' });
@@ -1524,26 +1538,55 @@ app.post('/api/targeted-scrape/send', requireAuth, requireAdmin, pdfUpload.singl
       auth: { user: GMAIL_USER, pass: GMAIL_APP_PASS },
     });
 
-    const attachments = [];
+    // Build base attachments list
+    const baseAttachments = [];
     if (req.file) {
-      attachments.push({
-        filename: req.file.originalname || 'attachment.pdf',
-        content:  req.file.buffer,
+      baseAttachments.push({
+        filename:    req.file.originalname || 'attachment.pdf',
+        content:     req.file.buffer,
         contentType: req.file.mimetype || 'application/pdf',
       });
     }
 
+    // Auto-generate CTS BPO intro letter if requested
+    if (useIntroLetter === 'true') {
+      try {
+        const { generateIntroLetter } = require('./modules/pdf-intro-letter');
+        const letterBuf = await generateIntroLetter();
+        baseAttachments.push({
+          filename:    'CTS-BPO-Introduction.pdf',
+          content:     letterBuf,
+          contentType: 'application/pdf',
+        });
+        console.log('[TARGETED SEND] CTS BPO intro letter generated and attached');
+      } catch (e) {
+        console.error('[TARGETED SEND] Failed to generate intro letter:', e.message);
+      }
+    }
+
     let sent = 0, failed = 0;
     for (const c of contacts) {
+      // Personalise the intro letter per contact if name is available
+      const attachments = [...baseAttachments];
+      if (useIntroLetter === 'true' && c.company) {
+        try {
+          const { generateIntroLetter } = require('./modules/pdf-intro-letter');
+          const personalBuf = await generateIntroLetter({ recipientCompany: c.company });
+          // Replace the generic letter with the personalised one
+          const idx = attachments.findIndex(a => a.filename === 'CTS-BPO-Introduction.pdf');
+          if (idx >= 0) attachments[idx] = { filename: 'CTS-BPO-Introduction.pdf', content: personalBuf, contentType: 'application/pdf' };
+        } catch {}
+      }
+
       try {
         await transport.sendMail({
-          from: `"CTS BPO" <${GMAIL_USER}>`,
+          from: `"Calvin Thomas — CTS BPO" <${GMAIL_USER}>`,
           to:   c.email,
-          subject,
+          subject: subject.replace(/{{company}}/g, c.company || 'there'),
           text: body.replace(/{{company}}/g, c.company || 'there'),
-          html: `<div style="font-family:sans-serif;line-height:1.6">${
+          html: `<div style="font-family:sans-serif;line-height:1.7;color:#1e293b;max-width:600px">${
             body.replace(/\n/g, '<br>').replace(/{{company}}/g, c.company || 'there')
-          }</div>`,
+          }${useIntroLetter === 'true' ? '<br><br><hr style="border:none;border-top:1px solid #e2e8f0"><p style="font-size:12px;color:#64748b">📎 Please find the attached CTS BPO Company Introduction &amp; Pricing Overview for your reference.</p>' : ''}</div>`,
           attachments,
         });
         sent++;

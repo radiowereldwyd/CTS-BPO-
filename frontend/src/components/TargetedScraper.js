@@ -62,8 +62,9 @@ export default function TargetedScraper({ token }) {
   const [body, setBody]       = useState(
     `Dear {{company}} Team,\n\nI hope this message finds you well.\n\nMy name is Calvin Thomas, and I represent CTS BPO — a specialised business process outsourcing firm based in South Africa. We help companies like yours reduce operational costs and improve efficiency by handling data entry, document processing, transcription, virtual assistance, and back-office functions.\n\nWould you be open to a brief conversation about how we could support your team?\n\nKind regards,\nCalvin Thomas\nCTS BPO Solutions\ncts.cybersolutions@gmail.com`
   );
-  const [pdfFile, setPdfFile] = useState(null);
-  const [pdfName, setPdfName] = useState('');
+  const [pdfFile, setPdfFile]         = useState(null);
+  const [pdfName, setPdfName]         = useState('');
+  const [useIntroLetter, setUseIntroLetter] = useState(true);
 
   const [loading, setLoading]       = useState(false);
   const [aiLoading, setAiLoading]   = useState(false);
@@ -228,6 +229,7 @@ export default function TargetedScraper({ token }) {
       form.append('subject', subject);
       form.append('body', body);
       form.append('contactIds', JSON.stringify([...selected]));
+      form.append('useIntroLetter', useIntroLetter ? 'true' : 'false');
       if (pdfFile) form.append('pdf', pdfFile);
       const res = await axios.post(`${API}/api/targeted-scrape/send`, form, {
         headers: { ...authHeader, 'Content-Type': 'multipart/form-data' },
@@ -440,19 +442,65 @@ export default function TargetedScraper({ token }) {
               style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }} />
           </label>
 
-          {/* PDF drop zone */}
+          {/* ── CTS BPO Intro Letter Toggle ───────────────────────────── */}
+          <div style={{
+            marginBottom: 16, padding: '14px 18px', borderRadius: 10,
+            background: useIntroLetter ? 'linear-gradient(135deg,#eef2ff 0%,#f0fdf4 100%)' : '#f8fafc',
+            border: `2px solid ${useIntroLetter ? '#6366f1' : '#e2e8f0'}`,
+            transition: 'all 0.2s',
+          }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={useIntroLetter}
+                onChange={e => setUseIntroLetter(e.target.checked)}
+                style={{ width: 18, height: 18, marginTop: 2, accentColor: '#6366f1', cursor: 'pointer', flexShrink: 0 }}
+              />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  📄 Auto-attach CTS BPO Introduction Letter
+                  {useIntroLetter && (
+                    <span style={{ background: '#6366f1', color: '#fff', borderRadius: 10, padding: '1px 8px', fontSize: 11, fontWeight: 700 }}>
+                      ON
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 3, lineHeight: 1.5 }}>
+                  A branded A4 PDF letter will be automatically generated and attached to every email.
+                  It introduces CTS BPO, lists all services, and shows the full pricing table (Starter R5,000 · Professional R15,000 · Enterprise R30,000).
+                  Each letter is personalised with the recipient's company name.
+                </div>
+                {useIntroLetter && (
+                  <a
+                    href={`${API}/api/brochure/intro-letter.pdf`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'inline-block', marginTop: 8, fontSize: 12, color: '#6366f1', fontWeight: 600, textDecoration: 'none' }}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    👁 Preview the letter ↗
+                  </a>
+                )}
+              </div>
+            </label>
+          </div>
+
+          {/* PDF drop zone — optional additional attachment */}
           <div style={{ marginBottom: 18 }}>
-            <div style={labelStyle}>PDF Attachment <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional — drag & drop or click)</span></div>
+            <div style={labelStyle}>
+              Additional PDF Attachment
+              <span style={{ color: '#94a3b8', fontWeight: 400 }}> (optional — drag & drop or click)</span>
+            </div>
             <div ref={dropRef} onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
               onClick={() => fileRef.current?.click()}
-              style={{ border: '2px dashed #cbd5e1', borderRadius: 8, padding: '20px', textAlign: 'center',
+              style={{ border: '2px dashed #cbd5e1', borderRadius: 8, padding: '16px', textAlign: 'center',
                 cursor: 'pointer', background: '#f8fafc', marginTop: 6 }}>
               {pdfName
                 ? <span style={{ color: '#4f46e5', fontWeight: 600 }}>📎 {pdfName}
                     <button onClick={e => { e.stopPropagation(); setPdfFile(null); setPdfName(''); }}
                       style={{ marginLeft: 10, background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>✕</button>
                   </span>
-                : <span style={{ color: '#94a3b8', fontSize: 14 }}>Drag a PDF here, or click to browse</span>}
+                : <span style={{ color: '#94a3b8', fontSize: 13 }}>Drag a second PDF here, or click to browse</span>}
             </div>
             <input ref={fileRef} type="file" accept=".pdf,application/pdf" style={{ display: 'none' }}
               onChange={e => handleFile(e.target.files[0])} />
