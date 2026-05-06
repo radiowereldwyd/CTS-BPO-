@@ -1301,34 +1301,39 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
     const session = webScraper.getTargetedSession();
     let contacts = [];
 
-    // Build a broad keyword search across the whole scraped_contacts table
-    // so results appear even when all domains were already in the DB (ON CONFLICT DO NOTHING)
-    // Accept query params so the frontend can search without a live session (e.g. after restart)
     const kw       = req.query.keywords || session.keywords  || null;
     const country  = req.query.country  || session.country   || null;
     const industry = req.query.industry || session.industry  || null;
 
     if (kw || country || industry) {
-      // Clauses are OR for keyword (match any field), AND for country/industry filters
+      // NOTE: most records have null country/business_type — so we search populated fields
+      // (email, domain, company) for keywords and treat country/industry as soft filters
+      // (null records pass through — only records with a DIFFERENT value are excluded).
       const conditions = [];
       const params     = [];
       let idx = 1;
 
       if (kw) {
         const like = `%${kw.toLowerCase()}%`;
+        // Search all text fields including the always-populated email/domain/company
         conditions.push(
-          `(LOWER(company) LIKE $${idx} OR LOWER(snippet) LIKE $${idx+1} OR LOWER(query_used) LIKE $${idx+2} OR LOWER(business_type) LIKE $${idx+3})`
+          `(LOWER(company)      LIKE $${idx}   OR LOWER(email)      LIKE $${idx+1}` +
+          ` OR LOWER(domain)    LIKE $${idx+2} OR LOWER(business_type) LIKE $${idx+3}` +
+          ` OR LOWER(COALESCE(snippet,''))    LIKE $${idx+4}` +
+          ` OR LOWER(COALESCE(query_used,'')) LIKE $${idx+5})`
         );
-        params.push(like, like, like, like);
-        idx += 4;
+        params.push(like, like, like, like, like, like);
+        idx += 6;
       }
       if (country) {
-        conditions.push(`LOWER(country) LIKE $${idx}`);
+        // Include records where country matches OR is unknown (null/empty)
+        conditions.push(`(country IS NULL OR country = '' OR LOWER(country) LIKE $${idx})`);
         params.push(`%${country.toLowerCase()}%`);
         idx++;
       }
       if (industry) {
-        conditions.push(`LOWER(business_type) LIKE $${idx}`);
+        // Include records where business_type matches OR is unknown
+        conditions.push(`(business_type IS NULL OR business_type = '' OR LOWER(business_type) LIKE $${idx})`);
         params.push(`%${industry.toLowerCase()}%`);
         idx++;
       }
@@ -1336,22 +1341,71 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
       const result = await db.query(
         `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, created_at
-         FROM scraped_contacts ${where} ORDER BY created_at DESC LIMIT 500`,
+         FROM scraped_contacts ${where} ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`,
         params
       );
       contacts = result.rows;
     } else if (session.sessionId) {
-      // Fallback: show the session-tagged rows only
       const sourceTag = `targeted_${session.sessionId}`;
       const result = await db.query(
         `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, created_at
-         FROM scraped_contacts WHERE source = $1 ORDER BY created_at DESC LIMIT 500`,
+         FROM scraped_contacts WHERE source = $1 ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`,
         [sourceTag]
       );
       contacts = result.rows;
     }
 
     res.json({ session, contacts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/ai/compose-email — use Gemini to draft a cold outreach email
+app.post('/api/ai/compose-email', requireAuth, async (req, res) => {
+  try {
+    const { industry, country, contactCount } = req.body;
+    const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+    if (!GOOGLE_API_KEY) return res.status(503).json({ error: 'GOOGLE_API_KEY not configured' });
+
+    const industryLabel = industry || 'business';
+    const countryLabel  = country  || 'various countries';
+    const prompt =
+      `You are writing a short, professional cold outreach email on behalf of Calvin Thomas at CTS BPO Solutions ` +
+      `(a South Africa-based business process outsourcing company). ` +
+      `The recipients are ${industryLabel} companies in ${countryLabel}. ` +
+      `Write a compelling subject line and email body (plain text, max 180 words). ` +
+      `Mention that CTS BPO can help them reduce costs on data entry, document processing, virtual assistance, and back-office tasks. ` +
+      `End with a soft call to action asking for a 15-minute call. ` +
+      `Sign off as: Calvin Thomas | CTS BPO Solutions | cts.cybersolutions@gmail.com\n\n` +
+      `Respond ONLY with valid JSON: {"subject": "...", "body": "..."}`;
+
+    const apiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        signal: AbortSignal.timeout(20000),
+      }
+    );
+    if (!apiRes.ok) {
+      const err = await apiRes.text();
+      return res.status(502).json({ error: `Gemini error: ${apiRes.status}`, detail: err });
+    }
+    const data  = await apiRes.json();
+    const raw   = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    // Strip markdown code fences if present
+    const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+    let parsed;
+    try { parsed = JSON.parse(clean); } catch {
+      // Fallback: extract subject/body with regex
+      const subMatch  = clean.match(/"subject"\s*:\s*"([^"]+)"/);
+      const bodyMatch = clean.match(/"body"\s*:\s*"([\s\S]+?)"\s*[,}]/);
+      parsed = {
+        subject: subMatch?.[1]  || `Outsourcing Solutions for Your ${industryLabel} Business`,
+        body:    bodyMatch?.[1] || clean,
+      };
+    }
+    res.json({ subject: parsed.subject, body: parsed.body });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

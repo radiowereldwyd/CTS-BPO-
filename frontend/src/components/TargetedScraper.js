@@ -58,23 +58,25 @@ export default function TargetedScraper({ token }) {
 
   const [emailStats, setEmailStats] = useState(null);
 
-  const [subject, setSubject]   = useState('Partnering with CTS BPO — Outsourcing Solutions for {{company}}');
-  const [body, setBody]         = useState(
+  const [subject, setSubject] = useState('Partnering with CTS BPO — Outsourcing Solutions for {{company}}');
+  const [body, setBody]       = useState(
     `Dear {{company}} Team,\n\nI hope this message finds you well.\n\nMy name is Calvin Thomas, and I represent CTS BPO — a specialised business process outsourcing firm based in South Africa. We help companies like yours reduce operational costs and improve efficiency by handling data entry, document processing, transcription, virtual assistance, and back-office functions.\n\nWould you be open to a brief conversation about how we could support your team?\n\nKind regards,\nCalvin Thomas\nCTS BPO Solutions\ncts.cybersolutions@gmail.com`
   );
-  const [pdfFile, setPdfFile]   = useState(null);
-  const [pdfName, setPdfName]   = useState('');
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfName, setPdfName] = useState('');
 
-  const [loading, setLoading]   = useState(false);
-  const [sending, setSending]   = useState(false);
-  const [error, setError]       = useState('');
+  const [loading, setLoading]       = useState(false);
+  const [aiLoading, setAiLoading]   = useState(false);
+  const [sending, setSending]       = useState(false);
+  const [error, setError]           = useState('');
   const [sendResult, setSendResult] = useState(null);
+  const [aiStatus, setAiStatus]     = useState('');
 
-  const pollRef    = useRef(null);
-  const fileRef    = useRef(null);
-  const dropRef    = useRef(null);
+  const pollRef   = useRef(null);
+  const fileRef   = useRef(null);
+  const dropRef   = useRef(null);
+  const sendRef   = useRef(null);
 
-  // refs so pollStatus always reads latest values
   const kwRef      = useRef(keywords);
   const countryRef = useRef(country);
   const industryRef= useRef(industry);
@@ -84,7 +86,6 @@ export default function TargetedScraper({ token }) {
 
   const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
 
-  // ── Load email stats on mount ────────────────────────────────────────────
   const loadEmailStats = useCallback(async () => {
     try {
       const res = await axios.get(`${API}/api/email-stats`, { headers: authHeader });
@@ -98,14 +99,13 @@ export default function TargetedScraper({ token }) {
     return () => clearInterval(t);
   }, []); // eslint-disable-line
 
-  // ── Poll session + results ────────────────────────────────────────────────
   const pollStatus = useCallback(async () => {
-    const kw = kwRef.current;
-    const co = countryRef.current;
+    const kw  = kwRef.current;
+    const co  = countryRef.current;
     const in_ = industryRef.current;
     const params = new URLSearchParams();
-    if (kw) params.set('keywords', kw);
-    if (co) params.set('country', co);
+    if (kw)  params.set('keywords', kw);
+    if (co)  params.set('country', co);
     if (in_) params.set('industry', in_);
     try {
       const res = await axios.get(`${API}/api/targeted-scrape/status?${params.toString()}`, { headers: authHeader });
@@ -116,10 +116,10 @@ export default function TargetedScraper({ token }) {
         pollRef.current = null;
         setLoading(false);
       }
-    } catch {}
+      return res.data.contacts || [];
+    } catch { return []; }
   }, []); // eslint-disable-line
 
-  // ── Search existing DB without running a new scrape ──────────────────────
   async function handleSearch() {
     if (!country && !industry && !keywords.trim()) {
       setError('Please fill in at least one field.'); return;
@@ -130,7 +130,6 @@ export default function TargetedScraper({ token }) {
     await pollStatus();
   }
 
-  // ── Start targeted scrape + search ───────────────────────────────────────
   async function handleActivate() {
     if (!country && !industry && !keywords.trim()) {
       setError('Please fill in at least one field.'); return;
@@ -145,12 +144,10 @@ export default function TargetedScraper({ token }) {
         { country, industry, keywords, limit },
         { headers: authHeader }
       );
-      // Start polling
       pollStatus();
       pollRef.current = setInterval(pollStatus, 4000);
     } catch (err) {
       const msg = err.response?.data?.error || err.message;
-      // If already running, still show results
       if (msg.includes('already running')) {
         pollStatus();
       } else {
@@ -160,12 +157,54 @@ export default function TargetedScraper({ token }) {
     }
   }
 
-  // ── Cleanup ───────────────────────────────────────────────────────────────
+  // ── AI Compose & Send All ─────────────────────────────────────────────────
+  async function handleAiCompose() {
+    if (!country && !industry && !keywords.trim()) {
+      setError('Please fill in at least one search field first.'); return;
+    }
+    setError('');
+    setAiStatus('Searching contacts…');
+    setAiLoading(true);
+    setSendResult(null);
+
+    // 1. Run the search to get fresh contacts
+    setSearched(true);
+    const found = await pollStatus();
+    if (!found.length) {
+      setAiLoading(false);
+      setAiStatus('');
+      setError('No contacts found — try "Scrape + Search" to discover new ones.');
+      return;
+    }
+
+    // 2. Auto-select all found contacts
+    setSelected(new Set(found.map(c => c.id)));
+
+    // 3. Ask Gemini to write the email
+    setAiStatus('AI is writing your email…');
+    try {
+      const res = await axios.post(`${API}/api/ai/compose-email`,
+        { industry, country, contactCount: found.length },
+        { headers: authHeader }
+      );
+      setSubject(res.data.subject || subject);
+      setBody(res.data.body || body);
+      setAiStatus(`✅ AI drafted an email for ${found.length} contacts — review below and click Send.`);
+    } catch (err) {
+      // Fallback: keep default template, still select all contacts
+      setAiStatus(`✅ Found ${found.length} contacts — review the default template below and click Send.`);
+    }
+
+    setAiLoading(false);
+
+    // 4. Scroll to the send panel
+    setTimeout(() => sendRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+  }
+
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
-  // ── Select / deselect contacts ────────────────────────────────────────────
   function toggleContact(id) {
     setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   }
@@ -173,13 +212,11 @@ export default function TargetedScraper({ token }) {
     setSelected(selected.size === contacts.length ? new Set() : new Set(contacts.map(c => c.id)));
   }
 
-  // ── PDF drop zone ─────────────────────────────────────────────────────────
   function handleFile(file) { if (!file) return; setPdfFile(file); setPdfName(file.name); }
   function onDrop(e) { e.preventDefault(); dropRef.current?.classList.remove('drag-over'); handleFile(e.dataTransfer.files[0]); }
   function onDragOver(e) { e.preventDefault(); dropRef.current?.classList.add('drag-over'); }
   function onDragLeave() { dropRef.current?.classList.remove('drag-over'); }
 
-  // ── Send emails ───────────────────────────────────────────────────────────
   async function handleSend() {
     if (!selected.size) { setError('Select at least one contact.'); return; }
     if (!subject.trim() || !body.trim()) { setError('Subject and body are required.'); return; }
@@ -196,6 +233,7 @@ export default function TargetedScraper({ token }) {
         headers: { ...authHeader, 'Content-Type': 'multipart/form-data' },
       });
       setSendResult(res.data);
+      setAiStatus('');
       pollStatus();
       loadEmailStats();
     } catch (err) { setError(err.response?.data?.error || err.message); }
@@ -214,7 +252,6 @@ export default function TargetedScraper({ token }) {
       <p style={{ margin: '0 0 22px', color: '#64748b', fontSize: 14 }}>
         Define a target audience and launch a focused scrape, or search the existing database instantly.
       </p>
-
 
       {/* ── Search Controls ─────────────────────────────────────────────── */}
       <div style={card}>
@@ -256,18 +293,49 @@ export default function TargetedScraper({ token }) {
         </label>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button onClick={handleSearch} disabled={isRunning || loading} style={{ ...btnPrimary, background: '#0ea5e9' }}>
+          <button onClick={handleSearch} disabled={isRunning || loading || aiLoading} style={{ ...btnPrimary, background: '#0ea5e9' }}>
             🔍 Search Database
           </button>
-          <button onClick={handleActivate} disabled={isRunning || loading} style={btnPrimary}>
+          <button onClick={handleActivate} disabled={isRunning || loading || aiLoading} style={btnPrimary}>
             {isRunning ? '⏳ Scraping in Progress…' : '🚀 Scrape + Search (adds new contacts)'}
           </button>
+
+          {/* ── AI Button ─────────────────────────────────────────────── */}
+          <button
+            onClick={handleAiCompose}
+            disabled={isRunning || loading || aiLoading}
+            style={{
+              ...btnPrimary,
+              background: aiLoading ? '#7c3aed' : 'linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%)',
+              boxShadow: aiLoading ? 'none' : '0 2px 8px rgba(124,58,237,0.35)',
+              display: 'flex', alignItems: 'center', gap: 7,
+            }}
+          >
+            {aiLoading
+              ? <><span style={spinner} />AI Working…</>
+              : <>🤖 AI Compose &amp; Send All</>}
+          </button>
+
           {isRunning && (
             <span style={{ color: '#64748b', fontSize: 13 }}>
               Found {foundCount} / {session?.limit} new contacts…
             </span>
           )}
         </div>
+
+        {/* AI status message */}
+        {aiStatus && (
+          <div style={{
+            marginTop: 12, padding: '10px 14px', borderRadius: 8,
+            background: aiStatus.startsWith('✅') ? '#f0fdf4' : '#f5f3ff',
+            color:      aiStatus.startsWith('✅') ? '#166534' : '#5b21b6',
+            fontSize: 13, fontWeight: 600,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            {!aiStatus.startsWith('✅') && <span style={spinner} />}
+            {aiStatus}
+          </div>
+        )}
 
         {/* Progress bar */}
         {(isRunning || isDone) && (
@@ -286,16 +354,16 @@ export default function TargetedScraper({ token }) {
           </div>
         )}
 
-        {searched && !isRunning && !loading && contacts.length === 0 && (
+        {searched && !isRunning && !loading && !aiLoading && contacts.length === 0 && (
           <div style={{ marginTop: 12, color: '#64748b', fontSize: 13, background: '#f8fafc', padding: '10px 14px', borderRadius: 6 }}>
-            No contacts found in the database matching these criteria. Try "Scrape + Search" to discover new ones, or broaden your keywords.
+            No contacts found matching these criteria. Try "Scrape + Search" to discover new ones, or broaden your keywords.
           </div>
         )}
 
         {error && <div style={{ marginTop: 12, color: '#ef4444', fontSize: 13, background: '#fef2f2', padding: '8px 12px', borderRadius: 6 }}>{error}</div>}
       </div>
 
-      {/* ── Results Table ───────────────────────────────────────────────── */}
+      {/* ── Results Table ─────────────────────────────────────────────────── */}
       {contacts.length > 0 && (
         <div style={{ ...card, marginTop: 18 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -305,9 +373,9 @@ export default function TargetedScraper({ token }) {
                 {contacts.length}
               </span>
             </h3>
-            <div style={{ fontSize: 13, color: '#64748b' }}>
+            <div style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 10 }}>
               {selected.size} selected
-              <button onClick={toggleAll} style={{ marginLeft: 10, ...btnSecondary }}>
+              <button onClick={toggleAll} style={btnSecondary}>
                 {selected.size === contacts.length ? 'Deselect All' : 'Select All'}
               </button>
             </div>
@@ -352,8 +420,13 @@ export default function TargetedScraper({ token }) {
 
       {/* ── Send Panel ──────────────────────────────────────────────────── */}
       {contacts.length > 0 && (
-        <div style={{ ...card, marginTop: 18 }}>
-          <h3 style={sectionHead}>Send Message to Selected Contacts ({selected.size})</h3>
+        <div ref={sendRef} style={{ ...card, marginTop: 18 }}>
+          <h3 style={sectionHead}>
+            Send Message to Selected Contacts
+            <span style={{ marginLeft: 8, background: '#dcfce7', color: '#166534', borderRadius: 12, padding: '2px 10px', fontSize: 13, fontWeight: 600 }}>
+              {selected.size}
+            </span>
+          </h3>
 
           <label style={{ ...labelStyle, display: 'block', marginBottom: 12 }}>
             Email Subject
@@ -391,17 +464,23 @@ export default function TargetedScraper({ token }) {
             </div>
           )}
 
-          {/* Active provider near-limit warning */}
           {emailStats?.providers?.filter(p => p.active && p.stopAt && p.sentToday >= p.stopAt * 0.9).map(p => (
             <div key={p.name} style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, background: '#fffbeb', color: '#92400e', fontSize: 13 }}>
               ⚠️ {p.name} is near its daily limit ({p.sentToday}/{p.dailyCap}). The system will stop at {p.stopAt} (99%) and resume tomorrow.
             </div>
           ))}
 
-          <button onClick={handleSend} disabled={sending || !selected.size}
-            style={{ ...btnPrimary, background: selected.size ? '#16a34a' : '#94a3b8', minWidth: 220 }}>
-            {sending ? `⏳ Sending (${selected.size} emails)…` : `📧 Send to ${selected.size} Selected Contact${selected.size !== 1 ? 's' : ''}`}
-          </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button onClick={handleSend} disabled={sending || !selected.size}
+              style={{ ...btnPrimary, background: selected.size ? '#16a34a' : '#94a3b8', minWidth: 220 }}>
+              {sending ? `⏳ Sending (${selected.size} emails)…` : `📧 Send to ${selected.size} Selected Contact${selected.size !== 1 ? 's' : ''}`}
+            </button>
+            {selected.size > 0 && !sending && (
+              <span style={{ fontSize: 12, color: '#64748b' }}>
+                Emails will be personalised with each company name automatically.
+              </span>
+            )}
+          </div>
 
           {error && <div style={{ marginTop: 10, color: '#ef4444', fontSize: 13, background: '#fef2f2', padding: '8px 12px', borderRadius: 6 }}>{error}</div>}
         </div>
@@ -410,13 +489,14 @@ export default function TargetedScraper({ token }) {
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────────
-const card = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,.06)' };
+// ── Styles ──────────────────────────────────────────────────────────────────
+const card        = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,.06)' };
 const sectionHead = { margin: '0 0 14px', fontSize: 16, fontWeight: 700, color: '#1e293b' };
 const labelStyle  = { fontSize: 13, fontWeight: 600, color: '#374151', display: 'flex', flexDirection: 'column', gap: 5 };
 const inputStyle  = { marginTop: 4, padding: '9px 12px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 14, width: '100%', boxSizing: 'border-box' };
 const selectStyle = { ...inputStyle, cursor: 'pointer', background: '#fff' };
 const btnPrimary  = { padding: '10px 22px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 14, cursor: 'pointer' };
 const btnSecondary= { padding: '5px 12px', background: '#f1f5f9', color: '#374151', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 };
-const th = { padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', fontSize: 12, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' };
-const td = { padding: '8px 12px', color: '#374151', verticalAlign: 'middle' };
+const th          = { padding: '9px 12px', textAlign: 'left', fontWeight: 600, color: '#374151', fontSize: 12, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' };
+const td          = { padding: '8px 12px', color: '#374151', verticalAlign: 'middle' };
+const spinner     = { display: 'inline-block', width: 14, height: 14, border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' };
