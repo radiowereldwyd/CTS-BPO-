@@ -66,11 +66,13 @@ export default function TargetedScraper({ token }) {
   const [pdfName, setPdfName]         = useState('');
   const [useIntroLetter, setUseIntroLetter] = useState(true);
 
-  const [loading, setLoading]         = useState(false);
-  const [aiLoading, setAiLoading]     = useState(false);
-  const [scanning, setScanning]       = useState(false);
-  const [scanStatus, setScanStatus]   = useState('');
-  const [sending, setSending]         = useState(false);
+  const [loading, setLoading]               = useState(false);
+  const [aiLoading, setAiLoading]           = useState(false);
+  const [scanning, setScanning]             = useState(false);
+  const [scanStatus, setScanStatus]         = useState('');
+  const [partnerScanning, setPartnerScanning] = useState(false);
+  const [partnerStatus, setPartnerStatus]   = useState('');
+  const [sending, setSending]               = useState(false);
   const [error, setError]             = useState('');
   const [sendResult, setSendResult]   = useState(null);
   const [aiStatus, setAiStatus]       = useState('');
@@ -286,6 +288,38 @@ export default function TargetedScraper({ token }) {
     setSending(false);
   }
 
+  // ── Partner Scan — AI finds BPO companies to pitch as subcontractor ────────
+  async function handlePartnerScan() {
+    if (!contacts.length) return;
+    setPartnerScanning(true);
+    setPartnerStatus('🤖 AI is identifying BPO companies for subcontractor outreach…');
+    const allIds = contacts.map(c => c.id);
+    try {
+      const res = await axios.post(`${API}/api/targeted-scrape/bpo-partner-scan`,
+        { contactIds: allIds },
+        { headers: authHeader }
+      );
+      const fresh = await pollStatus();
+      const partnerIds = fresh.filter(c => c.bpo_provider && c.email && c.status !== 'bounced').map(c => c.id);
+      if (partnerIds.length) {
+        setSelected(new Set(partnerIds));
+        // Auto-compose a subcontractor pitch email
+        setSubject('Subcontracting Partnership Opportunity — CTS BPO Solutions');
+        setBody(
+          `Dear {{company}} Team,\n\nI hope this message finds you well.\n\nMy name is Calvin Thomas, and I represent CTS BPO Solutions — a professional outsourcing firm based in South Africa. We specialise in data entry, document processing, transcription, virtual assistance, and back-office operations.\n\nI am reaching out because we believe there is an excellent opportunity for us to support your business as a trusted subcontractor. Whether you experience peak-period overflow, need to scale rapidly, or want to reduce operational costs, we can seamlessly extend your capacity with reliable, high-quality work.\n\nWe offer:\n• Flexible engagement — project-based or ongoing\n• Rapid onboarding — operational within 48 hours\n• 99%+ accuracy on data and document work\n• English-first team, GDPR & POPIA compliant\n• Highly competitive subcontracting rates\n\nWould you be open to a brief conversation about how CTS BPO could support your team?\n\nKind regards,\nCalvin Thomas\nCTS BPO Solutions\ncts.cybersolutions@gmail.com`
+        );
+        setPartnerStatus(`✅ Found ${partnerIds.length} BPO companies — partner pitch email ready. Review and click Send All.`);
+        setTimeout(() => sendRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+      } else {
+        setPartnerStatus(`⚠️ No BPO provider companies found in the current contact list.`);
+      }
+    } catch (err) {
+      setPartnerStatus(`⚠️ Scan failed: ${err.response?.data?.error || err.message}`);
+    }
+    setPartnerScanning(false);
+    setTimeout(() => setPartnerStatus(''), 8000);
+  }
+
   // ── BPO Scan — AI classifies which contacts likely need BPO ───────────────
   async function handleBpoScan() {
     if (!contacts.length) return;
@@ -442,7 +476,7 @@ export default function TargetedScraper({ token }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <button
                 onClick={handleBpoScan}
-                disabled={scanning || aiLoading || !contacts.length}
+                disabled={scanning || partnerScanning || aiLoading || !contacts.length}
                 style={{
                   ...btnSecondary,
                   background: scanning ? '#f5f3ff' : 'linear-gradient(135deg,#f5f3ff,#ede9fe)',
@@ -450,9 +484,23 @@ export default function TargetedScraper({ token }) {
                   display: 'flex', alignItems: 'center', gap: 6,
                   fontWeight: 600,
                 }}
-                title="AI analyses each contact and marks with a green dot if they likely need BPO services"
+                title="Find companies that NEED BPO services — marks green dot, auto-ticks them"
               >
-                {scanning ? <><span style={spinner} />Scanning…</> : <>🤖 Scan for BPO</>}
+                {scanning ? <><span style={spinner} />Scanning…</> : <>🟢 Scan for BPO Clients</>}
+              </button>
+              <button
+                onClick={handlePartnerScan}
+                disabled={scanning || partnerScanning || aiLoading || !contacts.length}
+                style={{
+                  ...btnSecondary,
+                  background: partnerScanning ? '#faf5ff' : 'linear-gradient(135deg,#faf5ff,#f3e8ff)',
+                  color: '#7e22ce', border: '1px solid #d8b4fe',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  fontWeight: 600,
+                }}
+                title="Find BPO companies to pitch CTS BPO as a subcontractor — marks purple dot, auto-ticks them"
+              >
+                {partnerScanning ? <><span style={spinner} />Scanning…</> : <>🟣 Scan for BPO Partners</>}
               </button>
               <span style={{ fontSize: 13, color: '#64748b' }}>{selected.size} selected</span>
               <button onClick={toggleAll} style={btnSecondary}>
@@ -463,13 +511,24 @@ export default function TargetedScraper({ token }) {
 
           {scanStatus && (
             <div style={{
-              marginBottom: 10, padding: '8px 12px', borderRadius: 7, fontSize: 13, fontWeight: 600,
+              marginBottom: 8, padding: '8px 12px', borderRadius: 7, fontSize: 13, fontWeight: 600,
               background: scanStatus.startsWith('✅') ? '#f0fdf4' : scanStatus.startsWith('⚠') ? '#fef9c3' : '#f5f3ff',
               color:      scanStatus.startsWith('✅') ? '#166534' : scanStatus.startsWith('⚠') ? '#854d0e' : '#5b21b6',
               display: 'flex', alignItems: 'center', gap: 7,
             }}>
               {scanning && <span style={spinner} />}
               {scanStatus}
+            </div>
+          )}
+          {partnerStatus && (
+            <div style={{
+              marginBottom: 8, padding: '8px 12px', borderRadius: 7, fontSize: 13, fontWeight: 600,
+              background: partnerStatus.startsWith('✅') ? '#faf5ff' : partnerStatus.startsWith('⚠') ? '#fef9c3' : '#faf5ff',
+              color:      partnerStatus.startsWith('✅') ? '#6b21a8' : partnerStatus.startsWith('⚠') ? '#854d0e' : '#7c3aed',
+              display: 'flex', alignItems: 'center', gap: 7,
+            }}>
+              {partnerScanning && <span style={spinner} />}
+              {partnerStatus}
             </div>
           )}
 
@@ -508,21 +567,27 @@ export default function TargetedScraper({ token }) {
                       </td>
                       <td style={{ ...td, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                          {c.bpo_likely === true && (
+                          {c.bpo_provider === true && (
                             <span
-                              title="AI: likely needs BPO services"
+                              title="AI: BPO company — pitch as subcontractor"
+                              style={{ width: 9, height: 9, borderRadius: '50%', background: '#a855f7', flexShrink: 0, boxShadow: '0 0 0 2px #e9d5ff', display: 'inline-block' }}
+                            />
+                          )}
+                          {c.bpo_provider !== true && c.bpo_likely === true && (
+                            <span
+                              title="AI: likely needs BPO services — good client prospect"
                               style={{ width: 9, height: 9, borderRadius: '50%', background: '#22c55e', flexShrink: 0, boxShadow: '0 0 0 2px #bbf7d0', display: 'inline-block' }}
                             />
                           )}
-                          {c.bpo_likely === false && (
+                          {c.bpo_provider !== true && c.bpo_likely === false && (
                             <span
                               title="AI: unlikely to need BPO services"
                               style={{ width: 9, height: 9, borderRadius: '50%', background: '#cbd5e1', flexShrink: 0, display: 'inline-block' }}
                             />
                           )}
-                          {c.bpo_likely === null || c.bpo_likely === undefined ? (
+                          {c.bpo_provider == null && c.bpo_likely == null && (
                             <span style={{ width: 9, height: 9, flexShrink: 0, display: 'inline-block' }} />
-                          ) : null}
+                          )}
                           {c.company || c.domain}
                         </span>
                       </td>

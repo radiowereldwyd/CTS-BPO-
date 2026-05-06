@@ -240,6 +240,7 @@ async function ensureTable() {
   await db.query(`ALTER TABLE scraped_contacts ADD COLUMN IF NOT EXISTS mx_verified    BOOLEAN DEFAULT NULL`).catch(() => {});
   await db.query(`ALTER TABLE scraped_contacts ADD COLUMN IF NOT EXISTS prospect_score INTEGER DEFAULT 0`).catch(() => {});
   await db.query(`ALTER TABLE scraped_contacts ADD COLUMN IF NOT EXISTS bpo_likely     BOOLEAN DEFAULT NULL`).catch(() => {});
+  await db.query(`ALTER TABLE scraped_contacts ADD COLUMN IF NOT EXISTS bpo_provider   BOOLEAN DEFAULT NULL`).catch(() => {});
   await db.query(`CREATE INDEX IF NOT EXISTS idx_sc_score  ON scraped_contacts(prospect_score DESC)`).catch(() => {});
 }
 
