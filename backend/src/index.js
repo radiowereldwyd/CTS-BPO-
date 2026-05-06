@@ -1388,10 +1388,15 @@ app.post('/api/targeted-scrape/bpo-scan', requireAuth, async (req, res) => {
       ).join('\n');
 
       const prompt =
-        `You are a BPO (Business Process Outsourcing) analyst. For each company below, decide if they LIKELY need or use BPO services such as data entry, document processing, back-office operations, transcription, or virtual assistance.\n\n` +
+        `You are a sales analyst for CTS BPO, a South African outsourcing company. ` +
+        `We want to contact businesses that could BENEFIT from outsourcing admin tasks (data entry, document processing, transcription, virtual assistance, back-office work).\n\n` +
+        `For each company below, answer: is this a potential CLIENT for BPO services?\n` +
+        `Mark bpo_likely=TRUE for ANY real business that handles admin, paperwork, records, customer data, or HR internally — they could outsource that work to us.\n` +
+        `Mark bpo_likely=FALSE ONLY if the company name clearly shows it is itself a large BPO/outsourcing provider (e.g. Accenture, Conduent, Infosys BPO, Teleperformance).\n` +
+        `When in doubt, mark TRUE. Be very inclusive.\n\n` +
         `Companies:\n${list}\n\n` +
-        `Reply ONLY with a JSON array: [{"id": <number>, "bpo_likely": true/false, "reason": "<5 words max>"}]\n` +
-        `Be generous — if the company type commonly outsources admin work, mark true.`;
+        `Reply ONLY with a JSON array — no explanation, no markdown:\n` +
+        `[{"id": <number>, "bpo_likely": true/false}]`;
 
       try {
         const apiRes = await fetch(

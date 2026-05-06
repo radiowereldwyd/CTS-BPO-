@@ -205,11 +205,22 @@ export default function TargetedScraper({ token }) {
       );
       // Refresh contacts to get updated bpo_likely flags
       const fresh = await pollStatus();
-      bpoIds = fresh.filter(c => c.bpo_likely && c.email && c.status !== 'bounced').map(c => c.id);
-      setSelected(new Set(bpoIds));
-      setAiStatus(`🤖 Found ${bpoIds.length} BPO prospects — AI is writing the email…`);
+      const bpoContacts = fresh.filter(c => c.bpo_likely && c.email && c.status !== 'bounced');
+      const allEligible = fresh.filter(c => c.email && c.status !== 'bounced');
+
+      if (bpoContacts.length > 0) {
+        // AI found BPO-likely contacts — select only those
+        bpoIds = bpoContacts.map(c => c.id);
+        setSelected(new Set(bpoIds));
+        setAiStatus(`🤖 Found ${bpoIds.length} BPO prospects — AI is writing the email…`);
+      } else {
+        // AI returned 0 — fall back to all eligible contacts
+        bpoIds = allEligible.map(c => c.id);
+        setSelected(new Set(bpoIds));
+        setAiStatus(`🤖 Scan inconclusive — selecting all ${bpoIds.length} eligible contacts…`);
+      }
     } catch {
-      // Fallback: select all eligible if BPO scan fails
+      // Fallback: select all eligible if BPO scan errors
       bpoIds = found.filter(c => c.email && c.status !== 'bounced').map(c => c.id);
       setSelected(new Set(bpoIds));
       setAiStatus(`🤖 AI is writing email for ${bpoIds.length} contacts…`);
