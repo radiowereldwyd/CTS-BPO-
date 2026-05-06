@@ -556,8 +556,8 @@ const templates = {
             <tr>
               <td style="padding:10px 14px;border:1px solid #e2e8f0">Enterprise</td>
               <td style="padding:10px 14px;border:1px solid #e2e8f0">Unlimited</td>
-              <td style="padding:10px 14px;border:1px solid #e2e8f0"><strong>Custom</strong></td>
-              <td style="padding:10px 14px;border:1px solid #e2e8f0">Custom</td>
+              <td style="padding:10px 14px;border:1px solid #e2e8f0"><strong>R 30,000</strong></td>
+              <td style="padding:10px 14px;border:1px solid #e2e8f0">~$1,620</td>
             </tr>
           </table>
           ${highlight(`All plans include: quality assurance with automated accuracy scanning, GDPR/POPIA compliance, full audit trail, dedicated account manager, and 24–48 hour turnaround SLA.`)}
