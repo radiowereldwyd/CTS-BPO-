@@ -66,12 +66,14 @@ export default function TargetedScraper({ token }) {
   const [pdfName, setPdfName]         = useState('');
   const [useIntroLetter, setUseIntroLetter] = useState(true);
 
-  const [loading, setLoading]       = useState(false);
-  const [aiLoading, setAiLoading]   = useState(false);
-  const [sending, setSending]       = useState(false);
-  const [error, setError]           = useState('');
-  const [sendResult, setSendResult] = useState(null);
-  const [aiStatus, setAiStatus]     = useState('');
+  const [loading, setLoading]         = useState(false);
+  const [aiLoading, setAiLoading]     = useState(false);
+  const [scanning, setScanning]       = useState(false);
+  const [scanStatus, setScanStatus]   = useState('');
+  const [sending, setSending]         = useState(false);
+  const [error, setError]             = useState('');
+  const [sendResult, setSendResult]   = useState(null);
+  const [aiStatus, setAiStatus]       = useState('');
 
   const pollRef   = useRef(null);
   const fileRef   = useRef(null);
@@ -258,6 +260,26 @@ export default function TargetedScraper({ token }) {
     setSending(false);
   }
 
+  // ── BPO Scan — AI classifies which contacts likely need BPO ───────────────
+  async function handleBpoScan() {
+    if (!contacts.length) return;
+    setScanning(true);
+    setScanStatus('🤖 AI is analysing contacts for BPO likelihood…');
+    const allIds = contacts.map(c => c.id);
+    try {
+      const res = await axios.post(`${API}/api/targeted-scrape/bpo-scan`,
+        { contactIds: allIds },
+        { headers: authHeader }
+      );
+      setScanStatus(`✅ Scan complete — ${res.data.classified} contacts analysed`);
+      await pollStatus(); // refresh to get updated bpo_likely flags
+    } catch (err) {
+      setScanStatus(`⚠️ Scan failed: ${err.response?.data?.error || err.message}`);
+    }
+    setScanning(false);
+    setTimeout(() => setScanStatus(''), 6000);
+  }
+
   const isRunning  = session?.active;
   const isDone     = session && !session.active && session.completedAt;
   const foundCount = session?.found || 0;
@@ -375,20 +397,51 @@ export default function TargetedScraper({ token }) {
       {/* ── Results Table ─────────────────────────────────────────────────── */}
       {contacts.length > 0 && (
         <div style={{ ...card, marginTop: 18 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={sectionHead}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+            <h3 style={{ ...sectionHead, margin: 0 }}>
               Results
               <span style={{ marginLeft: 10, background: '#e0e7ff', color: '#4338ca', borderRadius: 12, padding: '2px 10px', fontSize: 13, fontWeight: 600 }}>
                 {contacts.length}
               </span>
+              {contacts.some(c => c.bpo_likely) && (
+                <span style={{ marginLeft: 8, background: '#dcfce7', color: '#166534', borderRadius: 12, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>
+                  🟢 {contacts.filter(c => c.bpo_likely).length} BPO likely
+                </span>
+              )}
             </h3>
-            <div style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 10 }}>
-              {selected.size} selected
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                onClick={handleBpoScan}
+                disabled={scanning || aiLoading || !contacts.length}
+                style={{
+                  ...btnSecondary,
+                  background: scanning ? '#f5f3ff' : 'linear-gradient(135deg,#f5f3ff,#ede9fe)',
+                  color: '#6d28d9', border: '1px solid #c4b5fd',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  fontWeight: 600,
+                }}
+                title="AI analyses each contact and marks with a green dot if they likely need BPO services"
+              >
+                {scanning ? <><span style={spinner} />Scanning…</> : <>🤖 Scan for BPO</>}
+              </button>
+              <span style={{ fontSize: 13, color: '#64748b' }}>{selected.size} selected</span>
               <button onClick={toggleAll} style={btnSecondary}>
-                {selected.size === contacts.length ? 'Deselect All' : 'Select All'}
+                {selected.size === contacts.filter(c => c.email && c.status !== 'bounced').length ? 'Deselect All' : 'Select All'}
               </button>
             </div>
           </div>
+
+          {scanStatus && (
+            <div style={{
+              marginBottom: 10, padding: '8px 12px', borderRadius: 7, fontSize: 13, fontWeight: 600,
+              background: scanStatus.startsWith('✅') ? '#f0fdf4' : scanStatus.startsWith('⚠') ? '#fef9c3' : '#f5f3ff',
+              color:      scanStatus.startsWith('✅') ? '#166534' : scanStatus.startsWith('⚠') ? '#854d0e' : '#5b21b6',
+              display: 'flex', alignItems: 'center', gap: 7,
+            }}>
+              {scanning && <span style={spinner} />}
+              {scanStatus}
+            </div>
+          )}
 
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -423,7 +476,26 @@ export default function TargetedScraper({ token }) {
                           title={isBounced ? 'Email bounced — permanently excluded' : !hasEmail ? 'No email address — cannot send' : undefined}
                         />
                       </td>
-                      <td style={{ ...td, fontWeight: 500, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.company || c.domain}</td>
+                      <td style={{ ...td, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                          {c.bpo_likely === true && (
+                            <span
+                              title="AI: likely needs BPO services"
+                              style={{ width: 9, height: 9, borderRadius: '50%', background: '#22c55e', flexShrink: 0, boxShadow: '0 0 0 2px #bbf7d0', display: 'inline-block' }}
+                            />
+                          )}
+                          {c.bpo_likely === false && (
+                            <span
+                              title="AI: unlikely to need BPO services"
+                              style={{ width: 9, height: 9, borderRadius: '50%', background: '#cbd5e1', flexShrink: 0, display: 'inline-block' }}
+                            />
+                          )}
+                          {c.bpo_likely === null || c.bpo_likely === undefined ? (
+                            <span style={{ width: 9, height: 9, flexShrink: 0, display: 'inline-block' }} />
+                          ) : null}
+                          {c.company || c.domain}
+                        </span>
+                      </td>
                       <td style={{ ...td, color: isBounced ? '#ef4444' : hasEmail ? '#4f46e5' : '#94a3b8', fontStyle: hasEmail ? 'normal' : 'italic' }}>
                         {hasEmail ? c.email : 'no email'}
                       </td>

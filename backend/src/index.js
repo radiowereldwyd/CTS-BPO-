@@ -1340,7 +1340,7 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
       const result = await db.query(
-        `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, created_at
+        `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, bpo_likely, created_at
          FROM scraped_contacts ${where} ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`,
         params
       );
@@ -1348,7 +1348,7 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
     } else if (session.sessionId) {
       const sourceTag = `targeted_${session.sessionId}`;
       const result = await db.query(
-        `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, created_at
+        `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, bpo_likely, created_at
          FROM scraped_contacts WHERE source = $1 ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`,
         [sourceTag]
       );
@@ -1356,6 +1356,77 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
     }
 
     res.json({ session, contacts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/targeted-scrape/bpo-scan — AI classifies which contacts likely need BPO
+app.post('/api/targeted-scrape/bpo-scan', requireAuth, async (req, res) => {
+  try {
+    const { contactIds } = req.body;
+    const ids = Array.isArray(contactIds) ? contactIds : [];
+    if (!ids.length) return res.status(400).json({ error: 'No contact IDs provided' });
+
+    const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+    if (!GOOGLE_API_KEY) return res.status(503).json({ error: 'GOOGLE_API_KEY not configured' });
+
+    // Fetch contacts
+    const result = await db.query(
+      `SELECT id, company, domain, business_type, snippet, query_used FROM scraped_contacts WHERE id = ANY($1::int[])`,
+      [ids]
+    );
+    const contacts = result.rows;
+    if (!contacts.length) return res.status(404).json({ error: 'No contacts found' });
+
+    // Process in batches of 15 to stay within Gemini token limits
+    const BATCH = 15;
+    let classified = 0;
+
+    for (let i = 0; i < contacts.length; i += BATCH) {
+      const batch = contacts.slice(i, i + BATCH);
+      const list = batch.map(c =>
+        `{"id":${c.id},"company":${JSON.stringify(c.company || c.domain || '')},"type":${JSON.stringify(c.business_type || '')},"context":${JSON.stringify((c.snippet || c.query_used || '').slice(0, 120))}}`
+      ).join('\n');
+
+      const prompt =
+        `You are a BPO (Business Process Outsourcing) analyst. For each company below, decide if they LIKELY need or use BPO services such as data entry, document processing, back-office operations, transcription, or virtual assistance.\n\n` +
+        `Companies:\n${list}\n\n` +
+        `Reply ONLY with a JSON array: [{"id": <number>, "bpo_likely": true/false, "reason": "<5 words max>"}]\n` +
+        `Be generous — if the company type commonly outsources admin work, mark true.`;
+
+      try {
+        const apiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+            signal: AbortSignal.timeout(25000),
+          }
+        );
+        if (!apiRes.ok) { console.error('[BPO-SCAN] Gemini error', apiRes.status); continue; }
+        const data = await apiRes.json();
+        const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+        const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+        let parsed = [];
+        try { parsed = JSON.parse(clean); } catch { continue; }
+
+        for (const item of parsed) {
+          if (typeof item.id !== 'number') continue;
+          await db.query(
+            `UPDATE scraped_contacts SET bpo_likely=$1, updated_at=NOW() WHERE id=$2`,
+            [item.bpo_likely === true, item.id]
+          ).catch(() => {});
+          classified++;
+        }
+      } catch (e) {
+        console.error('[BPO-SCAN] batch error:', e.message);
+      }
+
+      // Small delay between batches to avoid rate limiting
+      if (i + BATCH < contacts.length) await new Promise(r => setTimeout(r, 1200));
+    }
+
+    res.json({ ok: true, scanned: contacts.length, classified });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
