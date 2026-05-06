@@ -210,6 +210,14 @@ export default function TargetedScraper({ token }) {
       const bpoContacts = fresh.filter(c => c.bpo_likely && c.email && c.status !== 'bounced');
       const allEligible = fresh.filter(c => c.email && c.status !== 'bounced');
 
+      // Check if everything is bounced — tell user clearly instead of "0 selected"
+      const totalBounced = fresh.filter(c => c.status === 'bounced').length;
+      if (allEligible.length === 0 && totalBounced > 0) {
+        setAiStatus(`⚠️ All ${totalBounced} contacts from this scrape were previously emailed and bounced. Try different keywords, country or industry to find fresh contacts.`);
+        setAiLoading(false);
+        return;
+      }
+
       if (bpoContacts.length > 0) {
         // AI found BPO-likely contacts — select only those
         bpoIds = bpoContacts.map(c => c.id);
@@ -223,7 +231,13 @@ export default function TargetedScraper({ token }) {
       }
     } catch {
       // Fallback: select all eligible if BPO scan errors
-      bpoIds = found.filter(c => c.email && c.status !== 'bounced').map(c => c.id);
+      const eligible = found.filter(c => c.email && c.status !== 'bounced');
+      if (eligible.length === 0) {
+        setAiStatus(`⚠️ All contacts from this scrape were previously bounced. Try different keywords, country or industry.`);
+        setAiLoading(false);
+        return;
+      }
+      bpoIds = eligible.map(c => c.id);
       setSelected(new Set(bpoIds));
       setAiStatus(`🤖 AI is writing email for ${bpoIds.length} contacts…`);
     }

@@ -283,7 +283,7 @@ async function runMxScoringBatch({ limit = 60 } = {}) {
   }
 }
 
-// ── Store results ────────────────────────────────────────────────────────────
+// ── Store results (continuous scraper — skip duplicates) ─────────────────────
 async function storeContacts(contacts) {
   let inserted = 0;
   for (const c of contacts) {
@@ -302,6 +302,34 @@ async function storeContacts(contacts) {
     } catch { /* skip duplicates */ }
   }
   return inserted;
+}
+
+// ── Store results for targeted scrape — UPSERT so existing emails get re-tagged
+// to the current session and filled in with country/industry if missing.
+// Returns count of rows affected (inserted OR re-tagged).
+async function storeContactsTargeted(contacts) {
+  let affected = 0;
+  for (const c of contacts) {
+    try {
+      const res = await db.query(
+        `INSERT INTO scraped_contacts
+           (company, website, domain, email, phone, address, city, country, business_type, source, query_used, snippet)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (email) DO UPDATE SET
+           source        = EXCLUDED.source,
+           country       = COALESCE(NULLIF(scraped_contacts.country,''),       EXCLUDED.country),
+           business_type = COALESCE(NULLIF(scraped_contacts.business_type,''), EXCLUDED.business_type),
+           company       = COALESCE(NULLIF(scraped_contacts.company,''),        EXCLUDED.company),
+           snippet       = COALESCE(NULLIF(scraped_contacts.snippet,''),        EXCLUDED.snippet)
+         RETURNING id`,
+        [c.company||null, c.website||null, c.domain||null, c.email,
+         c.phone||null, c.address||null, c.city||null, c.country||null,
+         c.businessType||null, c.source, c.query||null, c.snippet||null]
+      );
+      if (res.rowCount > 0) affected++;
+    } catch { /* skip on error */ }
+  }
+  return affected;
 }
 
 // ── 1. Google Places API (New v1) ───────────────────────────────────────────
@@ -909,10 +937,10 @@ async function runTargetedScrape({ country, industry, keywords, limit = 100, ses
         }
       });
 
-      const inserted = await storeContacts(contacts);
+      const inserted = await storeContactsTargeted(contacts);
       totalInserted += inserted;
       _targetedSession.found = totalInserted;
-      console.log(`🎯 [TARGETED] DDG "${q.slice(0,50)}..." → ${inserted} new`);
+      console.log(`🎯 [TARGETED] DDG "${q.slice(0,50)}..." → ${inserted} new/re-tagged`);
     } catch (err) {
       if (err.response?.status === 429 || err.response?.status === 403) {
         console.warn('⚠️  [TARGETED] DuckDuckGo rate-limited — skipping remaining DDG queries');
@@ -959,10 +987,10 @@ async function runTargetedScrape({ country, industry, keywords, limit = 100, ses
             });
           }
         }
-        const inserted = await storeContacts(contacts);
+        const inserted = await storeContactsTargeted(contacts);
         totalInserted += inserted;
         _targetedSession.found = totalInserted;
-        console.log(`🎯 [TARGETED] SerpAPI "${q.slice(0,50)}..." → ${inserted} new`);
+        console.log(`🎯 [TARGETED] SerpAPI "${q.slice(0,50)}..." → ${inserted} new/re-tagged`);
       } catch (err) {
         console.error(`❌ [TARGETED] SerpAPI error:`, err.message);
       }
