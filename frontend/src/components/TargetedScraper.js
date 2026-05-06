@@ -272,7 +272,11 @@ export default function TargetedScraper({ token }) {
         { headers: authHeader }
       );
       setScanStatus(`✅ Scan complete — ${res.data.classified} contacts analysed`);
-      await pollStatus(); // refresh to get updated bpo_likely flags
+      const fresh = await pollStatus(); // refresh to get updated bpo_likely flags
+      // Auto-tick all contacts the AI flagged as BPO likely
+      const bpoIds = fresh.filter(c => c.bpo_likely && c.email && c.status !== 'bounced').map(c => c.id);
+      if (bpoIds.length) setSelected(new Set(bpoIds));
+      setScanStatus(`✅ Scan complete — ${bpoIds.length} BPO-likely contacts selected and ready to send`);
     } catch (err) {
       setScanStatus(`⚠️ Scan failed: ${err.response?.data?.error || err.message}`);
     }
