@@ -124,9 +124,27 @@ function isEmailPaused() { return emailPaused; }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Sender detection — priority: MailerLite > Mailgun > Mailjet > Gmail ──────
-// Providers that returned 404/403 (feature not enabled) are skipped for the session
+// ── Sender detection — priority: Gmail > Mailjet > Mailgun > MailerLite ──────
+// Gmail is first because it is the only verified-working provider.
+// MailerLite transactional is a paid add-on (404 if not enabled).
+// Mailgun sandbox domains cannot send to external addresses.
+// Providers that return 404/403/401 are skipped for the session.
 const _brokenProviders = new Set();
+
+// Auto-skip providers that are known broken at startup
+(function preflightProviders() {
+  // MailerLite transactional email requires a separate paid plan — skip unless explicitly enabled
+  if (MAILERLITE_API_KEY) {
+    _brokenProviders.add('mailerlite');
+    console.log('[EMAIL] MailerLite skipped — transactional email add-on not confirmed active');
+  }
+  // Mailgun sandbox domains can only send to pre-authorized addresses, not cold prospects
+  if (MAILGUN_KEY && MAILGUN_DOMAIN && MAILGUN_DOMAIN.includes('sandbox')) {
+    _brokenProviders.add('mailgun');
+    console.warn('[EMAIL] Mailgun SKIPPED — sandbox domain detected; add a real verified domain to enable Mailgun');
+  }
+})();
+
 function markBroken(provider) {
   if (!_brokenProviders.has(provider)) {
     _brokenProviders.add(provider);
@@ -135,10 +153,10 @@ function markBroken(provider) {
 }
 
 function getSenderMode() {
-  if (MAILERLITE_API_KEY && !_brokenProviders.has('mailerlite'))                 return 'mailerlite';
-  if (MAILGUN_KEY && MAILGUN_DOMAIN && !_brokenProviders.has('mailgun'))         return 'mailgun';
-  if (MAILJET_API_KEY && MAILJET_SEC_KEY && !_brokenProviders.has('mailjet'))    return 'mailjet';
   if (GMAIL_USER && GMAIL_APP_PASS && !_brokenProviders.has('gmail'))            return 'gmail';
+  if (MAILJET_API_KEY && MAILJET_SEC_KEY && !_brokenProviders.has('mailjet'))    return 'mailjet';
+  if (MAILGUN_KEY && MAILGUN_DOMAIN && !_brokenProviders.has('mailgun'))         return 'mailgun';
+  if (MAILERLITE_API_KEY && !_brokenProviders.has('mailerlite'))                 return 'mailerlite';
   return null;
 }
 
@@ -1731,7 +1749,7 @@ function portalFooter() {
 }
 
 // ── Midnight daily reset — re-enables providers & resets send counter ────────
-// Runs at 00:01 UTC every day so Gmail/Mailgun/etc un-break after their daily limits reset
+// Runs at 00:01 UTC every day so Gmail/Mailjet/etc un-break after their daily limits reset
 (function scheduleMidnightReset() {
   try {
     const nodeCron = require('node-cron');
@@ -1741,8 +1759,11 @@ function portalFooter() {
       dailyResetDate  = new Date().toDateString();
       transporter     = null;           // force SMTP reconnect with fresh auth
       _brokenProviders.clear();         // re-enable Gmail + all other providers
+      // Re-apply preflight: skip MailerLite (no transactional plan) and Mailgun sandbox
+      if (MAILERLITE_API_KEY) _brokenProviders.add('mailerlite');
+      if (MAILGUN_KEY && MAILGUN_DOMAIN && MAILGUN_DOMAIN.includes('sandbox')) _brokenProviders.add('mailgun');
       savePerProviderCount();
-      console.log(`[EMAIL] 🌅 Midnight daily reset — cleared ${prev} sends, all providers re-enabled, SMTP refreshed`);
+      console.log(`[EMAIL] 🌅 Midnight daily reset — cleared ${prev} sends, Gmail re-enabled, SMTP refreshed`);
     }, { timezone: 'UTC' });
     console.log('[EMAIL] Midnight reset scheduled (00:01 UTC daily)');
   } catch (e) {
