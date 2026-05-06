@@ -1,8 +1,8 @@
 {
-  "sentToday": 32,
+  "sentToday": 51,
   "todayDate": "Wed May 06 2026",
-  "savedAt": "2026-05-06T13:25:44.532Z",
-  "provider": "gmail",
+  "savedAt": "2026-05-06T16:00:36.908Z",
+  "provider": "brevo",
   "gmail": {
     "sentToday": 20,
     "todayDate": "Wed May 06 2026"
@@ -18,5 +18,9 @@
   "mailerlite": {
     "sentToday": 0,
     "todayDate": "Fri May 01 2026"
+  },
+  "brevo": {
+    "sentToday": 19,
+    "todayDate": "Wed May 06 2026"
   }
 }
