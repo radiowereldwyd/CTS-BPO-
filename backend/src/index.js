@@ -1566,15 +1566,37 @@ app.post('/api/targeted-scrape/send', requireAuth, requireAdmin, pdfUpload.singl
       }
     }
 
-    let sent = 0, failed = 0;
+    const { verifyEmailDomain } = require('./modules/email-verifier');
+
+    // Helper: detect permanent SMTP bounce (5xx) vs transient failure
+    function isPermanentBounce(err) {
+      const code = err.responseCode || err.code || 0;
+      if (code >= 500) return true;
+      const msg = (err.message || '').toLowerCase();
+      return /550|551|552|553|554|user unknown|does not exist|invalid address|mailbox not found|no such user|address rejected/.test(msg);
+    }
+
+    let sent = 0, failed = 0, skippedMx = 0, bounced = 0;
     for (const c of contacts) {
+      // ── MX pre-check: skip if domain has no mail servers ──────────────────
+      const mxOk = await verifyEmailDomain(c.email).catch(() => true); // default allow on error
+      if (!mxOk) {
+        console.log(`[TARGETED SEND] MX fail → ${c.email} — marking bounced`);
+        await db.query(
+          `UPDATE scraped_contacts SET status='bounced', bounced_at=NOW(), updated_at=NOW() WHERE id=$1`,
+          [c.id]
+        ).catch(() => {});
+        skippedMx++;
+        bounced++;
+        continue;
+      }
+
       // Personalise the intro letter per contact if name is available
       const attachments = [...baseAttachments];
       if (useIntroLetter === 'true' && c.company) {
         try {
           const { generateIntroLetter } = require('./modules/pdf-intro-letter');
           const personalBuf = await generateIntroLetter({ recipientCompany: c.company });
-          // Replace the generic letter with the personalised one
           const idx = attachments.findIndex(a => a.filename === 'CTS-BPO-Introduction.pdf');
           if (idx >= 0) attachments[idx] = { filename: 'CTS-BPO-Introduction.pdf', content: personalBuf, contentType: 'application/pdf' };
         } catch {}
@@ -1597,13 +1619,23 @@ app.post('/api/targeted-scrape/send', requireAuth, requireAdmin, pdfUpload.singl
           [c.id]
         ).catch(() => {});
       } catch (err) {
-        failed++;
-        console.error(`[TARGETED SEND] Failed → ${c.email}:`, err.message);
+        if (isPermanentBounce(err)) {
+          // Permanent failure — mark the whole domain as bounced so AI skips it forever
+          bounced++;
+          console.warn(`[TARGETED SEND] Permanent bounce → ${c.email}: ${err.message}`);
+          await db.query(
+            `UPDATE scraped_contacts SET status='bounced', bounced_at=NOW(), updated_at=NOW() WHERE email=$1`,
+            [c.email]
+          ).catch(() => {});
+        } else {
+          failed++;
+          console.error(`[TARGETED SEND] Transient fail → ${c.email}:`, err.message);
+        }
       }
       await new Promise(r => setTimeout(r, 4000)); // 4s between sends
     }
 
-    res.json({ ok: true, sent, failed, total: contacts.length, skippedNoEmail });
+    res.json({ ok: true, sent, failed, bounced, skippedMx, total: contacts.length, skippedNoEmail });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

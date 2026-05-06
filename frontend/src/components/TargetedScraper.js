@@ -210,8 +210,8 @@ export default function TargetedScraper({ token }) {
     setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   }
   function toggleAll() {
-    const withEmail = contacts.filter(c => c.email).map(c => c.id);
-    setSelected(selected.size === withEmail.length ? new Set() : new Set(withEmail));
+    const eligible = contacts.filter(c => c.email && c.status !== 'bounced').map(c => c.id);
+    setSelected(selected.size === eligible.length ? new Set() : new Set(eligible));
   }
 
   function handleFile(file) { if (!file) return; setPdfFile(file); setPdfName(file.name); }
@@ -399,24 +399,26 @@ export default function TargetedScraper({ token }) {
               </thead>
               <tbody>
                 {contacts.map(c => {
-                  const hasEmail = !!(c.email && c.email.trim());
+                  const hasEmail  = !!(c.email && c.email.trim());
+                  const isBounced = c.status === 'bounced';
+                  const canSelect = hasEmail && !isBounced;
                   return (
                     <tr key={c.id} style={{
                       borderBottom: '1px solid #f1f5f9',
-                      background: !hasEmail ? '#fafafa' : selected.has(c.id) ? '#eef2ff' : 'transparent',
-                      opacity: hasEmail ? 1 : 0.45,
+                      background: isBounced ? '#fff5f5' : !hasEmail ? '#fafafa' : selected.has(c.id) ? '#eef2ff' : 'transparent',
+                      opacity: canSelect ? 1 : 0.45,
                     }}>
                       <td style={td}>
                         <input
                           type="checkbox"
                           checked={selected.has(c.id)}
-                          onChange={() => hasEmail && toggleContact(c.id)}
-                          disabled={!hasEmail}
-                          title={hasEmail ? undefined : 'No email address — cannot send'}
+                          onChange={() => canSelect && toggleContact(c.id)}
+                          disabled={!canSelect}
+                          title={isBounced ? 'Email bounced — permanently excluded' : !hasEmail ? 'No email address — cannot send' : undefined}
                         />
                       </td>
                       <td style={{ ...td, fontWeight: 500, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.company || c.domain}</td>
-                      <td style={{ ...td, color: hasEmail ? '#4f46e5' : '#94a3b8', fontStyle: hasEmail ? 'normal' : 'italic' }}>
+                      <td style={{ ...td, color: isBounced ? '#ef4444' : hasEmail ? '#4f46e5' : '#94a3b8', fontStyle: hasEmail ? 'normal' : 'italic' }}>
                         {hasEmail ? c.email : 'no email'}
                       </td>
                       <td style={{ ...td, color: '#64748b' }}>{c.domain}</td>
@@ -425,9 +427,15 @@ export default function TargetedScraper({ token }) {
                       <td style={td}>
                         <span style={{
                           padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
-                          background: c.status === 'contacted' ? '#dcfce7' : '#f1f5f9',
-                          color:      c.status === 'contacted' ? '#166534' : '#64748b',
-                        }}>{c.status}</span>
+                          background: isBounced                   ? '#fee2e2' :
+                                      c.status === 'contacted'   ? '#dcfce7' :
+                                      c.status === 'followup1'   ? '#fef9c3' :
+                                      c.status === 'followup2'   ? '#ffedd5' : '#f1f5f9',
+                          color:      isBounced                   ? '#b91c1c' :
+                                      c.status === 'contacted'   ? '#166534' :
+                                      c.status === 'followup1'   ? '#854d0e' :
+                                      c.status === 'followup2'   ? '#9a3412' : '#64748b',
+                        }}>{isBounced ? '⛔ bounced' : c.status}</span>
                       </td>
                     </tr>
                   );
@@ -527,7 +535,8 @@ export default function TargetedScraper({ token }) {
           {sendResult && (
             <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 8, background: '#f0fdf4', color: '#166534', fontSize: 13, fontWeight: 600 }}>
               ✅ Sent to {sendResult.sent} contacts
-              {sendResult.failed > 0 ? ` · ${sendResult.failed} failed` : ''}
+              {sendResult.failed > 0 ? ` · ${sendResult.failed} transient failures` : ''}
+              {sendResult.bounced > 0 ? ` · ${sendResult.bounced} bounced & removed` : ''}
               {sendResult.skippedNoEmail > 0 ? ` · ${sendResult.skippedNoEmail} skipped (no email)` : ''}.
             </div>
           )}

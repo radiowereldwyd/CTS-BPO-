@@ -700,7 +700,21 @@ async function runScrapedContactsOutreach() {
         console.error(`[EMAIL] Auth fail (scrape) for ${c.email}: ${err.message}`);
         break; // stop the batch — circuit is now open
       }
-      await logActivity('scrape_outreach', `Failed → ${c.email}: ${err.message}`, 'scraped_contact', c.id, 'error');
+      // Detect permanent SMTP bounce (5xx) — mark contact so AI never tries again
+      const code = err.responseCode || err.code || 0;
+      const msg  = (err.message || '').toLowerCase();
+      const isPermanent = code >= 500 ||
+        /550|551|552|553|554|user unknown|does not exist|invalid address|mailbox not found|no such user|address rejected/.test(msg);
+      if (isPermanent) {
+        console.warn(`[OUTREACH] Permanent bounce → ${c.email}: ${err.message}`);
+        await db.query(
+          `UPDATE scraped_contacts SET status='bounced', bounced_at=NOW(), updated_at=NOW() WHERE email=$1`,
+          [c.email]
+        ).catch(() => {});
+        await logActivity('scrape_outreach', `Permanent bounce → ${c.email}`, 'scraped_contact', c.id, 'warning');
+      } else {
+        await logActivity('scrape_outreach', `Failed → ${c.email}: ${err.message}`, 'scraped_contact', c.id, 'error');
+      }
     }
   }
 
