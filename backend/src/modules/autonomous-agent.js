@@ -79,73 +79,64 @@ function serpApiRateLimit() {
 }
 
 // ── BPO lead search queries ────────────────────────────────────────────────
+// TARGET: companies that HIRE outsourcing (law firms, accountants, clinics, e-commerce, real estate)
+// NOT: BPO companies themselves
 const LEAD_QUERIES = [
-  // ══ PRIORITY 1: Clutch.co — active BPO buyers who reviewed competitors ═══
-  // Clutch review pages identify companies actively paying for BPO services
-  { q: 'site:clutch.co "bpo" "data entry" reviews "contact"', type: 'data-entry' },
-  { q: 'site:clutch.co "transcription" OR "translation" outsourcing reviews', type: 'transcription' },
-  { q: 'site:clutch.co "virtual assistant" outsourcing "contact" reviews', type: 'virtual-assistant' },
-  { q: 'site:clutch.co "content moderation" OR "data capture" BPO reviews', type: 'content-moderation' },
-  { q: 'site:clutch.co "finance" OR "invoice" OR "accounts payable" outsource', type: 'finance-admin' },
-  { q: 'site:clutch.co "South Africa" BPO outsourcing company reviews', type: 'general' },
-  // Clutch reviews of the 14 competitor firms → reviewer companies are warm leads
-  { q: 'site:clutch.co/profile/helpware reviews "data entry" OR "transcription"', type: 'data-entry' },
-  { q: 'site:clutch.co/profile/ardem-incorporated reviews "invoice" OR "data"', type: 'finance-admin' },
-  { q: 'site:clutch.co/profile/oworkers reviews "data labeling" OR "data entry"', type: 'data-entry' },
-  { q: 'site:clutch.co/profile/suntec-india reviews "data" OR "transcription"', type: 'transcription' },
-  { q: 'site:clutch.co "outsourcing" "bpo" "data entry" "contact us" -site:linkedin.com', type: 'data-entry' },
-  { q: 'clutch.co "top bpo companies" "data entry" "contact" South Africa', type: 'general' },
+  // ══ PRIORITY 1: Law firms — high-value, heavy admin burden ════════════════
+  { q: 'law firm "contact us" South Africa "data entry" OR "document" OR "admin" -site:linkedin.com', type: 'document-processing' },
+  { q: 'attorney "contact us" South Africa office admin -site:linkedin.com -site:indeed.com', type: 'document-processing' },
+  { q: '"legal firm" "contact us" UK OR USA "document processing" OR "data entry"', type: 'document-processing' },
+  { q: 'law firm "contact us" UK "admin support" OR "back office" -site:linkedin.com', type: 'document-processing' },
+  { q: 'solicitors "contact us" UK "admin" OR "document" -site:linkedin.com', type: 'document-processing' },
 
-  // ══ PRIORITY 2: Outsource Accelerator — BPO marketplace buyers ════════
-  { q: 'site:outsourceaccelerator.com "data entry" "contact" outsourcing company', type: 'data-entry' },
-  { q: 'site:outsourceaccelerator.com "transcription" OR "translation" BPO contact', type: 'transcription' },
-  { q: 'site:outsourceaccelerator.com "virtual assistant" outsourcing contact', type: 'virtual-assistant' },
-  { q: 'site:outsourceaccelerator.com "finance" OR "invoice processing" outsource', type: 'finance-admin' },
-  { q: 'site:outsourceaccelerator.com "South Africa" BPO company contact', type: 'general' },
-  { q: 'outsourceaccelerator.com "looking for" "bpo" OR "outsourcing" "data entry"', type: 'data-entry' },
-  { q: 'outsourceaccelerator.com "content moderation" OR "data capture" company contact', type: 'content-moderation' },
-  { q: 'outsourceaccelerator.com "affordable" "bpo" "outsourcing" "get a quote"', type: 'general' },
+  // ══ PRIORITY 2: Accounting & finance firms ════════════════════════════════
+  { q: 'accounting firm "contact us" South Africa "data entry" OR "bookkeeping" -site:linkedin.com', type: 'finance-admin' },
+  { q: '"chartered accountant" "contact us" South Africa -site:linkedin.com', type: 'finance-admin' },
+  { q: 'bookkeeping company "contact us" South Africa OR UK -site:linkedin.com', type: 'finance-admin' },
+  { q: '"accounts payable" "contact us" company South Africa -site:linkedin.com', type: 'finance-admin' },
+  { q: 'payroll company "contact us" South Africa small business -site:linkedin.com', type: 'finance-admin' },
 
-  // ══ PRIORITY 3: Direct competitor client mining ════════════════════════
-  // Find companies that mention these competitors + show buying intent
-  { q: '"Helpware" review "data entry" OR "transcription" "contact" -site:clutch.co', type: 'data-entry' },
-  { q: '"ARDEM" review "invoice" OR "data capture" "contact" -site:clutch.co', type: 'finance-admin' },
-  { q: '"oWorkers" review "data" "contact" outsourcing alternative', type: 'data-entry' },
-  { q: '"Softtek" BPO review "contact" OR "alternative" outsourcing services', type: 'general' },
-  { q: '"Remote CoWorker" review "virtual assistant" "contact" alternative', type: 'virtual-assistant' },
-  { q: '"Unity Communications" review BPO "contact" "data entry" alternative', type: 'customer-support' },
+  // ══ PRIORITY 3: Medical & healthcare (transcription + data entry) ══════════
+  { q: 'medical practice "contact us" South Africa "admin" OR "records" -site:linkedin.com', type: 'transcription' },
+  { q: 'GP practice "contact us" South Africa -site:linkedin.com -site:healthsites.za', type: 'transcription' },
+  { q: 'dental practice "contact us" South Africa "admin" -site:linkedin.com', type: 'transcription' },
+  { q: 'private clinic "contact us" South Africa "patient records" OR "admin" -site:linkedin.com', type: 'transcription' },
+  { q: 'healthcare provider "contact us" UK "medical transcription" OR "admin support"', type: 'transcription' },
 
-  // ── Original operator-rich queries ──────────────────────────────────────
-  { q: '"outsource" "data entry" "contact us" OR "get a quote" -site:linkedin.com -site:indeed.com', type: 'data-entry' },
-  { q: '"transcription service" "outsource" OR "BPO" "company" "quote" -site:linkedin.com', type: 'transcription' },
-  { q: '"translation services" "outsource" "provider" "get quote" -site:linkedin.com', type: 'translation' },
-  { q: '"virtual assistant" "outsourcing" "company" "services" -site:linkedin.com', type: 'virtual-assistant' },
-  { q: '"accounts payable" "outsource" "service provider" -site:linkedin.com', type: 'finance-admin' },
-  { q: '"content moderation" "outsource" "company" -site:linkedin.com', type: 'content-moderation' },
-  { q: '"data capture" "outsourcing company" "quote" -site:linkedin.com', type: 'data-entry' },
-  { q: '"payroll processing" "outsource" "small business" -site:linkedin.com', type: 'finance-admin' },
-  { q: '"customer support" "outsourcing" "BPO" "company" "contact" -site:linkedin.com', type: 'customer-support' },
-  { q: 'BPO services South Africa "contact us" "get a quote" -site:linkedin.com -site:indeed.com', type: 'general' },
-  { q: '"document digitization" "outsource" "service" -site:linkedin.com', type: 'document-processing' },
-  { q: '"social media management" "outsource" "agency" -site:linkedin.com', type: 'social-media' },
+  // ══ PRIORITY 4: E-commerce & retail (data entry, product listings, support) ═
+  { q: 'e-commerce store "contact us" South Africa "product data" OR "catalogue" -site:linkedin.com', type: 'data-entry' },
+  { q: 'online shop "contact us" South Africa -site:linkedin.com -site:takealot.com', type: 'data-entry' },
+  { q: '"ecommerce" "contact us" South Africa "customer support" OR "data" -site:linkedin.com', type: 'customer-support' },
+  { q: 'online retailer "contact us" UK "product listings" OR "data entry" -site:linkedin.com', type: 'data-entry' },
+  { q: 'shopify store owner "contact us" South Africa -site:linkedin.com', type: 'data-entry' },
 
-  // ── New SA-targeted & service-specific queries ───────────────────────────
-  { q: 'data entry outsourcing companies South Africa "contact" OR "quote" -site:linkedin.com', type: 'data-entry' },
-  { q: 'document translation BPO providers "get a quote" OR "contact us" -site:linkedin.com', type: 'translation' },
-  { q: 'audio transcription outsourcing firms "contact" OR "free quote" -site:linkedin.com', type: 'transcription' },
-  { q: 'virtual assistant services South Africa "hire" OR "contact us" -site:linkedin.com', type: 'virtual-assistant' },
-  { q: 'finance invoice processing outsourcing "contact" OR "get quote" -site:linkedin.com', type: 'finance-admin' },
-  { q: 'content moderation outsourcing companies "contact us" OR "quote" -site:linkedin.com', type: 'content-moderation' },
+  // ══ PRIORITY 5: Real estate agencies ══════════════════════════════════════
+  { q: 'real estate agency "contact us" South Africa "admin" OR "listings" -site:linkedin.com', type: 'document-processing' },
+  { q: 'property management company "contact us" South Africa -site:linkedin.com', type: 'document-processing' },
+  { q: '"estate agent" "contact us" South Africa "admin support" -site:linkedin.com', type: 'document-processing' },
+  { q: 'real estate "contact us" UK "virtual assistant" OR "admin" -site:linkedin.com', type: 'virtual-assistant' },
 
-  // ── Competitor-displacement queries (find clients of rival BPO firms) ────
-  { q: 'Helpware alternative BPO "contact us" "data entry" OR "transcription"', type: 'data-entry' },
-  { q: 'SunTec alternative "outsourcing" "South Africa" OR "affordable" -site:linkedin.com', type: 'general' },
-  { q: '"ARDEM" alternative "invoice processing" OR "data capture" "contact"', type: 'finance-admin' },
-  { q: '"OBI Services" alternative "transcription" OR "data entry" "quote"', type: 'transcription' },
-  { q: 'oWorkers alternative "data labeling" OR "data entry" "get quote"', type: 'data-entry' },
-  { q: '"Perfect Data Entry" alternative "outsource" "company" "contact"', type: 'data-entry' },
-  { q: '"virtual assistant" "South Africa" "affordable" "BPO" "contact us"', type: 'virtual-assistant' },
-  { q: '"content moderation" "South Africa" "outsource" "contact" "quote"', type: 'content-moderation' },
+  // ══ PRIORITY 6: SMEs with admin-heavy operations ══════════════════════════
+  { q: 'insurance broker "contact us" South Africa -site:linkedin.com -site:indeed.com', type: 'finance-admin' },
+  { q: 'logistics company "contact us" South Africa "data entry" OR "tracking" -site:linkedin.com', type: 'data-entry' },
+  { q: 'recruitment agency "contact us" South Africa "admin" OR "CV" -site:linkedin.com', type: 'virtual-assistant' },
+  { q: 'marketing agency "contact us" South Africa "content" OR "social media" -site:linkedin.com', type: 'social-media' },
+  { q: 'consulting firm "contact us" South Africa "admin support" OR "back office" -site:linkedin.com', type: 'virtual-assistant' },
+  { q: '"financial advisor" "contact us" South Africa -site:linkedin.com', type: 'finance-admin' },
+
+  // ══ PRIORITY 7: UK/USA SME targets ════════════════════════════════════════
+  { q: 'small business "contact us" UK "data entry" OR "admin support" outsource -site:linkedin.com', type: 'data-entry' },
+  { q: 'startup "contact us" UK "virtual assistant" OR "admin" -site:linkedin.com', type: 'virtual-assistant' },
+  { q: '"need help with admin" OR "looking for admin support" company UK -site:linkedin.com', type: 'virtual-assistant' },
+  { q: 'mortgage broker "contact us" UK "admin" OR "document" -site:linkedin.com', type: 'document-processing' },
+  { q: 'financial services "contact us" UK "back office" OR "admin" small firm -site:linkedin.com', type: 'finance-admin' },
+
+  // ══ PRIORITY 8: Companies actively looking to outsource ══════════════════
+  { q: '"looking to outsource" "admin" OR "data entry" "contact" -site:linkedin.com', type: 'data-entry' },
+  { q: '"need to outsource" OR "want to outsource" "contact us" -site:linkedin.com', type: 'general' },
+  { q: '"hire virtual assistant" "contact us" company -site:linkedin.com -site:fiverr.com', type: 'virtual-assistant' },
+  { q: '"outsource admin" OR "outsource data entry" "small business" "contact" -site:linkedin.com', type: 'data-entry' },
+  { q: '"reduce admin costs" OR "cut admin costs" company "contact us" -site:linkedin.com', type: 'general' },
 ];
 
 // ── Known competitor domains (for intel & displacement outreach) ───────────
@@ -600,6 +591,27 @@ async function runScrapedContactsOutreach() {
     console.log('[OUTREACH] All email providers down — skipping scraped_contacts batch');
     return;
   }
+
+  // ── Bounce-rate guard — protect sender reputation ─────────────────────────
+  // If more than 15% of sent contacts have bounced, pause outreach and alert
+  const bounceStats = await db.query(`
+    SELECT
+      COUNT(*) FILTER (WHERE status IN ('contacted','followup1_sent','followup2_sent','replied','converted','bounced')) AS total_sent,
+      COUNT(*) FILTER (WHERE status = 'bounced' OR bounced_at IS NOT NULL) AS total_bounced
+    FROM scraped_contacts
+  `).catch(() => null);
+  if (bounceStats) {
+    const totalSent    = parseInt(bounceStats.rows[0]?.total_sent   || 0);
+    const totalBounced = parseInt(bounceStats.rows[0]?.total_bounced || 0);
+    const bounceRate   = totalSent > 50 ? totalBounced / totalSent : 0;
+    if (bounceRate > 0.15) {
+      const pct = (bounceRate * 100).toFixed(1);
+      console.warn(`🚫 [OUTREACH] Bounce rate ${pct}% exceeds 15% — pausing scraped_contacts outreach to protect sender reputation`);
+      await logActivity('scrape_outreach', `Paused: bounce rate ${pct}% (${totalBounced}/${totalSent}) exceeds 15% safety threshold`, 'system', null, 'warning');
+      return;
+    }
+  }
+
   // Pick ONE representative contact per domain (prefer info@ then contact@)
   // Only look at domains not yet outreached
   // Newest domains first — contacts from latest Clutch/OA scrapes go to head of queue

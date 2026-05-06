@@ -1189,110 +1189,126 @@ async function sendClientColdOutreach({ name, company, email, jobType, city, cou
 
   const variants = [
     {
-      subject: pick([`quick question about ${co}`, `${co} — a quick note`, `outsourcing for ${co}?`]),
+      subject: pick([`a quick question for ${co}`, `handling your ${svc} work`, `${co} — freeing up your team`]),
       body: `${greeting}
 
-I came across ${co}${loc} and thought it was worth a quick message.
+I'll get straight to the point — does ${co} have any ${svc} tasks that eat into your team's time?
 
-We handle ${svc} work for businesses — data capture, transcription, document processing, that sort of thing. Fast turnaround, priced well below what an in-house team costs. Happy to send a free sample of our work so you can judge the quality before committing to anything.
+We're a small BPO team based in South Africa. We handle the repetitive back-office work that keeps piling up — data entry, document processing, transcription, admin support — and hand it back clean within 24–48 hours.
 
-Worth a look?
+Most of our clients save 40–60% compared to hiring, and we do a free first task so you can check the quality before spending a cent.
 
-Calvin
-CTS BPO Solutions
-${REPLY_EMAIL}`,
-    },
-    {
-      subject: pick([`${svc} help for ${co}`, `could we take some work off your plate?`, `data processing for ${co}`]),
-      body: `${greeting}
-
-Saw ${co}${loc} and had a feeling you might have some ${svc} tasks piling up. We deal with exactly that — a small remote team that handles overflow data and document work for companies who'd rather not hire full-time staff for it.
-
-We're quick — usually 24 to 48 hours — and our error rate is low. Could do a free test run if you'd like to see what we do.
-
-Just reply if you want to know more.
-
-Calvin
-${REPLY_EMAIL}`,
-    },
-    {
-      subject: pick([`${co} — just a quick note`, `could we help with ${svc}?`, `question for ${co}`]),
-      body: `${greeting}
-
-This is Calvin from CTS BPO. We help companies with ${svc} — things like data entry, document digitisation, transcription and admin support.
-
-I noticed ${co}${loc} and thought there might be a fit. No big sales pitch — if you've got overflow work you'd rather not deal with in-house, we can handle it at a fraction of what it normally costs.
-
-Happy to prove it with a free task. Interested?
-
-Calvin Thomas
-CTS BPO Solutions`,
-    },
-    {
-      subject: pick([`${svc} — can we help ${co}?`, `a quick question`, `freeing up some time at ${co}`]),
-      body: `${greeting}
-
-Quick note — we're a BPO company that takes on ${svc} work for businesses. Data processing, transcriptions, translations, virtual admin. Usually 24–48hr turnaround.
-
-Came across ${co}${loc} and thought it might be worth asking if there's any of that kind of work we could help with. If yes, I'll happily do the first task free so you can check our quality.
-
-If it's not a fit, no hard feelings. Let me know either way.
-
-Calvin
-${REPLY_EMAIL}`,
-    },
-    {
-      subject: pick([`are you outsourcing your ${svc}?`, `${co} — worth a conversation?`, `quick question for the team at ${co}`]),
-      body: `${greeting}
-
-I'll keep this short — we do ${svc} outsourcing for companies that need the work done well and don't want to grow their headcount to do it.
-
-Noticed ${co}${loc} and figured it was worth asking if that's something you'd ever consider. We work with businesses across South Africa and the UK. Turnaround is quick, quality's solid.
-
-Happy to do a no-strings free task to show you what we do. Just say the word.
+Would that be useful right now?
 
 Calvin Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}`,
     },
     {
-      subject: pick([`${co} — data & admin support`, `outsourcing support for ${co}`, `could we save ${co} some time?`]),
+      subject: pick([`could we take ${svc} off your plate?`, `a thought for ${co}`, `${svc} — done for you`]),
       body: `${greeting}
 
-My name's Calvin — I run a small BPO operation that handles ${svc} work for businesses that need it done without adding to their payroll.
+Quick question — is your team currently spending time on ${svc} work that could be handed off?
 
-I came across ${co}${loc} and thought there might be a fit. We do data entry, transcription, translation, invoice processing, document work — you name it. Fast, quality-checked, affordable.
+We specialise in exactly that. Send us the task, we return clean, quality-checked output in 24–48 hours, at a fraction of what in-house admin costs. No long contracts, no minimums.
 
-If it's relevant, I can send a free sample task so you can see the output before deciding anything. Either way, happy to chat.
-
-Calvin
-CTS BPO Solutions`,
-    },
-    {
-      subject: pick([`this might be useful for ${co}`, `${svc} — outsourced quickly and affordably`, `quick note for ${co}`]),
-      body: `${greeting}
-
-Spotted ${co}${loc} and thought I'd reach out — we do ${svc} outsourcing for companies who'd rather not manage it in-house.
-
-We're a lean team but we're fast — most jobs come back in 24 to 48 hours, fully checked. Costs a lot less than hiring. If you've got any recurring data or document work, it might be worth a chat.
-
-Happy to do a free trial run. No obligation.
+Happy to do the first task completely free so you can see what you get. Just reply with what you need done.
 
 Calvin Thomas
+CTS BPO Solutions
 ${REPLY_EMAIL}`,
     },
     {
-      subject: pick([`hey — ${svc} for ${co}?`, `a thought for ${co}`, `${co} — we might be able to help`]),
+      subject: pick([`${co} — a quick note on admin costs`, `reducing overhead at ${co}`, `question for the team at ${co}`]),
       body: `${greeting}
 
-Not sure if the timing's right, but we help businesses with ${svc} work — data capture, transcription, back-office admin, document processing.
+My name's Calvin. I run CTS BPO Solutions — we help businesses like ${co}${loc} offload time-consuming admin and data work so the core team can focus on what matters.
 
-I came across ${co}${loc} and thought it could be useful. We offer a free first task so you can check what our output looks like — no risk, no obligation.
+We do data entry, transcription, document digitisation, invoice processing and virtual admin. Turnaround is 24–48 hours. Quality is checked twice before it leaves us.
 
-If there's interest, I'm easy to reach at ${REPLY_EMAIL}. If not, no worries at all.
+If you've ever thought "we should outsource this", I'd love to show you what that looks like in practice. First task is free, no strings attached.
+
+Worth a quick chat?
+
+Calvin Thomas
+CTS BPO Solutions
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`saving time on ${svc} at ${co}`, `the admin problem most businesses have`, `${co} — a practical question`]),
+      body: `${greeting}
+
+One question: how much time does your team spend each week on ${svc} tasks that aren't core to what you do?
+
+For most businesses we work with, the answer is "too much." We take that work off their hands — data entry, processing, transcription, document work — and return it done, checked, and formatted correctly. Usually same day or next day.
+
+Cost is well below what a part-time hire would run you. And the first job is on us.
+
+If that sounds like it could help ${co}, just reply and let's figure out if there's a fit.
 
 Calvin
-CTS BPO Solutions`,
+CTS BPO Solutions
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`outsourcing ${svc} — is it on your radar?`, `${co} — a thought on efficiency`, `quick note for ${co}`]),
+      body: `${greeting}
+
+I came across ${co}${loc} and thought it was worth a short message.
+
+We handle ${svc} and back-office admin for businesses that want it done properly but don't want to grow headcount to do it. 24–48 hour turnaround, error rate under 1%, straightforward pricing.
+
+If you've got overflow work sitting on someone's desk right now, I can have it processed and back with you this week — first task free.
+
+Is that something worth exploring?
+
+Calvin Thomas
+CTS BPO Solutions
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`${co} — could we save you some time?`, `admin support for ${co}`, `a simple offer for ${co}`]),
+      body: `${greeting}
+
+This is Calvin from CTS BPO. We do the admin and data work that businesses need done but hate managing in-house.
+
+For ${co}${loc}, that might mean ${svc} — or it might be something else on your list. Either way, we're fast, we're careful, and we're significantly cheaper than hiring.
+
+I'd like to earn your trust with a free task first. You send us something real, we turn it around, you judge the quality. No cost, no commitment.
+
+Interested?
+
+Calvin Thomas
+CTS BPO Solutions
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`reducing ${svc} overhead at ${co}`, `${svc} — handled`, `a practical note for ${co}`]),
+      body: `${greeting}
+
+Quick thought — if ${co} has any ongoing ${svc} or admin workload, we might be able to help.
+
+We're a BPO team that takes on exactly this kind of work. You send us the files or tasks, we return finished, quality-checked output in 24–48 hours. Our clients typically save 40–60% versus doing it in-house.
+
+I won't take up more of your time than this. If you want to see what our work looks like, I'll do a real task for free — no sales call required. Just reply.
+
+Calvin
+CTS BPO Solutions
+${REPLY_EMAIL}`,
+    },
+    {
+      subject: pick([`a straight question for ${co}`, `${co} — we handle ${svc}`, `does ${co} outsource any admin?`]),
+      body: `${greeting}
+
+Do you currently outsource any of your ${svc} or back-office work — or is it all handled in-house?
+
+I ask because a lot of businesses we talk to are sitting on a backlog of admin tasks they know should be outsourced but haven't gotten around to setting up. We make that easy. Send us a task, we handle it, you get clean output back fast.
+
+First task is free. If it works for ${co}, great. If not, no harm done.
+
+Calvin Thomas
+CTS BPO Solutions
+${REPLY_EMAIL}`,
     },
   ];
 

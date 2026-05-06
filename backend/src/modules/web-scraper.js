@@ -501,18 +501,18 @@ async function scrapeDuckDuckGo() {
   return totalInserted;
 }
 
-// ── 4. SerpAPI extended (all BPO queries, run separately from job-search) ────
+// ── 4. SerpAPI extended — TARGET: companies that HIRE BPO, not BPO firms ─────
 const SERP_BPO_QUERIES = [
-  'outsourcing company South Africa "contact us" -site:linkedin.com',
-  'BPO provider "get a quote" company -site:linkedin.com -site:indeed.com',
-  'data capture company "request a quote" -site:linkedin.com',
-  'transcription service provider "contact" -site:linkedin.com',
-  'virtual assistant agency "hire" "contact us" -site:linkedin.com',
-  'medical billing company outsource "contact us" -site:linkedin.com',
-  'content moderation company outsource contact -site:linkedin.com',
-  'document processing outsourcing company -site:linkedin.com',
-  'accounts payable outsource company contact -site:linkedin.com',
-  'payroll outsourcing service provider -site:linkedin.com',
+  'law firm "contact us" South Africa "admin support" OR "document" -site:linkedin.com',
+  'accounting firm "contact us" South Africa "bookkeeping" OR "data entry" -site:linkedin.com',
+  'medical practice "contact us" South Africa "admin" OR "records" -site:linkedin.com',
+  'real estate agency "contact us" South Africa "admin" OR "listings" -site:linkedin.com',
+  'insurance broker "contact us" South Africa -site:linkedin.com',
+  'e-commerce store "contact us" South Africa "product data" OR "catalogue" -site:linkedin.com',
+  'recruitment agency "contact us" South Africa "admin" -site:linkedin.com',
+  'dental practice "contact us" South Africa -site:linkedin.com',
+  'small business "contact us" UK "data entry" OR "admin support" outsource -site:linkedin.com',
+  'mortgage broker "contact us" UK "admin" OR "document" -site:linkedin.com',
 ];
 
 async function scrapeViaSerpAPI() {
