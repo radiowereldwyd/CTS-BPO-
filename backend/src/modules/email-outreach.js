@@ -18,6 +18,7 @@ const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN      || '';
 const MAILJET_API_KEY    = process.env.MAILJET_API_KEY     || '';
 const MAILJET_SEC_KEY    = process.env.MAILJET_SECRET_KEY  || '';
 const MAILERLITE_API_KEY = process.env.MAILERLITE_API_KEY  || '';
+const BREVO_API_KEY      = process.env.BREVO_API_KEY        || '';
 const FROM_NAME       = 'Calvin Thomas';
 const FROM_EMAIL      = process.env.FROM_EMAIL || GMAIL_USER || 'cts.bposolutions@gmail.com';
 const REPLY_EMAIL     = 'cts.cybersolutions@gmail.com';
@@ -27,8 +28,8 @@ const WEBSITE         = 'cts.bposolutions@gmail.com';
 const EMAIL_RATE_MS   = parseInt(process.env.EMAIL_RATE_MS || '200', 10);
 
 // Per-provider daily caps (99% threshold = stop before hard limits)
-// MailerLite free: 1000/day | Mailjet: 299/day | Gmail: 500/day | SendGrid free: 100/day | Mailgun: 99/day
-const PROVIDER_CAPS = { mailerlite: 399, mailjet: 299, gmail: 500, mailgun: 99 };
+// Brevo free: 300/day | Gmail: 500/day | Mailjet: 200/day | Mailgun: 100/day | MailerLite: paid add-on
+const PROVIDER_CAPS = { brevo: 300, mailerlite: 399, mailjet: 299, gmail: 500, mailgun: 99 };
 function getProviderCap() { return PROVIDER_CAPS[getSenderMode()] || 500; }
 function getStopAt()      { return Math.floor(getProviderCap() * 0.99); }   // 99% rule
 
@@ -124,8 +125,9 @@ function isEmailPaused() { return emailPaused; }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Sender detection — priority: Gmail > Mailjet > Mailgun > MailerLite ──────
-// Gmail is first because it is the only verified-working provider.
+// ── Sender detection — priority: Gmail > Brevo > Mailjet > Mailgun > MailerLite ──
+// Gmail is first (500/day, already verified working).
+// Brevo is second — 300/day free, reliable API, no sandbox restrictions.
 // MailerLite transactional is a paid add-on (404 if not enabled).
 // Mailgun sandbox domains cannot send to external addresses.
 // Providers that return 404/403/401 are skipped for the session.
@@ -143,6 +145,9 @@ const _brokenProviders = new Set();
     _brokenProviders.add('mailgun');
     console.warn('[EMAIL] Mailgun SKIPPED — sandbox domain detected; add a real verified domain to enable Mailgun');
   }
+  if (BREVO_API_KEY) {
+    console.log('[EMAIL] Brevo configured — 300 emails/day free tier available');
+  }
 })();
 
 function markBroken(provider) {
@@ -154,6 +159,7 @@ function markBroken(provider) {
 
 function getSenderMode() {
   if (GMAIL_USER && GMAIL_APP_PASS && !_brokenProviders.has('gmail'))            return 'gmail';
+  if (BREVO_API_KEY && !_brokenProviders.has('brevo'))                           return 'brevo';
   if (MAILJET_API_KEY && MAILJET_SEC_KEY && !_brokenProviders.has('mailjet'))    return 'mailjet';
   if (MAILGUN_KEY && MAILGUN_DOMAIN && !_brokenProviders.has('mailgun'))         return 'mailgun';
   if (MAILERLITE_API_KEY && !_brokenProviders.has('mailerlite'))                 return 'mailerlite';
@@ -213,7 +219,24 @@ async function sendMail({ to, subject, html, text, replyTo }) {
   const fromStr = `${FROM_NAME} <${FROM_EMAIL}>`;
 
   try {
-    if (mode === 'mailerlite') {
+    if (mode === 'brevo') {
+      await axios.post('https://api.brevo.com/v3/smtp/email', {
+        sender:   { name: FROM_NAME, email: FROM_EMAIL },
+        to:       [{ email: to }],
+        replyTo:  { email: replyTo || REPLY_EMAIL },
+        subject,
+        htmlContent: html,
+        ...(text ? { textContent: text } : {}),
+      }, {
+        headers: {
+          'api-key': BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        timeout: 12000,
+      });
+
+    } else if (mode === 'mailerlite') {
       // MailerLite transactional email API v3
       await axios.post('https://connect.mailerlite.com/api/emails', {
         from:     FROM_EMAIL,
