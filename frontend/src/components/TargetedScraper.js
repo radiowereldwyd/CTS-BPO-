@@ -184,8 +184,8 @@ export default function TargetedScraper({ token }) {
       }, 4000);
     });
 
-    // Step 3 — search the database now (scrape just finished)
-    setAiStatus('📋 Loading discovered contacts…');
+    // Step 3 — load all contacts from database matching the criteria
+    setAiStatus('📋 Loading contacts from database…');
     const found = await pollStatus();
 
     if (!found.length) {
@@ -195,22 +195,37 @@ export default function TargetedScraper({ token }) {
       return;
     }
 
-    // Step 4 — auto-select all eligible contacts
-    const eligible = found.filter(c => c.email && c.status !== 'bounced');
-    setSelected(new Set(eligible.map(c => c.id)));
+    // Step 4 — AI BPO scan: classify which contacts likely need BPO
+    setAiStatus(`🤖 AI is scanning ${found.length} contacts to find BPO prospects…`);
+    let bpoIds = [];
+    try {
+      const scanRes = await axios.post(`${API}/api/targeted-scrape/bpo-scan`,
+        { contactIds: found.map(c => c.id) },
+        { headers: authHeader }
+      );
+      // Refresh contacts to get updated bpo_likely flags
+      const fresh = await pollStatus();
+      bpoIds = fresh.filter(c => c.bpo_likely && c.email && c.status !== 'bounced').map(c => c.id);
+      setSelected(new Set(bpoIds));
+      setAiStatus(`🤖 Found ${bpoIds.length} BPO prospects — AI is writing the email…`);
+    } catch {
+      // Fallback: select all eligible if BPO scan fails
+      bpoIds = found.filter(c => c.email && c.status !== 'bounced').map(c => c.id);
+      setSelected(new Set(bpoIds));
+      setAiStatus(`🤖 AI is writing email for ${bpoIds.length} contacts…`);
+    }
 
     // Step 5 — AI writes the email
-    setAiStatus(`🤖 AI is writing a personalised email for ${eligible.length} contacts…`);
     try {
       const res = await axios.post(`${API}/api/ai/compose-email`,
-        { industry, country, contactCount: eligible.length },
+        { industry, country, contactCount: bpoIds.length },
         { headers: authHeader }
       );
       setSubject(res.data.subject || subject);
       setBody(res.data.body || body);
-      setAiStatus(`✅ Ready — ${eligible.length} contacts selected, email drafted. Review and click Send All.`);
+      setAiStatus(`✅ Ready — ${bpoIds.length} BPO-likely contacts selected, email drafted. Review and click Send All.`);
     } catch {
-      setAiStatus(`✅ Ready — ${eligible.length} contacts selected. Review the email below and click Send All.`);
+      setAiStatus(`✅ Ready — ${bpoIds.length} BPO-likely contacts selected. Review the email below and click Send All.`);
     }
 
     setAiLoading(false);
@@ -379,7 +394,7 @@ export default function TargetedScraper({ token }) {
               <span>
                 {isRunning
                   ? `Scraping: ${country || 'any region'} · ${industry || 'any industry'} · "${keywords || '…'}"`
-                  : `✅ Done — ${foundCount} new contacts added to database`}
+                  : `✅ Done — ${contacts.length} contacts loaded${foundCount > 0 ? ` (${foundCount} newly added)` : ''}`}
               </span>
               <span>{progress}%</span>
             </div>
