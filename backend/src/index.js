@@ -1626,6 +1626,7 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     ).catch(() => ({ rows: [{ total: 0 }] }));
 
     const GMAIL_OK  = !!(process.env.GMAIL_USER && (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g,'').length >= 16);
+    const BREVO_OK  = !!process.env.BREVO_API_KEY;
     const MJ_OK     = !!(process.env.MAILJET_API_KEY && process.env.MAILJET_SECRET_KEY);
     const MG_OK     = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
     const ML_OK     = !!process.env.MAILERLITE_API_KEY;
@@ -1665,10 +1666,11 @@ app.get('/api/email-stats', requireAuth, async (req, res) => {
     res.json({
       paused:  emailOutreach.isEmailPaused(),
       providers: [
-        providerStats('MailerLite', ML_OK,    ML_OK  ? 'Connected' : null),
-        providerStats('Mailgun',    MG_OK,    MG_OK  ? process.env.MAILGUN_DOMAIN : null),
-        providerStats('Mailjet',    MJ_OK,    MJ_OK  ? 'cts.cybersolutions@gmail.com' : null),
         providerStats('Gmail',      GMAIL_OK, process.env.GMAIL_USER || null, { circuit }),
+        providerStats('Brevo',      BREVO_OK, BREVO_OK ? 'cts.cybersolutions@gmail.com' : null),
+        providerStats('Mailjet',    MJ_OK,    MJ_OK  ? 'cts.cybersolutions@gmail.com' : null),
+        providerStats('Mailgun',    MG_OK,    MG_OK  ? process.env.MAILGUN_DOMAIN : null),
+        providerStats('MailerLite', ML_OK,    ML_OK  ? 'Connected' : null),
       ],
       allTime:  parseInt(totalSent.rows[0].total) || 0,
       todayDb:  parseInt(todaySent.rows[0].total)  || 0,

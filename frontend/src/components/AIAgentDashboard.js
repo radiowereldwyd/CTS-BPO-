@@ -540,6 +540,7 @@ export default function AIAgentDashboard({ token }) {
                     <div style={{ fontWeight: 800, color: '#991b1b', fontSize: 14 }}>Gmail daily sending limit reached — outreach resumes tomorrow</div>
                     <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 4, lineHeight: 1.5 }}>
                       Gmail has sent its maximum emails for today. Fix a backup provider to avoid this gap tomorrow:<br/>
+                      • <b>Brevo</b>: Verify sender email at brevo.com → Senders &amp; IP.<br/>
                       • <b>MailerLite</b>: Enable Transactional Emails add-on in your account.<br/>
                       • <b>Mailgun</b>: Upgrade to Flex plan or add verified sandbox recipients.<br/>
                       • <b>Mailjet</b>: Verify MAILJET_API_KEY and MAILJET_SECRET_KEY secrets are not swapped.
@@ -553,6 +554,7 @@ export default function AIAgentDashboard({ token }) {
                     <div style={{ fontWeight: 800, color: '#9a3412', fontSize: 14 }}>All email providers are unavailable</div>
                     <div style={{ fontSize: 12, color: '#c2410c', marginTop: 4, lineHeight: 1.5 }}>
                       No emails can be sent right now. Please fix at least one provider:<br/>
+                      • <b>Brevo</b>: Verify sender email at brevo.com → Senders &amp; IP.<br/>
                       • <b>MailerLite</b>: Enable the Transactional Emails add-on in your MailerLite account.<br/>
                       • <b>Mailgun</b>: Upgrade to Flex plan or add recipients to your sandbox allowlist.<br/>
                       • <b>Mailjet</b>: Verify MAILJET_API_KEY and MAILJET_SECRET_KEY are set correctly.<br/>
@@ -563,12 +565,13 @@ export default function AIAgentDashboard({ token }) {
               );
             })()}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 12 }}>
               {(emailStats?.providers || [
-                { name: 'MailerLite', configured: false },
-                { name: 'Mailgun',    configured: false },
-                { name: 'Mailjet',    configured: false },
                 { name: 'Gmail',      configured: false },
+                { name: 'Brevo',      configured: false },
+                { name: 'Mailjet',    configured: false },
+                { name: 'Mailgun',    configured: false },
+                { name: 'MailerLite', configured: false },
               ]).map(p => {
                 const pct      = p.dailyCap ? Math.min(100, Math.round((p.sentToday / p.dailyCap) * 100)) : null;
                 const atStop   = p.stopAt   && p.sentToday >= p.stopAt;
