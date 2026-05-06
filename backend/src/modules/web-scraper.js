@@ -998,10 +998,76 @@ async function runTargetedScrape({ country, industry, keywords, limit = 100, ses
     }
   }
 
+  // ── DB Fallback — when live scrapers return very few results ─────────────
+  // Re-tag existing DB contacts matching country/industry/keywords to the current
+  // session so the user always sees results even if DuckDuckGo/SerpAPI are limited.
+  const MIN_LIVE = Math.min(20, Math.floor(limit * 0.2));
+  if (totalInserted < MIN_LIVE) {
+    try {
+      console.log(`🎯 [TARGETED] Live scrapers found ${totalInserted} < ${MIN_LIVE} — pulling from DB…`);
+
+      // Build filter attempts from strictest → broadest so user always gets results
+      const countryOk  = country && country !== 'Global' && country !== 'Africa';
+      const industryKw = industry ? `%${industry.toLowerCase()}%` : null;
+      const countryKw  = countryOk ? `%${country.toLowerCase()}%` : null;
+      const keywordKw  = keywords ? `%${keywords.toLowerCase()}%` : null;
+
+      const attempts = [];
+
+      // Attempt 1: country + industry + keywords (strictest)
+      if (countryKw && industryKw && keywordKw) {
+        attempts.push({ label: 'country+industry+keyword', q: `WHERE LOWER(country) LIKE $2 AND LOWER(business_type) LIKE $3 AND (LOWER(company) LIKE $4 OR LOWER(COALESCE(snippet,'')) LIKE $4)`, p: [sourceTag, countryKw, industryKw, keywordKw] });
+      }
+      // Attempt 2: country + industry
+      if (countryKw && industryKw) {
+        attempts.push({ label: 'country+industry', q: `WHERE LOWER(country) LIKE $2 AND LOWER(business_type) LIKE $3`, p: [sourceTag, countryKw, industryKw] });
+      }
+      // Attempt 3: industry only (ignore country — many contacts have null country)
+      if (industryKw) {
+        attempts.push({ label: 'industry-only', q: `WHERE LOWER(business_type) LIKE $2`, p: [sourceTag, industryKw] });
+      }
+      // Attempt 4: country only
+      if (countryKw) {
+        attempts.push({ label: 'country-only', q: `WHERE LOWER(country) LIKE $2`, p: [sourceTag, countryKw] });
+      }
+      // Attempt 5: keywords in company/domain/snippet
+      if (keywordKw) {
+        attempts.push({ label: 'keyword-only', q: `WHERE (LOWER(company) LIKE $2 OR LOWER(domain) LIKE $2 OR LOWER(COALESCE(snippet,'')) LIKE $2)`, p: [sourceTag, keywordKw] });
+      }
+      // Attempt 6: broadest — any new uncontacted contact ordered by score
+      attempts.push({ label: 'any-new', q: `WHERE status = 'new'`, p: [sourceTag] });
+
+      let dbFound = 0;
+      for (const attempt of attempts) {
+        const updateRes = await db.query(
+          `UPDATE scraped_contacts
+           SET source = $1
+           WHERE id IN (
+             SELECT id FROM scraped_contacts
+             ${attempt.q}
+             ORDER BY prospect_score DESC NULLS LAST, created_at DESC
+             LIMIT ${limit}
+           )
+           RETURNING id`,
+          attempt.p
+        );
+        dbFound = updateRes.rowCount || 0;
+        console.log(`🎯 [TARGETED] DB fallback [${attempt.label}] → ${dbFound} contacts`);
+        if (dbFound >= 5) break; // enough results — stop broadening
+      }
+
+      totalInserted += dbFound;
+      _targetedSession.found = totalInserted;
+      console.log(`🎯 [TARGETED] DB fallback total: ${dbFound} contacts re-tagged to session`);
+    } catch (err) {
+      console.error(`❌ [TARGETED] DB fallback error:`, err.message);
+    }
+  }
+
   _targetedSession.active      = false;
   _targetedSession.completedAt = new Date().toISOString();
   _targetedSession.found       = totalInserted;
-  console.log(`🎯 [TARGETED] Session ${sessionId} complete — ${totalInserted} new contacts`);
+  console.log(`🎯 [TARGETED] Session ${sessionId} complete — ${totalInserted} total contacts`);
   return totalInserted;
 }
 
