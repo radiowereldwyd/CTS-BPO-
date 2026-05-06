@@ -166,7 +166,16 @@ function getTransporter() {
 }
 
 // ── Core send function — routes to correct provider ─────────────────────────
+const EMAIL_VALID_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
 async function sendMail({ to, subject, html, text, replyTo }) {
+  // Validate email address format before doing anything else
+  const cleanTo = String(to || '').trim();
+  if (!EMAIL_VALID_RE.test(cleanTo)) {
+    console.warn(`[EMAIL] ❌ Invalid email skipped: "${to}"`);
+    return { skipped: true, reason: 'invalid_email', to };
+  }
+
   if (isEmailPaused()) {
     console.log(`[EMAIL] ⏸ Outreach paused — skipping send to ${to}`);
     return { skipped: true, reason: 'paused' };
@@ -1650,6 +1659,26 @@ function portalFooter() {
     CTS BPO Solutions · cts.bposolutions@gmail.com · AI-Powered Outsourcing
   </div>`;
 }
+
+// ── Midnight daily reset — re-enables providers & resets send counter ────────
+// Runs at 00:01 UTC every day so Gmail/Mailgun/etc un-break after their daily limits reset
+(function scheduleMidnightReset() {
+  try {
+    const nodeCron = require('node-cron');
+    nodeCron.schedule('1 0 * * *', () => {
+      const prev = dailySentCount;
+      dailySentCount  = 0;
+      dailyResetDate  = new Date().toDateString();
+      transporter     = null;           // force SMTP reconnect with fresh auth
+      _brokenProviders.clear();         // re-enable Gmail + all other providers
+      savePerProviderCount();
+      console.log(`[EMAIL] 🌅 Midnight daily reset — cleared ${prev} sends, all providers re-enabled, SMTP refreshed`);
+    }, { timezone: 'UTC' });
+    console.log('[EMAIL] Midnight reset scheduled (00:01 UTC daily)');
+  } catch (e) {
+    console.warn('[EMAIL] Could not schedule midnight reset:', e.message);
+  }
+})();
 
 module.exports = {
   sendMail,

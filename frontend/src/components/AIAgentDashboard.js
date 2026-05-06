@@ -632,35 +632,61 @@ export default function AIAgentDashboard({ token }) {
       )}
 
       {/* ══════════════════ DAILY STATS TAB ══════════════════════════════════ */}
-      {activeTab === 'daily' && (
-        <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
-          <div style={{ padding: '16px 24px', borderBottom: '1px solid #e2e8f0', fontWeight: 800, fontSize: 14, color: '#0f172a' }}>
-            📅 Daily Performance — Last 7 Days
-          </div>
-          <div style={{ padding: '0 24px 24px' }}>
-            {/* Header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 1fr', gap: 16, padding: '12px 0', borderBottom: '2px solid #e2e8f0', fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginTop: 16 }}>
-              <span>Date</span><span>New Leads</span><span>Contacts Added</span><span>Emails Sent</span>
-            </div>
-            {daily.length === 0 ? (
-              <div style={{ padding: '40px 0', textAlign: 'center', color: '#94a3b8' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
-                <div>Stats will appear here as the agent runs</div>
-              </div>
-            ) : daily.map((d, i) => (
-              <div key={d.day} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 1fr', gap: 16, padding: '14px 0', borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {i === 0 && <Pulse color="#10b981" size={7} />}
-                  <span style={{ fontSize: 14, fontWeight: i === 0 ? 900 : 600, color: i === 0 ? '#0f172a' : '#334155' }}>{fmtDay(d.day)}</span>
+      {activeTab === 'daily' && (() => {
+        const todayRow = daily[0] || {};
+        const now = new Date();
+        const midnight = new Date(now); midnight.setUTCHours(24,0,0,0);
+        const minsToReset = Math.round((midnight - now) / 60000);
+        const resetLabel = minsToReset < 60
+          ? `${minsToReset}m`
+          : `${Math.floor(minsToReset / 60)}h ${minsToReset % 60}m`;
+        return (
+          <div>
+            {/* Today snapshot cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 14, marginBottom: 20 }}>
+              {[
+                { label: "Today's Leads",     val: todayRow.leads    || 0, color: '#6366f1', icon: '🔍' },
+                { label: "Today's Contacts",  val: todayRow.contacts || 0, color: '#ec4899', icon: '🕷️' },
+                { label: "Today's Emails",    val: todayRow.emails   || 0, color: '#0ea5e9', icon: '📧' },
+                { label: 'Resets in',         val: resetLabel,             color: '#10b981', icon: '🌅' },
+              ].map(k => (
+                <div key={k.label} style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', boxShadow: '0 2px 10px rgba(0,0,0,0.07)', border: `1px solid ${k.color}20` }}>
+                  <div style={{ fontSize: 20, marginBottom: 4 }}>{k.icon}</div>
+                  <div className="stat-num" style={{ fontSize: 26, fontWeight: 900, color: k.color, lineHeight: 1 }}>{typeof k.val === 'number' ? k.val.toLocaleString() : k.val}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 4 }}>{k.label}</div>
                 </div>
-                <div className="stat-num" style={{ fontSize: 18, fontWeight: 800, color: '#6366f1' }}>{fmt(d.leads || 0)}</div>
-                <div className="stat-num" style={{ fontSize: 18, fontWeight: 800, color: '#ec4899' }}>{fmt(d.contacts || 0)}</div>
-                <div className="stat-num" style={{ fontSize: 18, fontWeight: 800, color: '#0ea5e9' }}>{fmt(d.emails || 0)}</div>
+              ))}
+            </div>
+            <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 2px 12px rgba(0,0,0,0.07)', overflow: 'hidden' }}>
+              <div style={{ padding: '14px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 800, fontSize: 14, color: '#0f172a' }}>📅 Last 7 Days</span>
+                <span style={{ fontSize: 11, color: '#94a3b8' }}>Auto-refreshes every 15s · Counters reset at midnight UTC</span>
               </div>
-            ))}
+              <div style={{ padding: '0 24px 24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 1fr', gap: 16, padding: '12px 0', borderBottom: '2px solid #e2e8f0', fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginTop: 16 }}>
+                  <span>Date</span><span>New Leads</span><span>Contacts Added</span><span>Emails Sent</span>
+                </div>
+                {daily.length === 0 ? (
+                  <div style={{ padding: '40px 0', textAlign: 'center', color: '#94a3b8' }}>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+                    <div>Stats will appear here as the agent runs</div>
+                  </div>
+                ) : daily.map((d, i) => (
+                  <div key={d.day} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 1fr', gap: 16, padding: '14px 0', borderBottom: '1px solid #f1f5f9', alignItems: 'center', background: i === 0 ? '#f0fdf4' : 'transparent', borderRadius: i === 0 ? 8 : 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {i === 0 && <Pulse color="#10b981" size={7} />}
+                      <span style={{ fontSize: 14, fontWeight: i === 0 ? 900 : 600, color: i === 0 ? '#0f172a' : '#334155' }}>{fmtDay(d.day)}</span>
+                    </div>
+                    <div className="stat-num" style={{ fontSize: 18, fontWeight: 800, color: '#6366f1' }}>{fmt(d.leads || 0)}</div>
+                    <div className="stat-num" style={{ fontSize: 18, fontWeight: 800, color: '#ec4899' }}>{fmt(d.contacts || 0)}</div>
+                    <div className="stat-num" style={{ fontSize: 18, fontWeight: 800, color: '#0ea5e9' }}>{fmt(d.emails || 0)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ══════════════════ TRIGGERS TAB ═════════════════════════════════════ */}
       {activeTab === 'triggers' && (
