@@ -60,6 +60,7 @@ const { v4: uuidv4 } = require('uuid');
 const db         = require('../db');
 const auditLogger = require('./audit-logger');
 const emailOutreach  = require('./email-outreach');
+const autoPricing    = require('./auto-pricing');
 const aiProcessor    = require('./ai-job-processor');
 const gmailReader    = require('./gmail-reader');
 const jobSearch      = require('./job-search');
@@ -653,13 +654,21 @@ async function runScrapedContactsOutreach() {
       }
 
       if (!circuitCheck()) break;
-      const sendResult = await emailOutreach.sendClientColdOutreach({
-        name:    c.company || c.domain,
-        company: c.company || c.domain,
-        email:   c.email,
-        jobType: c.business_type || 'business process outsourcing',
-        city:    c.city || null,
-        country: c.country || null,
+      // ── AI Price Negotiator: detect service, build competitive quote, send proposal ──
+      const proposal = autoPricing.autoPricingProposal({
+        name:         c.company || c.domain,
+        company:      c.company || c.domain,
+        email:        c.email,
+        businessType: c.business_type || '',
+        jobType:      '',
+        city:         c.city || null,
+        country:      c.country || null,
+      });
+      const sendResult = await emailOutreach.sendMail({
+        to:      c.email,
+        subject: proposal.subject,
+        text:    proposal.text,
+        html:    proposal.html,
       });
       if (!sendResult || sendResult.sent === false) {
         if (sendResult?.allProvidersBroken) {
@@ -671,6 +680,7 @@ async function runScrapedContactsOutreach() {
         continue;
       }
       emailCircuit.failures = 0;
+      console.log(`💰 [PRICE] Auto-proposal sent to ${c.email} [${proposal.serviceName}] @ ${(proposal.quote.ourRate).toFixed(2)} ${proposal.quote.svc.unitLabel}`);
 
       // Mark the sent email with outreach_sent_at (used by follow-up to reach same person)
       await db.query(
@@ -1399,14 +1409,24 @@ async function runJobLeadOutreach() {
         continue;
       }
 
-      const sendResult = await emailOutreach.sendClientColdOutreach({
-        email:   lead.contact_email,
-        name:    lead.contact_name || lead.company || 'there',
-        company: lead.company || 'your organisation',
-        jobType: lead.job_type || 'business process outsourcing',
+      // ── AI Price Negotiator: detect service, build competitive quote, send proposal ──
+      const proposal = autoPricing.autoPricingProposal({
+        name:         lead.contact_name || lead.company || '',
+        company:      lead.company || 'your organisation',
+        email:        lead.contact_email,
+        businessType: lead.company || '',
+        jobType:      lead.job_type || '',
+        city:         null,
+        country:      null,
+      });
+      const sendResult = await emailOutreach.sendMail({
+        to:      lead.contact_email,
+        subject: proposal.subject,
+        text:    proposal.text,
+        html:    proposal.html,
       });
       if (!sendResult || sendResult.sent === false) {
-        if (sendResult?.skipped) break; // daily cap or paused — stop entire batch
+        if (sendResult?.skipped) break;
         if (sendResult?.allProvidersBroken) {
           console.log('[OUTREACH] All providers broken — stopping job_leads batch early, leads will retry next cycle');
           break;
@@ -1415,6 +1435,7 @@ async function runJobLeadOutreach() {
         continue;
       }
       emailCircuit.failures = 0;
+      console.log(`💰 [PRICE] Auto-proposal sent to ${lead.contact_email} [${proposal.serviceName}] @ ${(proposal.quote.ourRate).toFixed(2)} ${proposal.quote.svc.unitLabel}`);
 
       // Mark this job_lead as contacted (job_leads has no domain column — update by id)
       await db.query(
