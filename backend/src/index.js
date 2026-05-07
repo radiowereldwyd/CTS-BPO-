@@ -86,7 +86,10 @@ const bpoJobsRouter   = require('./routes/bpo-jobs');
 app.use('/api/bpo-jobs', bpoJobsRouter);
 
 const callCentreRouter = require('./routes/call-centre');
+const linkedInRouter   = require('./routes/linkedin');
 app.use('/api/call-centre', callCentreRouter);
+app.use('/api/linkedin',   linkedInRouter);
+app.use('/api/contact',   require('./routes/contact'));
 
 // ─── Protected routes (require JWT) ──────────────────────────────────────────
 

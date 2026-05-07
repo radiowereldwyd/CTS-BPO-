@@ -126,10 +126,14 @@ function AccordionItem({ q, a, open, onClick }) {
 }
 
 /* ── Main component ─────────────────────────────────────────────────────────── */
+const SERVICES_LIST = ['Data Entry & Capture', 'Transcription', 'Translation', 'Virtual Assistant', 'Customer Support', 'Finance & Admin Support', 'Content Moderation', 'Document Processing', 'Social Media Management', 'Reporting & Analytics', 'Other / Multiple'];
+
 export default function LandingPage() {
   const [openFaq, setOpenFaq] = useState(null);
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [quoteForm, setQuoteForm] = useState({ name: '', email: '', company: '', phone: '', service: '', volume: '', message: '' });
+  const [quoteState, setQuoteState] = useState('idle'); // idle | sending | success | error
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 60);
@@ -141,6 +145,26 @@ export default function LandingPage() {
     setMenuOpen(false);
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const setQF = (k, v) => setQuoteForm(f => ({ ...f, [k]: v }));
+
+  async function submitQuote(e) {
+    e.preventDefault();
+    if (!quoteForm.name || !quoteForm.email) return;
+    setQuoteState('sending');
+    try {
+      const r = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(quoteForm),
+      });
+      if (!r.ok) throw new Error('Failed');
+      setQuoteState('success');
+      setQuoteForm({ name: '', email: '', company: '', phone: '', service: '', volume: '', message: '' });
+    } catch {
+      setQuoteState('error');
+    }
+  }
 
   return (
     <div style={{ fontFamily: "'Segoe UI', Arial, sans-serif", color: '#1e293b', background: '#fff', overflowX: 'hidden' }}>
@@ -308,9 +332,9 @@ export default function LandingPage() {
           </p>
 
           <div className="lp-hero-ctas" style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <a href="mailto:cts.bposolutions@gmail.com" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', padding: '16px 36px', borderRadius: 10, fontWeight: 800, fontSize: 16, textDecoration: 'none', boxShadow: '0 4px 28px rgba(99,102,241,0.45)' }}>
+            <button onClick={() => scrollTo('get-quote')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', padding: '16px 36px', borderRadius: 10, fontWeight: 800, fontSize: 16, cursor: 'pointer', border: 'none', boxShadow: '0 4px 28px rgba(99,102,241,0.45)', fontFamily: 'inherit' }}>
               <HiOutlineEnvelope style={{ fontSize: 20 }} /> Get a Free Quote
-            </a>
+            </button>
             <button onClick={() => scrollTo('online-jobs')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.22)', color: '#fff', padding: '16px 36px', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer', fontFamily: 'inherit' }}>
               Work From Home <HiOutlineArrowRight style={{ fontSize: 18 }} />
             </button>
@@ -587,6 +611,97 @@ export default function LandingPage() {
               </a>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ── GET A QUOTE FORM ───────────────────────────────────────────────── */}
+      <section id="get-quote" className="lp-section-pad" style={{ background: 'linear-gradient(135deg,#f8fafc,#eff6ff)' }}>
+        <div style={{ maxWidth: 820, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 44 }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 24, padding: '7px 22px', marginBottom: 20 }}>
+              <HiOutlineEnvelope style={{ color: '#6366f1', fontSize: 16 }} />
+              <span style={{ color: '#6366f1', fontSize: 12, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase' }}>Free Quote — No Commitment</span>
+            </div>
+            <h2 style={{ margin: '0 0 14px', fontSize: 'clamp(26px,3vw,40px)', fontWeight: 900, color: '#0f172a' }}>Get Your Free Quote in 2 Minutes</h2>
+            <p style={{ fontSize: 16, color: '#475569', maxWidth: 580, margin: '0 auto', lineHeight: 1.8 }}>
+              Tell us what you need. We'll reply within <strong>2 business hours</strong> with a tailored proposal, timeline and transparent pricing.
+            </p>
+          </div>
+
+          {quoteState === 'success' ? (
+            <div style={{ background: '#f0fdf4', border: '2px solid #10b981', borderRadius: 16, padding: '48px 32px', textAlign: 'center' }}>
+              <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
+              <h3 style={{ margin: '0 0 12px', fontSize: 22, fontWeight: 900, color: '#0f172a' }}>Quote Request Sent!</h3>
+              <p style={{ color: '#475569', fontSize: 16, margin: '0 0 24px', lineHeight: 1.7 }}>
+                Thank you! We've received your request and sent you a confirmation email. Expect a tailored proposal within 2 business hours.
+              </p>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button onClick={() => setQuoteState('idle')} style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 28px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>Submit Another Request</button>
+                <a href="https://wa.me/27760679100" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#25d366', color: '#fff', border: 'none', borderRadius: 10, padding: '12px 28px', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>💬 WhatsApp Us Now</a>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={submitQuote} style={{ background: '#fff', borderRadius: 20, padding: '40px 44px', boxShadow: '0 4px 32px rgba(99,102,241,0.10)', border: '1px solid #e0e7ff' }}>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 7 }}>Your Name *</label>
+                  <input required value={quoteForm.name} onChange={e => setQF('name', e.target.value)} placeholder="Full name" style={{ width: '100%', padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14, boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 7 }}>Email Address *</label>
+                  <input required type="email" value={quoteForm.email} onChange={e => setQF('email', e.target.value)} placeholder="you@company.com" style={{ width: '100%', padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14, boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 7 }}>Company / Organisation</label>
+                  <input value={quoteForm.company} onChange={e => setQF('company', e.target.value)} placeholder="Your company name" style={{ width: '100%', padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14, boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 7 }}>Phone / WhatsApp</label>
+                  <input value={quoteForm.phone} onChange={e => setQF('phone', e.target.value)} placeholder="+27 76 000 0000" style={{ width: '100%', padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14, boxSizing: 'border-box', outline: 'none', fontFamily: 'inherit' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 7 }}>Service Needed</label>
+                  <select value={quoteForm.service} onChange={e => setQF('service', e.target.value)} style={{ width: '100%', padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14, boxSizing: 'border-box', background: '#fff', outline: 'none', fontFamily: 'inherit' }}>
+                    <option value="">— Select a service —</option>
+                    {SERVICES_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 7 }}>Estimated Monthly Volume</label>
+                  <select value={quoteForm.volume} onChange={e => setQF('volume', e.target.value)} style={{ width: '100%', padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14, boxSizing: 'border-box', background: '#fff', outline: 'none', fontFamily: 'inherit' }}>
+                    <option value="">— Select volume —</option>
+                    {['Small (trial / once-off)', 'Medium (up to 500 tasks/month)', 'Large (500–2,000 tasks/month)', 'Enterprise (2,000+ tasks/month)', 'Ongoing retainer'].map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 7 }}>Tell us more about your needs</label>
+                <textarea value={quoteForm.message} onChange={e => setQF('message', e.target.value)} rows={4} placeholder="Describe your project, turnaround requirements, any special instructions..." style={{ width: '100%', padding: '12px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14, boxSizing: 'border-box', resize: 'vertical', outline: 'none', fontFamily: 'inherit', lineHeight: 1.6 }} />
+              </div>
+
+              {quoteState === 'error' && (
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 9, padding: '12px 16px', color: '#dc2626', fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
+                  ⚠ Something went wrong. Please email us directly at cts.bposolutions@gmail.com
+                </div>
+              )}
+
+              <button type="submit" disabled={quoteState === 'sending'} style={{ width: '100%', padding: '16px', background: quoteState === 'sending' ? '#e2e8f0' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: quoteState === 'sending' ? '#94a3b8' : '#fff', border: 'none', borderRadius: 10, fontWeight: 800, fontSize: 16, cursor: quoteState === 'sending' ? 'not-allowed' : 'pointer', fontFamily: 'inherit', boxShadow: quoteState === 'sending' ? 'none' : '0 4px 20px rgba(99,102,241,0.35)' }}>
+                {quoteState === 'sending' ? '⏳ Sending your request…' : '🚀 Send My Free Quote Request'}
+              </button>
+
+              <p style={{ textAlign: 'center', margin: '16px 0 0', fontSize: 13, color: '#94a3b8' }}>
+                No spam, no commitment. We respond within 2 business hours. · <a href="https://wa.me/27760679100" style={{ color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>Prefer WhatsApp?</a>
+              </p>
+            </form>
+          )}
         </div>
       </section>
 

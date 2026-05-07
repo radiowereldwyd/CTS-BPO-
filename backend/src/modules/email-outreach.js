@@ -2070,8 +2070,38 @@ function portalFooter() {
   }
 })();
 
+/**
+ * sendRaw — transactional send that bypasses the cold-outreach pause/cap.
+ * Use for notifications, auto-replies, admin alerts — not bulk cold email.
+ */
+async function sendRaw({ to, subject, html, text, replyTo }) {
+  const mode = getSenderMode();
+  const fromStr = `${FROM_NAME} <${FROM_EMAIL}>`;
+  if (!mode) { console.warn('[EMAIL] sendRaw: all providers broken'); return; }
+  try {
+    if (mode === 'brevo') {
+      await axios.post('https://api.brevo.com/v3/smtp/email', {
+        sender: { name: FROM_NAME, email: FROM_EMAIL },
+        to: [{ email: to }],
+        replyTo: { email: replyTo || REPLY_EMAIL },
+        subject, htmlContent: html,
+        ...(text ? { textContent: text } : {}),
+      }, { headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' }, timeout: 12000 });
+    } else if (mode === 'gmail') {
+      const t = getTransporter();
+      if (t) await t.sendMail({ from: fromStr, to, subject, html, text, replyTo: replyTo || REPLY_EMAIL });
+    } else if (mode === 'mailjet') {
+      await axios.post('https://api.mailjet.com/v3.1/send', {
+        Messages: [{ From: { Email: FROM_EMAIL, Name: FROM_NAME }, To: [{ Email: to }], Subject: subject, HTMLPart: html }]
+      }, { auth: { username: MAILJET_API_KEY, password: MAILJET_SEC_KEY }, timeout: 12000 });
+    }
+    console.log(`[EMAIL] sendRaw → ${to} (${subject})`);
+  } catch (e) { console.error('[EMAIL] sendRaw error:', e.message); }
+}
+
 module.exports = {
   sendMail,
+  sendRaw,
   sendOutreachEmail, runCampaign, previewTemplate,
   sendSubcontractorRecruitment, sendBPORecruitmentDrive, sendSubcontractorReminder,
   sendClientColdOutreach, sendClientFollowUp,
