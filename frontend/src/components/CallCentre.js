@@ -93,6 +93,14 @@ export default function CallCentre({ token, user }) {
     navigator.clipboard.writeText(url).then(() => alert(`✅ Client link copied!\n\n${url}`)).catch(() => prompt('Copy this link:', url));
   }
 
+  async function endRoom(room) {
+    if (!window.confirm(`End room "${room.name}"? This will disconnect everyone in the call.`)) return;
+    try {
+      await fetch(`${API}/api/call-centre/rooms/${room.id}`, { method: 'DELETE', headers: auth.headers });
+      load();
+    } catch {}
+  }
+
   async function saveNote(id) {
     setSavingNote(id);
     try {
@@ -189,6 +197,7 @@ export default function CallCentre({ token, user }) {
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => joinRoom(r)} style={{ ...S.btn('#6366f1'), fontSize: 12, padding: '7px 14px' }}>▶ Join</button>
                     <button onClick={() => copyClientLink(r)} style={{ ...S.btn('#0ea5e9'), fontSize: 12, padding: '7px 14px' }}>📋 Copy Client Link</button>
+                    <button onClick={() => endRoom(r)} style={{ ...S.btn('#ef4444'), fontSize: 12, padding: '7px 14px' }}>📵 End Room</button>
                   </div>
                 </div>
               ))}
@@ -240,6 +249,7 @@ export default function CallCentre({ token, user }) {
                   <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
                     <button onClick={() => joinRoom(r)} style={{ ...S.btn('#6366f1'), fontSize: 12, padding: '8px 16px' }}>▶ Join as Agent</button>
                     <button onClick={() => copyClientLink(r)} style={{ ...S.btn('#0ea5e9'), fontSize: 12, padding: '8px 16px' }}>📋 Copy Client Link</button>
+                    <button onClick={() => endRoom(r)} style={{ ...S.btn('#ef4444'), fontSize: 12, padding: '8px 16px' }}>📵 End Room</button>
                   </div>
                 </div>
                 <div style={{ marginTop: 12, background: '#f1f5f9', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#475569' }}>

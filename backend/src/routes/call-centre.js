@@ -79,6 +79,12 @@ router.patch('/agent/status', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── End / delete a room ───────────────────────────────────────────────────────
+router.delete('/rooms/:id', requireAuth, (req, res) => {
+  callCentre.deleteRoom(req.params.id);
+  res.json({ success: true });
+});
+
 // ── Add notes to a call log entry ────────────────────────────────────────────
 router.post('/notes/:id', requireAuth, async (req, res) => {
   try {
