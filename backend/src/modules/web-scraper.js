@@ -200,6 +200,18 @@ const JUNK_DOMAINS = new Set([
   'supportninja.com','helpware.com','influx.com','answerfirst.com',
   'magellan-solutions.com','tcwglobal.com','frontlogix.com','phonestaffer.com',
   'thebponetwork.com','bposearch.com','allianzebposervices.com','cion-bpo.com',
+  // Additional BPO providers found in outreach logs
+  'microsourcing.com','milengo.com','movate.com','myoutdesk.com','neowork.com',
+  'invensis.net','invedus.com','managedoutsource.com','metasource.com',
+  'obgoutsourcing.com','oceanstalent.com','officebeacon.com','onbrand24.com',
+  'outbooks.com','outsource-bookkeeper.com','intellectoutsource.com',
+  'insigniaresource.com','influenceflow.io','infocapsol.com','inputix.com',
+  'inceptiontech.com','scribemedics.com','scanoptics.com','naos-solutions.com',
+  'noota.io','datamatics.com','mphasis.com','hexaware.com','firstsource.com',
+  'exlservice.com','wns.com','startek.com','sutherland.com','ttec.com',
+  'synnex.com','conduent.com','ienergizer.com','servicesource.com',
+  'outsourcely.com','igate.com','outsource-bookkeeper.com','obi.services',
+  'officebeacon.com','oceanstalent.com','obgoutsourcing.com',
   // News & blogs
   'bizcommunity.com','forbes.com','entrepreneur.com','businessinsider.com',
   'techcrunch.com','wired.com','theguardian.com','bbc.com','cnn.com',

@@ -496,34 +496,43 @@ const templates = {
 
   // ── 1. COLD OUTREACH — AI found a BPO opportunity ─────────────────────────
   bpoApplication: (p) => {
-    const name    = esc(p.name)    || 'Hiring Manager';
-    const company = esc(p.company) || 'your organisation';
-    const jobType = esc(p.jobType) || 'business process outsourcing';
-    const jobCap  = jobType.charAt(0).toUpperCase() + jobType.slice(1);
+    const name    = esc(p.name)    || '';
+    const company = esc(p.company) || 'your team';
+    const jobType = esc(p.jobType) || 'admin and back-office';
+    const svc     = jobType.replace(/-/g, ' ');
+    const greeting = name ? `Hi ${name},` : `Hi,`;
+    // Rotating natural subject lines — no "BPO" buzzwords that trigger spam filters
+    const subjects = [
+      `a quick question for ${company}`,
+      `${company} — could we take some work off your plate?`,
+      `free trial task for ${company}`,
+      `handling ${svc} for ${company}`,
+      `${company} — admin support offer`,
+      `saving time on ${svc}`,
+    ];
+    const subject = subjects[Math.floor(Math.random() * subjects.length)];
     return {
-      subject: `BPO Specialist Available — ${jobCap} Services for ${company}`,
+      subject,
       html: wrapper(`
         ${header()}
         <div style="padding:36px">
-          <p style="font-size:15px;margin:0 0 16px">Dear ${name},</p>
+          <p style="font-size:15px;margin:0 0 16px">${greeting}</p>
           <p style="font-size:15px;line-height:1.7;margin:0 0 16px">
-            My name is <strong>Thomas</strong> from <strong>CTS BPO Solutions</strong>. I noticed
-            ${company} is looking for <strong>${jobType}</strong> support — this is exactly what we
-            specialise in. Our expert team delivers high-quality BPO services at a fraction
-            of the cost of in-house teams.
+            This is Thomas from <strong>CTS BPO Solutions</strong>. We handle <strong>${svc}</strong>
+            and other admin work for businesses that want it done properly without growing their headcount.
           </p>
-          ${highlight(`<strong>We are actively available</strong> to take on ${jobType} work for ${company} with a typical start time of <strong>48–72 hours</strong> from contract signature.`)}
-          <p style="font-weight:700;color:#1e40af;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;margin:20px 0 8px">Our Services:</p>
+          ${highlight(`We deliver finished, quality-checked output in <strong>24–48 hours</strong>. Our clients typically save <strong>40–60%</strong> compared to doing the same work in-house.`)}
+          <p style="font-weight:700;color:#1e40af;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;margin:20px 0 8px">What we handle:</p>
           ${serviceGrid()}
           ${pillsRow()}
           <p style="font-size:14px;line-height:1.7;margin:16px 0">
-            I'd like to offer a <strong>free pilot task</strong> — send us a small sample of your
-            data or a test document and we'll return it processed within 24 hours, at no cost, so
-            you can judge our quality before committing to anything.
+            I'd like to earn your trust first — send us one real task (a document to process,
+            data to capture, audio to transcribe) and we'll return it completed within 24 hours,
+            <strong>completely free</strong>. No commitment, no sales call.
           </p>
-          ${cta('📧 Reply to Discuss Requirements', `BPO Services Enquiry — ${company}`)}
-          <p style="font-size:13px;color:#64748b">Or email us directly: <a href="mailto:${REPLY_EMAIL}" style="color:#1e40af">${REPLY_EMAIL}</a></p>
-          <p style="font-size:14px;margin:20px 0 0">Best regards,<br><strong>Thomas</strong><br>CTS BPO Solutions</p>
+          ${cta('Reply to claim your free task', `Free task — ${company}`)}
+          <p style="font-size:13px;color:#64748b">Or email directly: <a href="mailto:${REPLY_EMAIL}" style="color:#1e40af">${REPLY_EMAIL}</a> · WhatsApp: +27 76 067 9100</p>
+          <p style="font-size:14px;margin:20px 0 0">Thomas<br>CTS BPO Solutions</p>
         </div>
         ${footer()}
       `),

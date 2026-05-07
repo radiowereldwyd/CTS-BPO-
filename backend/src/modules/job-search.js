@@ -130,8 +130,38 @@ async function searchSerpApi(query, numResults = 100) {
   return res.data.organic_results || [];
 }
 
-// Email variants to try per domain — maximises reachable contacts
-const EMAIL_PREFIXES = ['info', 'contact', 'hello', 'enquiries', 'admin', 'sales', 'support'];
+// Email variants — only the two most likely to exist on a real business domain
+const EMAIL_PREFIXES = ['info', 'contact'];
+
+// BPO/outsourcing provider domains — never email these (they're competitors, not clients)
+const BPO_PROVIDER_DOMAINS = new Set([
+  'microsourcing.com','milengo.com','movate.com','myoutdesk.com','neowork.com',
+  'invensis.net','invedus.com','managedoutsource.com','metasource.com','obgoutsourcing.com',
+  'oceanstalent.com','officebeacon.com','onbrand24.com','outbooks.com','outsource-bookkeeper.com',
+  'intellectoutsource.com','insigniaresource.com','inteklogistics.com','influenceflow.io',
+  'infocapsol.com','inputix.com','inceptiontech.com','outsourcinginsight.com',
+  'scribemedics.com','scanoptics.com','naos-solutions.com','noota.io',
+  'accenture.com','teleperformance.com','concentrix.com','genpact.com','wipro.com',
+  'cognizant.com','infosys.com','tcs.com','capgemini.com','ibm.com','atos.net',
+  'sitel.com','taskus.com','supportninja.com','helpware.com','influx.com',
+  'magellan-solutions.com','tcwglobal.com','bruntwork.co','auxis.com','ardem.com',
+  'bigoutsource.com','avidxchange.com','bolsterbiz.com','wow24-7.com',
+  'outsourcely.com','datamatics.com','igate.com','mphasis.com','hexaware.com',
+  'firstsource.com','exlservice.com','wns.com','startek.com','sutherland.com',
+  'ienergizer.com','servicesource.com','ttec.com','synnex.com','conduent.com',
+]);
+
+// Domain/name keyword patterns that indicate a BPO provider (not a client)
+const BPO_PROVIDER_KEYWORDS = [
+  'outsourc','bponet','callcenter','callcentre','offshoring','nearshore','offshore',
+  'virtual-assistant','virtualassist','remoteteam','staffoutsource','outsource',
+];
+
+function isBpoProvider(domain) {
+  if (BPO_PROVIDER_DOMAINS.has(domain)) return true;
+  const d = domain.toLowerCase();
+  return BPO_PROVIDER_KEYWORDS.some(kw => d.includes(kw));
+}
 
 /**
  * Parse a search result into a list of job lead records (one per email variant).
@@ -151,11 +181,13 @@ function parseResult(result, jobType, query) {
     company = company.charAt(0).toUpperCase() + company.slice(1);
   } catch { company = 'Unknown'; }
 
-  // Skip pure employee job boards (we want companies that need outsourcing, not employee listings)
+  // Skip job boards, freelance sites, directories AND BPO providers
   const skipDomains = ['linkedin.com', 'indeed.com', 'glassdoor.com', 'reed.co.uk', 'monster.com',
     'ziprecruiter.com', 'simplyhired.com', 'careerbuilder.com', 'upwork.com', 'fiverr.com', 'clutch.co'];
   if (skipDomains.some(d => url.includes(d))) return [];
   if (!url.startsWith('http')) return [];
+  // Block BPO companies — we want clients, not competitors
+  if (isBpoProvider(domain)) return [];
 
   // Extract explicit email from snippet/title
   const snippetEmail = (snippet + ' ' + title).match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
