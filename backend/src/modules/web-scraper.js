@@ -170,28 +170,64 @@ const SEARCH_CITIES = [
   'Accra Ghana',
 ];
 
-// CSE / DDG search queries targeting businesses that need BPO services
+// ── Junk domains to always skip — never store or email these ─────────────────
+const JUNK_DOMAINS = new Set([
+  // Social media & tech giants
+  'twitter.com','x.com','facebook.com','instagram.com','tiktok.com','youtube.com',
+  'linkedin.com','pinterest.com','snapchat.com','reddit.com','whatsapp.com',
+  'telegram.org','discord.com','tumblr.com','quora.com','medium.com',
+  // Microsoft / Google / Amazon
+  'microsoft.com','azure.microsoft.com','google.com','googleapis.com',
+  'amazon.com','aws.amazon.com','apple.com','icloud.com',
+  // Email providers
+  'gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','aol.com','protonmail.com',
+  // Job boards & freelance
+  'indeed.com','glassdoor.com','upwork.com','fiverr.com','freelancer.com',
+  'monster.com','ziprecruiter.com','simplyhired.com','careerbuilder.com','bark.com',
+  // Directories & review sites
+  'clutch.co','goodfirms.co','trustpilot.com','yelp.com','yellowpages.com',
+  'g2.com','capterra.com','sitejabber.com','manta.com','bbb.org',
+  'help.clutch.co','msg.clutch.co','survey.hsforms.com','shortlist.clutch.co',
+  'review.clutch.co','project.clutch.co','r.clutch.co',
+  // Known BPO competitors — don't pitch other BPO companies
+  'ardem.com','auxis.com','avidxchange.com','bigoutsource.com','bruntwork.co',
+  'afrishorebpo.com','athreon.com','audiofilesolutions.com','bolsterbiz.com',
+  'wow24-7.com','agtva360.com','ahima.org','allianzegcc.com','armasourcing.com',
+  'accenture.com','teleperformance.com','convergys.com','wipro.com','infosys.com',
+  'tcs.com','hcltech.com','capgemini.com','cognizant.com','genpact.com',
+  'ibm.com','atos.net','cgi.com','dxc.com','concentrix.com','sitel.com',
+  'taskus.com','tss-services.com','remotasks.com','clickworker.com',
+  'supportninja.com','helpware.com','influx.com','answerfirst.com',
+  'magellan-solutions.com','tcwglobal.com','frontlogix.com','phonestaffer.com',
+  'thebponetwork.com','bposearch.com','allianzebposervices.com','cion-bpo.com',
+  // News & blogs
+  'bizcommunity.com','forbes.com','entrepreneur.com','businessinsider.com',
+  'techcrunch.com','wired.com','theguardian.com','bbc.com','cnn.com',
+  'huffpost.com','inc.com','fastcompany.com',
+]);
+
+// CSE queries — find companies that NEED BPO, NOT BPO companies themselves
 const CSE_QUERIES = [
-  '"outsource" "data entry" company "contact us" -site:linkedin.com -site:indeed.com',
-  '"medical transcription" outsource "get a quote" -site:linkedin.com',
-  '"back office" outsourcing company "contact" -site:linkedin.com -site:indeed.com',
-  '"virtual assistant" outsourcing "hire" "company" -site:linkedin.com',
-  '"accounts payable" outsource "service provider" contact',
-  '"payroll processing" outsource "small business" contact',
-  '"customer support" outsourcing BPO company contact -site:linkedin.com',
-  'BPO services provider "contact us" "get a quote" -site:linkedin.com',
-  '"document processing" outsource company "quote" -site:linkedin.com',
-  '"content moderation" outsource company contact -site:linkedin.com',
-  '"claims processing" outsource provider "contact us"',
-  '"data capture" outsourcing company "get in touch" -site:linkedin.com',
-  '"invoice processing" outsource company contact -site:linkedin.com',
-  '"HR outsourcing" provider company "contact us" -site:linkedin.com',
-  '"legal process outsourcing" company "get a quote"',
-  '"finance and accounting" outsource BPO "contact" -site:linkedin.com',
-  '"supply chain" outsource company "get a quote" -site:linkedin.com',
-  '"IT helpdesk" outsource provider contact -site:linkedin.com',
-  '"social media management" outsource agency "contact" -site:linkedin.com',
-  '"translation services" outsource provider "quote" -site:linkedin.com',
+  'law firm "contact us" UK "admin support" OR "document processing" -site:linkedin.com',
+  'accounting firm "contact us" Australia "bookkeeping" OR "data capture" -site:linkedin.com',
+  'medical practice "contact us" USA "patient records" OR "billing" -site:linkedin.com',
+  'dental clinic "contact us" Canada "admin" OR "records management" -site:linkedin.com',
+  'real estate agency "contact us" UK "admin" OR "listings" -site:linkedin.com',
+  'insurance broker "contact us" Australia -site:linkedin.com',
+  'e-commerce business "contact us" UK "product data" OR "catalogue" -site:linkedin.com',
+  'recruitment agency "contact us" USA "admin" OR "data entry" -site:linkedin.com',
+  'logistics company "contact us" South Africa "invoicing" OR "admin" -site:linkedin.com',
+  'property management company "contact us" UK "admin" OR "tenancy" -site:linkedin.com',
+  'mortgage broker "contact us" USA "documents" OR "admin" -site:linkedin.com',
+  'financial advisory firm "contact us" Australia -site:linkedin.com',
+  'HR consulting firm "contact us" UK "admin" OR "payroll" -site:linkedin.com',
+  'manufacturing company "contact us" South Africa "invoices" OR "data" -site:linkedin.com',
+  'healthcare clinic "contact us" Canada "records" OR "billing" -site:linkedin.com',
+  'legal firm "contact us" Australia "documents" OR "transcription" -site:linkedin.com',
+  'startup "contact us" USA "admin" OR "back office" -site:linkedin.com',
+  'medical specialist "contact us" South Africa "admin" OR "records" -site:linkedin.com',
+  'architectural firm "contact us" UK "admin" OR "documents" -site:linkedin.com',
+  'pharmaceutical company "contact us" Australia -site:linkedin.com',
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -292,10 +328,20 @@ async function runMxScoringBatch({ limit = 60 } = {}) {
   }
 }
 
+// ── Helper: is this domain junk / a competitor? ──────────────────────────────
+function isJunkDomain(domain) {
+  if (!domain) return true;
+  if (JUNK_DOMAINS.has(domain)) return true;
+  // Block known BPO keyword domains (catches variants not in the explicit list)
+  const bpoPatterns = ['bpo','outsourc','virtual-assist','callcenter','call-center','transcrib','answering-service'];
+  return bpoPatterns.some(p => domain.includes(p));
+}
+
 // ── Store results (continuous scraper — skip duplicates) ─────────────────────
 async function storeContacts(contacts) {
   let inserted = 0;
   for (const c of contacts) {
+    if (isJunkDomain(c.domain)) continue; // skip junk / competitor domains
     try {
       const res = await db.query(
         `INSERT INTO scraped_contacts
@@ -319,6 +365,7 @@ async function storeContacts(contacts) {
 async function storeContactsTargeted(contacts) {
   let affected = 0;
   for (const c of contacts) {
+    if (isJunkDomain(c.domain)) continue; // skip junk / competitor domains
     try {
       const res = await db.query(
         `INSERT INTO scraped_contacts
@@ -459,27 +506,32 @@ async function scrapeGoogleCSE() {
 }
 
 // ── 3. DuckDuckGo HTML scraping ─────────────────────────────────────────────
+// Queries target companies that NEED BPO — NOT other BPO/outsourcing companies
 const DDG_QUERIES = [
-  'outsourcing company "contact us" site:.com',
-  'BPO services provider "get a quote" -site:linkedin.com',
-  'data entry outsourcing company "email us"',
-  'virtual assistant company "contact" "hire"',
-  'medical billing outsourcing company contact',
-  'accounting outsourcing firm "contact us"',
-  'payroll outsourcing company "get in touch"',
-  'customer service outsourcing BPO company contact',
-  'back office outsourcing provider "request a quote"',
-  'document management outsourcing company email',
-  'HR outsourcing company "free quote" contact',
-  'content moderation outsourcing company contact',
-  'legal transcription company outsource "contact us"',
-  'supply chain outsourcing company email contact',
-  'financial outsourcing company "get a quote"',
-  'IT outsourcing helpdesk company "contact us"',
-  'claims processing outsourcing provider contact',
-  'translation outsourcing company "free quote"',
-  'invoice processing BPO company contact',
-  'social media outsourcing agency "contact us"',
+  'law firm UK "contact us" "admin" OR "document management" -site:linkedin.com',
+  'accounting firm Australia "contact us" "bookkeeping" OR "data capture" -site:linkedin.com',
+  'dental practice USA "contact us" "records" OR "billing" -site:linkedin.com',
+  'medical clinic South Africa "contact us" "admin" OR "records" -site:linkedin.com',
+  'real estate agency Canada "contact us" "admin" OR "listings" -site:linkedin.com',
+  'insurance broker UK "contact us" "admin" OR "documents" -site:linkedin.com',
+  'e-commerce company USA "contact us" "product data" OR "inventory" -site:linkedin.com',
+  'property management company Australia "contact us" -site:linkedin.com',
+  'logistics company South Africa "contact us" "invoices" OR "admin" -site:linkedin.com',
+  'HR consulting firm UK "contact us" "admin" OR "payroll" -site:linkedin.com',
+  'mortgage broker USA "contact us" "documents" OR "processing" -site:linkedin.com',
+  'recruitment company Australia "contact us" "admin" OR "data" -site:linkedin.com',
+  'financial advisory firm South Africa "contact us" -site:linkedin.com',
+  'pharmaceutical company UK "contact us" "records" OR "regulatory" -site:linkedin.com',
+  'healthcare provider Canada "contact us" "billing" OR "records" -site:linkedin.com',
+  'legal firm Australia "contact us" "transcription" OR "documents" -site:linkedin.com',
+  'manufacturing company South Africa "contact us" "invoices" OR "data entry" -site:linkedin.com',
+  'startup USA "contact us" "admin" OR "back office" -site:linkedin.com',
+  'medical specialist South Africa "contact us" "admin" OR "patient records" -site:linkedin.com',
+  'architecture firm UK "contact us" "admin" OR "documents" -site:linkedin.com',
+  'engineering company Australia "contact us" "admin" OR "documents" -site:linkedin.com',
+  'veterinary clinic USA "contact us" "records" OR "admin" -site:linkedin.com',
+  'optometry practice Canada "contact us" "billing" OR "records" -site:linkedin.com',
+  'investment firm UK "contact us" "reports" OR "data" -site:linkedin.com',
 ];
 
 async function scrapeDuckDuckGo() {
