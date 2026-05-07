@@ -352,4 +352,137 @@ async function getStats() {
   return res.rows[0];
 }
 
-module.exports = { scanForJobs, getLeads, updateLead, markContacted, getStats, BPO_QUERIES, ensureTable };
+// ── Platform Job Scanner ──────────────────────────────────────────────────────
+// Searches Upwork, Freelancer.com, and Guru for live BPO job postings via SerpAPI.
+// These are ACTIVE BUYERS — highest-conversion leads possible.
+// Stored separately in platform_jobs — admin clicks the link to submit a proposal.
+
+const PLATFORM_QUERIES = [
+  // ── Upwork ────────────────────────────────────────────────────────────────
+  { q: 'site:upwork.com/jobs "data entry" "fixed price" OR "hourly"',        type: 'data-entry',           platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "virtual assistant" "admin"',                   type: 'virtual-assistant',    platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "transcription" "audio" OR "video"',            type: 'transcription',        platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "translation" "document" OR "website"',         type: 'translation',          platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "bookkeeping" OR "accounts payable" "remote"',  type: 'finance-admin',        platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "customer support" "outsource" OR "remote"',    type: 'customer-support',     platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "invoice processing" OR "document processing"', type: 'document-processing',  platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "content moderation" "images" OR "text"',       type: 'content-moderation',   platform: 'Upwork' },
+
+  // ── Freelancer.com ────────────────────────────────────────────────────────
+  { q: 'site:freelancer.com/projects "data entry" "budget"',                 type: 'data-entry',           platform: 'Freelancer' },
+  { q: 'site:freelancer.com/projects "virtual assistant" "looking for"',     type: 'virtual-assistant',    platform: 'Freelancer' },
+  { q: 'site:freelancer.com/projects "transcription" "audio"',               type: 'transcription',        platform: 'Freelancer' },
+  { q: 'site:freelancer.com/projects "translation" "document"',              type: 'translation',          platform: 'Freelancer' },
+  { q: 'site:freelancer.com/projects "bookkeeping" OR "payroll"',            type: 'finance-admin',        platform: 'Freelancer' },
+  { q: 'site:freelancer.com/projects "customer service" "support"',          type: 'customer-support',     platform: 'Freelancer' },
+
+  // ── Guru.com ──────────────────────────────────────────────────────────────
+  { q: 'site:guru.com/jobs "data entry" "ongoing"',                          type: 'data-entry',           platform: 'Guru' },
+  { q: 'site:guru.com/jobs "virtual assistant" "admin"',                     type: 'virtual-assistant',    platform: 'Guru' },
+  { q: 'site:guru.com/jobs "transcription" OR "translation"',                type: 'transcription',        platform: 'Guru' },
+
+  // ── PeoplePerHour ─────────────────────────────────────────────────────────
+  { q: 'site:peopleperhour.com "data entry" OR "virtual assistant" "needed"',type: 'data-entry',           platform: 'PeoplePerHour' },
+  { q: 'site:peopleperhour.com "transcription" OR "translation" "needed"',   type: 'transcription',        platform: 'PeoplePerHour' },
+];
+
+async function ensurePlatformTable() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS platform_jobs (
+      id           SERIAL PRIMARY KEY,
+      platform     TEXT NOT NULL,
+      job_type     TEXT DEFAULT 'general',
+      title        TEXT NOT NULL,
+      snippet      TEXT,
+      job_url      TEXT UNIQUE NOT NULL,
+      budget       TEXT,
+      status       TEXT DEFAULT 'new',
+      bid_sent_at  TIMESTAMPTZ,
+      search_query TEXT,
+      created_at   TIMESTAMPTZ DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+}
+
+async function runPlatformJobScan() {
+  if (!SERPAPI_KEY) throw new Error('SERPAPI_KEY not set');
+  await ensurePlatformTable();
+
+  let found = 0;
+  const errors = [];
+
+  for (const { q, type, platform } of PLATFORM_QUERIES) {
+    try {
+      const res = await axios.get('https://serpapi.com/search.json', {
+        params: { engine: 'google', q, num: 10, api_key: SERPAPI_KEY, gl: 'us', hl: 'en' },
+        timeout: 15000,
+      });
+      const results = res.data.organic_results || [];
+
+      for (const r of results) {
+        const url = r.link;
+        if (!url) continue;
+
+        // Extract budget hint from snippet
+        const budgetMatch = (r.snippet || '').match(/\$[\d,]+(?:\s*[-–]\s*\$[\d,]+)?|\bR[\d,]+\b/);
+        const budget = budgetMatch ? budgetMatch[0] : null;
+
+        // Clean up title — remove platform suffix noise
+        const title = (r.title || 'BPO Job Opportunity').replace(/\s*[|\-–].*$/, '').trim();
+
+        try {
+          const ins = await db.query(
+            `INSERT INTO platform_jobs (platform, job_type, title, snippet, job_url, budget, search_query)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             ON CONFLICT (job_url) DO NOTHING
+             RETURNING id`,
+            [platform, type, title, r.snippet || '', url, budget, q]
+          );
+          if (ins.rows[0]) found++;
+        } catch (_) { /* duplicate */ }
+      }
+
+      await new Promise(r => setTimeout(r, 1200)); // rate-limit: 1.2s between queries
+    } catch (err) {
+      const is429 = err?.response?.status === 429 || (err.message || '').includes('429');
+      errors.push({ platform, query: q, error: err.message });
+      if (is429) break; // stop on rate limit
+    }
+  }
+
+  return { found, errors };
+}
+
+async function getPlatformJobs({ platform, type, status, limit = 200 } = {}) {
+  await ensurePlatformTable();
+  let sql = 'SELECT * FROM platform_jobs WHERE 1=1';
+  const params = [];
+  if (platform) { params.push(platform); sql += ` AND platform = $${params.length}`; }
+  if (type)     { params.push(type);     sql += ` AND job_type = $${params.length}`; }
+  if (status)   { params.push(status);   sql += ` AND status = $${params.length}`; }
+  sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1}`;
+  params.push(limit);
+  const res = await db.query(sql, params);
+  return res.rows;
+}
+
+async function getPlatformStats() {
+  await ensurePlatformTable();
+  const res = await db.query(`
+    SELECT
+      COUNT(*)                                        AS total,
+      COUNT(*) FILTER (WHERE status='new')            AS new_jobs,
+      COUNT(*) FILTER (WHERE status='bid_sent')       AS bids_sent,
+      COUNT(*) FILTER (WHERE status='won')            AS won,
+      COUNT(DISTINCT platform)                        AS platforms,
+      MAX(created_at)                                 AS last_scanned
+    FROM platform_jobs
+  `);
+  return res.rows[0];
+}
+
+module.exports = {
+  scanForJobs, getLeads, updateLead, markContacted, getStats, BPO_QUERIES, ensureTable,
+  runPlatformJobScan, getPlatformJobs, getPlatformStats, ensurePlatformTable,
+};

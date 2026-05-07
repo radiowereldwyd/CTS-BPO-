@@ -1393,6 +1393,30 @@ app.get('/api/ai-agent/scraped-contacts', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/ai-agent/platform-jobs — Upwork / Freelancer / Guru live job board
+app.get('/api/ai-agent/platform-jobs', requireAuth, async (req, res) => {
+  try {
+    const jobSearch = require('./modules/job-search');
+    const [stats, jobs] = await Promise.all([
+      jobSearch.getPlatformStats(),
+      jobSearch.getPlatformJobs({ limit: 300 }),
+    ]);
+    res.json({ stats, jobs });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/ai-agent/platform-jobs/:id/bid — mark a platform job as bid sent
+app.patch('/api/ai-agent/platform-jobs/:id/bid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const db = require('./db');
+    await db.query(
+      `UPDATE platform_jobs SET status='bid_sent', bid_sent_at=NOW(), updated_at=NOW() WHERE id=$1`,
+      [req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Targeted Scrape ─────────────────────────────────────────────────────────
 // Multer — store PDF in memory (max 20 MB)
 const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });

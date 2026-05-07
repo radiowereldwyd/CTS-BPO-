@@ -162,6 +162,8 @@ export default function AIAgentDashboard({ token }) {
   const [emailStats, setEmailStats] = useState(null);
   const [emailAnalytics, setEmailAnalytics] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [platformData, setPlatformData] = useState(null);
+  const [platformLoading, setPlatformLoading] = useState(false);
   const feedRef  = useRef(null);
   const tokenRef = useRef(token);
   useEffect(() => { tokenRef.current = token; }, [token]);
@@ -197,16 +199,26 @@ export default function AIAgentDashboard({ token }) {
       setEmailAnalytics(data);
     } catch {}
   };
+  const doFetchPlatformJobs = async () => {
+    setPlatformLoading(true);
+    try {
+      const h = { Authorization: `Bearer ${tokenRef.current}` };
+      const data = await fetch(`${API}/api/ai-agent/platform-jobs`, { headers: h }).then(r => r.json());
+      setPlatformData(data);
+    } catch {} finally { setPlatformLoading(false); }
+  };
 
   // Store latest versions in refs so the interval callbacks always call the current function
   const liveRef          = useRef(doFetchLive);
   const activityRef      = useRef(doFetchActivity);
   const emailStatsRef    = useRef(doFetchEmailStats);
   const analyticsRef     = useRef(doFetchEmailAnalytics);
+  const platformRef      = useRef(doFetchPlatformJobs);
   liveRef.current          = doFetchLive;
   activityRef.current      = doFetchActivity;
   emailStatsRef.current    = doFetchEmailStats;
   analyticsRef.current     = doFetchEmailAnalytics;
+  platformRef.current      = doFetchPlatformJobs;
 
   // Set up intervals ONCE on mount — never cleared until unmount
   useEffect(() => {
@@ -345,6 +357,7 @@ export default function AIAgentDashboard({ token }) {
         <button className={`tab-btn${activeTab==='daily'?' active':''}`} onClick={()=>setActiveTab('daily')}>📅 Daily Stats</button>
         <button className={`tab-btn${activeTab==='triggers'?' active':''}`} onClick={()=>setActiveTab('triggers')}>🎮 Triggers</button>
         <button className={`tab-btn${activeTab==='contacts'?' active':''}`} onClick={()=>setActiveTab('contacts')}>🕷️ Scraped Contacts</button>
+        <button className={`tab-btn${activeTab==='platform'?' active':''}`} onClick={()=>{setActiveTab('platform');platformRef.current();}}>🎯 Platform Jobs</button>
         <button className={`tab-btn${activeTab==='analytics'?' active':''}`} onClick={()=>{setActiveTab('analytics');analyticsRef.current();}}>📈 Email Analytics</button>
       </div>
 
@@ -798,9 +811,239 @@ export default function AIAgentDashboard({ token }) {
         <ScrapedContactsPanel token={token} live={live} />
       )}
 
+      {/* ══════════════════ PLATFORM JOBS TAB ════════════════════════════════ */}
+      {activeTab === 'platform' && (
+        <PlatformJobsPanel
+          data={platformData}
+          loading={platformLoading}
+          token={token}
+          onRefresh={() => platformRef.current()}
+          onTriggerScan={async () => {
+            try {
+              const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+              await fetch(`${API}/api/ai-agent/trigger/platform_scan`, { method: 'POST', headers: h });
+              setTimeout(() => platformRef.current(), 8000);
+            } catch {}
+          }}
+          onMarkBid={async (id) => {
+            try {
+              const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+              await fetch(`${API}/api/ai-agent/platform-jobs/${id}/bid`, { method: 'PATCH', headers: h });
+              platformRef.current();
+            } catch {}
+          }}
+        />
+      )}
+
       {/* ══════════════════ EMAIL ANALYTICS TAB ══════════════════════════════ */}
       {activeTab === 'analytics' && (
         <EmailAnalyticsPanel data={emailAnalytics} />
+      )}
+    </div>
+  );
+}
+
+// ── Platform Jobs Panel ───────────────────────────────────────────────────────
+const PLATFORM_COLORS = {
+  Upwork:        { bg: '#e8f4e8', border: '#14a800', text: '#0d7a00', icon: '🟢' },
+  Freelancer:    { bg: '#e8f0fe', border: '#0d6efd', text: '#0a58ca', icon: '🔵' },
+  Guru:          { bg: '#fff3e0', border: '#ff9800', text: '#e65100', icon: '🟠' },
+  PeoplePerHour: { bg: '#fce4ec', border: '#e91e63', text: '#ad1457', icon: '🔴' },
+};
+const JOB_TYPE_LABELS = {
+  'data-entry': '📋 Data Entry', 'virtual-assistant': '🤝 Virtual Assistant',
+  'transcription': '🎤 Transcription', 'translation': '🌐 Translation',
+  'finance-admin': '💰 Finance/Bookkeeping', 'customer-support': '💬 Customer Support',
+  'document-processing': '📄 Document Processing', 'content-moderation': '🛡️ Content Moderation',
+  'general': '🔧 General BPO',
+};
+
+function PlatformJobsPanel({ data, loading, onRefresh, onTriggerScan, onMarkBid }) {
+  const [filterPlatform, setFilterPlatform] = useState('all');
+  const [filterType, setFilterType]         = useState('all');
+  const [filterStatus, setFilterStatus]     = useState('new');
+  const [scanning, setScanning]             = useState(false);
+
+  const stats = data?.stats || {};
+  const jobs  = (data?.jobs  || []).filter(j => {
+    if (filterPlatform !== 'all' && j.platform !== filterPlatform) return false;
+    if (filterType     !== 'all' && j.job_type !== filterType)     return false;
+    if (filterStatus   !== 'all' && j.status   !== filterStatus)   return false;
+    return true;
+  });
+
+  const platforms = [...new Set((data?.jobs || []).map(j => j.platform))];
+  const types     = [...new Set((data?.jobs || []).map(j => j.job_type))];
+
+  async function handleScan() {
+    setScanning(true);
+    await onTriggerScan();
+    setTimeout(() => { setScanning(false); onRefresh(); }, 12000);
+  }
+
+  if (loading && !data) {
+    return (
+      <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8' }}>
+        <div style={{ fontSize: 42, marginBottom: 12 }}>🎯</div>
+        <div style={{ fontWeight: 700, fontSize: 16 }}>Loading platform jobs...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif' }}>
+
+      {/* ── Intro banner ── */}
+      <div style={{ background: 'linear-gradient(135deg,#1e3a5f,#0f5499)', borderRadius: 14, padding: '20px 24px', marginBottom: 20, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>🎯 Freelance Platform Jobs Board</div>
+          <div style={{ fontSize: 13, color: '#93c5fd', maxWidth: 560 }}>
+            Live BPO job postings from <strong>Upwork, Freelancer, Guru &amp; PeoplePerHour</strong>. These buyers are actively posting right now — click <em>Open Job</em> to submit your proposal directly on the platform.
+          </div>
+        </div>
+        <button
+          onClick={handleScan}
+          disabled={scanning}
+          style={{ background: scanning ? '#64748b' : '#f59e0b', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 22px', fontWeight: 800, fontSize: 14, cursor: scanning ? 'default' : 'pointer' }}
+        >
+          {scanning ? '⏳ Scanning...' : '🔍 Scan Now'}
+        </button>
+      </div>
+
+      {/* ── KPI row ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 12, marginBottom: 20 }}>
+        {[
+          { label: 'Total Found',    val: parseInt(stats.total)     || 0, color: '#6366f1', icon: '📋' },
+          { label: 'New / Unbid',    val: parseInt(stats.new_jobs)  || 0, color: '#10b981', icon: '🆕' },
+          { label: 'Bids Sent',      val: parseInt(stats.bids_sent) || 0, color: '#0ea5e9', icon: '📤' },
+          { label: 'Won',            val: parseInt(stats.won)       || 0, color: '#f59e0b', icon: '🏆' },
+          { label: 'Platforms',      val: parseInt(stats.platforms) || 0, color: '#8b5cf6', icon: '🌐' },
+        ].map(k => (
+          <div key={k.label} style={{ background: '#fff', border: `1px solid ${k.color}25`, borderRadius: 12, padding: '14px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+            <div style={{ fontSize: 20, marginBottom: 4 }}>{k.icon}</div>
+            <div style={{ fontSize: 26, fontWeight: 900, color: k.color, lineHeight: 1 }}>{k.val}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Filters ── */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={filterPlatform} onChange={e => setFilterPlatform(e.target.value)}
+          style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', fontSize: 13, cursor: 'pointer' }}>
+          <option value="all">All Platforms</option>
+          {platforms.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select value={filterType} onChange={e => setFilterType(e.target.value)}
+          style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', fontSize: 13, cursor: 'pointer' }}>
+          <option value="all">All Job Types</option>
+          {types.map(t => <option key={t} value={t}>{JOB_TYPE_LABELS[t] || t}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', fontSize: 13, cursor: 'pointer' }}>
+          <option value="all">All Status</option>
+          <option value="new">New / Unbid</option>
+          <option value="bid_sent">Bid Sent</option>
+          <option value="won">Won</option>
+        </select>
+        <button onClick={onRefresh} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>↻ Refresh</button>
+        <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }}>{jobs.length} job{jobs.length !== 1 ? 's' : ''} shown</span>
+      </div>
+
+      {/* ── Jobs grid ── */}
+      {jobs.length === 0 ? (
+        <div style={{ background: '#f8fafc', borderRadius: 12, padding: 48, textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
+          <div style={{ fontWeight: 700, color: '#1e293b', fontSize: 16, marginBottom: 8 }}>
+            {!data || parseInt(stats.total) === 0
+              ? 'No platform jobs scanned yet'
+              : 'No jobs match your filters'}
+          </div>
+          <div style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>
+            {!data || parseInt(stats.total) === 0
+              ? 'Click "Scan Now" to search Upwork, Freelancer, Guru & PeoplePerHour for live BPO jobs.'
+              : 'Try changing the filters above.'}
+          </div>
+          {(!data || parseInt(stats.total) === 0) && (
+            <button onClick={handleScan} disabled={scanning}
+              style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 24px', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+              {scanning ? '⏳ Scanning...' : '🔍 Start Scanning'}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
+          {jobs.map(job => {
+            const pc = PLATFORM_COLORS[job.platform] || { bg: '#f8fafc', border: '#94a3b8', text: '#475569', icon: '🌐' };
+            const isBid = job.status === 'bid_sent';
+            const isWon = job.status === 'won';
+            return (
+              <div key={job.id} style={{
+                background: '#fff', border: `1px solid ${isBid ? '#0ea5e9' : isWon ? '#10b981' : '#e2e8f0'}`,
+                borderRadius: 14, padding: 18, boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
+                position: 'relative', opacity: isBid ? 0.85 : 1,
+              }}>
+                {/* Platform badge */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <span style={{ background: pc.bg, color: pc.text, border: `1px solid ${pc.border}`, borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 800 }}>
+                    {pc.icon} {job.platform}
+                  </span>
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                    {job.created_at ? new Date(job.created_at).toLocaleDateString('en-ZA') : ''}
+                  </span>
+                </div>
+
+                {/* Title */}
+                <div style={{ fontWeight: 800, fontSize: 14, color: '#1e293b', marginBottom: 6, lineHeight: 1.35 }}>
+                  {job.title}
+                </div>
+
+                {/* Snippet */}
+                {job.snippet && (
+                  <div style={{ fontSize: 12, color: '#475569', marginBottom: 10, lineHeight: 1.5 }}>
+                    {job.snippet.length > 160 ? job.snippet.slice(0, 160) + '…' : job.snippet}
+                  </div>
+                )}
+
+                {/* Meta row */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <span style={{ background: '#f0f4ff', color: '#4f46e5', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+                    {JOB_TYPE_LABELS[job.job_type] || job.job_type}
+                  </span>
+                  {job.budget && (
+                    <span style={{ background: '#ecfdf5', color: '#059669', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+                      💵 {job.budget}
+                    </span>
+                  )}
+                  {isBid && (
+                    <span style={{ background: '#e0f2fe', color: '#0369a1', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+                      ✅ Bid Sent {job.bid_sent_at ? new Date(job.bid_sent_at).toLocaleDateString('en-ZA') : ''}
+                    </span>
+                  )}
+                  {isWon && (
+                    <span style={{ background: '#dcfce7', color: '#15803d', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+                      🏆 Won!
+                    </span>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <a href={job.job_url} target="_blank" rel="noopener noreferrer"
+                    style={{ flex: 1, textAlign: 'center', background: pc.text, color: '#fff', borderRadius: 8, padding: '8px 0', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
+                    🔗 Open Job
+                  </a>
+                  {!isBid && !isWon && (
+                    <button onClick={() => onMarkBid(job.id)}
+                      style={{ flex: 1, background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 0', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                      📤 Mark Bid Sent
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

@@ -1398,6 +1398,38 @@ async function runPaymentChase() {
 // ── 7. Scan for Client Prospects (job_leads) ──────────────────────────────
 // Uses the improved BPO_QUERIES from job-search.js to find businesses that
 // NEED BPO services (law firms, clinics, e-commerce, startups, etc.)
+// ── 7b. Freelance Platform Job Scanner ────────────────────────────────────
+// Finds LIVE jobs on Upwork, Freelancer.com, Guru, PeoplePerHour via SerpAPI.
+// These buyers are ACTIVELY posting right now — highest conversion rate possible.
+async function runPlatformScan() {
+  if (!SERPAPI_KEY) {
+    await logActivity('platform_scan', 'Skipped — SERPAPI_KEY not configured', null, null, 'skipped');
+    return;
+  }
+  if (isSerpApiCooling()) {
+    const minsLeft = Math.ceil((_serpApiCooledUntil - Date.now()) / 60000);
+    console.log(`⏳ [SERPAPI] Still cooling — ${minsLeft}m left, skipping platform scan`);
+    return;
+  }
+  try {
+    const result = await jobSearch.runPlatformJobScan();
+    if (result.errors?.some(e => e.error?.includes('429'))) {
+      serpApiRateLimit();
+      await logActivity('platform_scan', 'SerpAPI rate limit hit during platform scan — pausing 1 hour', null, null, 'warning');
+      return;
+    }
+    await logActivity(
+      'platform_scan',
+      `Platform job scan complete — ${result.found} new jobs found (Upwork/Freelancer/Guru/PPH)`,
+      null, null, result.errors?.length > 0 ? 'warning' : 'success',
+      { found: result.found, errors: result.errors?.length }
+    );
+    console.log(`🎯 [PLATFORM] Found ${result.found} new platform jobs`);
+  } catch (err) {
+    await logActivity('platform_scan', `Platform scan error: ${err.message}`, null, null, 'error');
+  }
+}
+
 async function runJobLeadScan() {
   if (!SERPAPI_KEY) {
     await logActivity('prospect_scan', 'Skipped — SERPAPI_KEY not configured', null, null, 'skipped');
@@ -1824,6 +1856,7 @@ async function startAgent() {
   // Run immediately on startup (staggered to avoid hammering)
   setTimeout(() => runLeadSearch().catch(console.error),                  5_000);
   setTimeout(() => runJobLeadScan().catch(console.error),                 15_000);
+  setTimeout(() => runPlatformScan().catch(console.error),                60_000);
   setTimeout(() => processApplications().catch(console.error),           20_000);
   setTimeout(() => assignContracts().catch(console.error),               25_000);
   setTimeout(() => processAIJobs().catch(console.error),                 30_000);
@@ -1840,6 +1873,11 @@ async function startAgent() {
   // Client prospect scan every 45 minutes (job_leads — all 28 buyer-targeted queries, 100 results each)
   cron.schedule('*/45 * * * *', () => {
     runJobLeadScan().catch(e => logActivity('prospect_scan', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
+  // Platform job scan every 3 hours — finds live jobs on Upwork, Freelancer, Guru, PeoplePerHour
+  cron.schedule('0 */3 * * *', () => {
+    runPlatformScan().catch(e => logActivity('platform_scan', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
   // BATCH OUTREACH to ai_leads every 5 minutes — processes up to 500 uncontacted leads per run
@@ -2059,6 +2097,7 @@ async function triggerNow(task) {
     case 'payment_chase':     await runPaymentChase(); break;
     case 'inbox_reply':       await gmailReader.processInboxReplies(); break;
     case 'bounce_check':      await gmailReader.processBounces(); await autoPurgeBounced(); break;
+    case 'platform_scan':     await runPlatformScan(); break;
     case 'prospect_scan':     await runJobLeadScan(); break;
     case 'prospect_outreach': await runJobLeadOutreach(); break;
     case 'ai_lead_outreach':       await runAiLeadOutreach(); break;
