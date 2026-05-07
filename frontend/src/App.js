@@ -26,6 +26,7 @@ import JobQueue from './components/JobQueue';
 import CallCentre from './components/CallCentre';
 import CallRoom from './components/CallRoom';
 import LinkedInOutreach from './components/LinkedInOutreach';
+import AdCreatives from './components/AdCreatives';
 import './App.css';
 
 function NavLink({ to, children }) {
@@ -63,6 +64,7 @@ function AdminShell({ user, token, onLogout }) {
           <NavLink to="/job-queue">📋 Job Queue</NavLink>
           <NavLink to="/call-centre">📞 Call Centre</NavLink>
           <NavLink to="/linkedin-outreach">🔗 LinkedIn</NavLink>
+          <NavLink to="/ad-creatives">📣 Ads</NavLink>
         </nav>
         <div className="header-user">
           <Link to="/" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none', marginRight: 12 }}>← Public Site</Link>
@@ -90,6 +92,7 @@ function AdminShell({ user, token, onLogout }) {
           <Route path="/job-queue" element={<JobQueue token={token} />} />
           <Route path="/call-centre" element={<CallCentre token={token} user={user} />} />
           <Route path="/linkedin-outreach" element={<LinkedInOutreach token={token} user={user} />} />
+          <Route path="/ad-creatives" element={<AdCreatives />} />
           <Route path="/login" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
