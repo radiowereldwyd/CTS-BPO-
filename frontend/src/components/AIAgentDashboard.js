@@ -351,7 +351,15 @@ export default function AIAgentDashboard({ token }) {
                 🕷️ Scrapers — Non-Stop
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {Object.keys(SOURCE_META).map(src => (
+                {Object.keys(SOURCE_META)
+                  .filter(src => {
+                    if (scraper.source === src) return true; // always show active
+                    const ss = scraper.sourceStats?.[src];
+                    if (ss && (ss.queries > 0 || ss.found > 0)) return true;
+                    const fromRecent = scraper.recentQueries?.some(q => q.source === src);
+                    return fromRecent;
+                  })
+                  .map(src => (
                   <SourceCard
                     key={src}
                     source={src}
