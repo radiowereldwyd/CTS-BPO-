@@ -507,7 +507,7 @@ const templates = {
         <div style="padding:36px">
           <p style="font-size:15px;margin:0 0 16px">Dear ${name},</p>
           <p style="font-size:15px;line-height:1.7;margin:0 0 16px">
-            My name is <strong>Calvin</strong> from <strong>CTS BPO Solutions</strong>. I noticed
+            My name is <strong>Thomas</strong> from <strong>CTS BPO Solutions</strong>. I noticed
             ${company} is looking for <strong>${jobType}</strong> support — this is exactly what we
             specialise in. Our expert team delivers high-quality BPO services at a fraction
             of the cost of in-house teams.
@@ -523,7 +523,7 @@ const templates = {
           </p>
           ${cta('📧 Reply to Discuss Requirements', `BPO Services Enquiry — ${company}`)}
           <p style="font-size:13px;color:#64748b">Or email us directly: <a href="mailto:${REPLY_EMAIL}" style="color:#1e40af">${REPLY_EMAIL}</a></p>
-          <p style="font-size:14px;margin:20px 0 0">Best regards,<br><strong>Calvin</strong><br>CTS BPO Solutions</p>
+          <p style="font-size:14px;margin:20px 0 0">Best regards,<br><strong>Thomas</strong><br>CTS BPO Solutions</p>
         </div>
         ${footer()}
       `),
@@ -553,7 +553,7 @@ const templates = {
           <p style="font-size:13px;color:#64748b;margin-top:16px">
             If you're not the right person to speak to, I'd really appreciate being pointed in the right direction.
           </p>
-          <p style="font-size:14px;margin:20px 0 0">Kind regards,<br><strong>Calvin</strong><br>CTS BPO Solutions<br><a href="mailto:${REPLY_EMAIL}" style="color:#1e40af">${REPLY_EMAIL}</a></p>
+          <p style="font-size:14px;margin:20px 0 0">Kind regards,<br><strong>Thomas</strong><br>CTS BPO Solutions<br><a href="mailto:${REPLY_EMAIL}" style="color:#1e40af">${REPLY_EMAIL}</a></p>
         </div>
         ${footer()}
       `),
@@ -608,7 +608,7 @@ const templates = {
             specifically for ${company}.
           </p>
           ${cta('📞 Accept Proposal & Schedule Call', `Accepting Proposal — ${company}`)}
-          <p style="font-size:14px;margin:20px 0 0">Looking forward to working with you,<br><strong>Calvin</strong><br>CTS BPO Solutions</p>
+          <p style="font-size:14px;margin:20px 0 0">Looking forward to working with you,<br><strong>Thomas</strong><br>CTS BPO Solutions</p>
         </div>
         ${footer()}
       `),
@@ -649,7 +649,7 @@ const templates = {
             Once accepted, we will send your first invoice and schedule an onboarding call
             to get started within 48 hours.
           </p>
-          <p style="font-size:14px;margin:20px 0 0">Warm regards,<br><strong>Calvin</strong><br>CTS BPO Solutions</p>
+          <p style="font-size:14px;margin:20px 0 0">Warm regards,<br><strong>Thomas</strong><br>CTS BPO Solutions</p>
         </div>
         ${footer()}
       `),
@@ -672,7 +672,7 @@ const templates = {
             We're thrilled to have <strong>${company}</strong> on board. Your account for
             <strong>${service}</strong> is now active.
           </p>
-          ${highlight(`<strong>Your dedicated contact:</strong><br>Calvin — CTS BPO Solutions<br>📧 ${REPLY_EMAIL}<br>⏰ Response within 4 business hours`)}
+          ${highlight(`<strong>Your dedicated contact:</strong><br>Thomas — CTS BPO Solutions<br>📧 ${REPLY_EMAIL}<br>⏰ Response within 4 business hours`)}
           <p style="font-weight:700;color:#1e40af;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;margin:20px 0 10px">Next Steps:</p>
           <ol style="font-size:14px;line-height:2;padding-left:20px;color:#334155">
             <li>Send your first batch of work to ${REPLY_EMAIL}</li>
@@ -682,7 +682,7 @@ const templates = {
             <li>Invoice issued upon delivery</li>
           </ol>
           ${cta('📧 Send Your First Task', `First Task — ${company}`)}
-          <p style="font-size:14px;margin:20px 0 0">Excited to work with you,<br><strong>Calvin &amp; the CTS BPO Team</strong></p>
+          <p style="font-size:14px;margin:20px 0 0">Excited to work with you,<br><strong>Thomas &amp; the CTS BPO Team</strong></p>
         </div>
         ${footer()}
       `),
@@ -724,7 +724,7 @@ const templates = {
             <a href="mailto:${REPLY_EMAIL}?subject=Invoice ${invoiceNo} — EFT Payment" style="flex:1;min-width:140px;background:#334155;color:#fff;padding:14px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;text-align:center;display:block">🏧 Pay via EFT</a>
           </div>
           <p style="font-size:12px;color:#94a3b8;margin:12px 0">For EFT payments, reply to this email and we will send banking details.</p>
-          <p style="font-size:14px;margin:20px 0 0">Thank you for your business,<br><strong>Calvin</strong><br>CTS BPO Solutions</p>
+          <p style="font-size:14px;margin:20px 0 0">Thank you for your business,<br><strong>Thomas</strong><br>CTS BPO Solutions</p>
         </div>
         ${footer()}
       `),
@@ -752,7 +752,7 @@ const templates = {
             Your work is now in progress. You will receive a delivery confirmation once complete.
           </p>
           ${cta('📧 Contact Us', 'Query — CTS BPO')}
-          <p style="font-size:14px;margin:20px 0 0">Thank you for choosing CTS BPO,<br><strong>Calvin &amp; the Team</strong></p>
+          <p style="font-size:14px;margin:20px 0 0">Thank you for choosing CTS BPO,<br><strong>Thomas &amp; the Team</strong></p>
         </div>
         ${footer()}
       `),
@@ -783,7 +783,7 @@ const templates = {
             a great deal to our small team.
           </p>
           ${cta('⭐ Give Feedback', `Feedback — ${service}`)}
-          <p style="font-size:14px;margin:20px 0 0">Thank you for choosing CTS BPO!<br><strong>Calvin</strong><br>CTS BPO Solutions</p>
+          <p style="font-size:14px;margin:20px 0 0">Thank you for choosing CTS BPO!<br><strong>Thomas</strong><br>CTS BPO Solutions</p>
         </div>
         ${footer()}
       `),
@@ -814,7 +814,7 @@ const templates = {
           <p style="font-size:13px;color:#94a3b8;margin-top:16px">
             Or simply reply to this email with your thoughts — we read every response.
           </p>
-          <p style="font-size:14px;margin:24px 0 0">Thank you,<br><strong>Calvin &amp; the CTS BPO Team</strong></p>
+          <p style="font-size:14px;margin:24px 0 0">Thank you,<br><strong>Thomas &amp; the CTS BPO Team</strong></p>
         </div>
         ${footer()}
       `),
@@ -1100,7 +1100,7 @@ async function sendSubcontractorRecruitment({ name, email }) {
     <p style="text-align:center;margin:14px 0 32px;font-size:13px;color:#94a3b8;">Takes less than 3 minutes &nbsp;·&nbsp; No obligation until payment</p>
 
     <p style="font-size:14px;color:#334155;line-height:1.7;">We look forward to welcoming you to the CTS BPO family.<br>If you have any questions before applying, simply reply to this email.</p>
-    <p style="font-size:15px;color:#0f172a;font-weight:700;margin-top:20px;">Warm regards,<br>Calvin<br><span style="font-size:13px;color:#64748b;font-weight:400;">Founder &amp; Director, CTS BPO Solutions</span></p>
+    <p style="font-size:15px;color:#0f172a;font-weight:700;margin-top:20px;">Warm regards,<br>Thomas<br><span style="font-size:13px;color:#64748b;font-weight:400;">Founder &amp; Director, CTS BPO Solutions</span></p>
   </td></tr>
 
   <!-- FOOTER -->
@@ -1357,7 +1357,7 @@ async function sendBPORecruitmentDrive({ name, email }) {
     <p style="font-size:14px;color:#334155;line-height:1.7;margin:0 0 12px;">We look forward to having you on the CTS BPO team.</p>
     <p style="font-size:15px;color:#0f172a;font-weight:700;margin:0;">
       Warm regards,<br>
-      <strong>Calvin</strong><br>
+      <strong>Thomas</strong><br>
       <span style="font-size:13px;color:#64748b;font-weight:400;">Founder &amp; Director, CTS BPO Solutions</span><br>
       <span style="font-size:12px;color:#94a3b8;font-weight:400;">📞 +27 76 067 9100 &nbsp;·&nbsp; 📧 cts.cybersolutions@gmail.com</span>
     </p>
@@ -1425,7 +1425,7 @@ async function sendSubcontractorReminder({ name, email, jobTitle, dueDate, jobId
     <p style="font-size:15px;color:#334155;line-height:1.7;">
       Please submit your completed work as soon as possible. If you are experiencing any difficulties, contact us immediately so we can assist you.
     </p>
-    <p style="font-size:15px;color:#334155;">Kind regards,<br><strong>Calvin &amp; The CTS BPO Operations Team</strong></p>
+    <p style="font-size:15px;color:#334155;">Kind regards,<br><strong>Thomas &amp; The CTS BPO Operations Team</strong></p>
   </td></tr>
   <tr><td style="background:#0f172a;padding:20px 40px;text-align:center;">
     <p style="color:#94a3b8;font-size:12px;margin:0;">CTS BPO Solutions &nbsp;|&nbsp; ${REPLY_EMAIL}</p>
@@ -1504,7 +1504,7 @@ Most of our clients save 40–60% compared to hiring, and we do a free first tas
 
 Would that be useful right now?
 
-Calvin Thomas
+Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
@@ -1519,7 +1519,7 @@ We specialise in exactly that. Send us the task, we return clean, quality-checke
 
 Happy to do the first task completely free so you can see what you get. Just reply with what you need done.
 
-Calvin Thomas
+Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
@@ -1528,7 +1528,7 @@ WhatsApp: +27 76 067 9100`,
       subject: pick([`${co} — a quick note on admin costs`, `reducing overhead at ${co}`, `question for the team at ${co}`]),
       body: `${greeting}
 
-My name's Calvin. I run CTS BPO Solutions — we help businesses like ${co}${loc} offload time-consuming admin and data work so the core team can focus on what matters.
+My name's Thomas. I run CTS BPO Solutions — we help businesses like ${co}${loc} offload time-consuming admin and data work so the core team can focus on what matters.
 
 We do data entry, transcription, document digitisation, invoice processing and virtual admin. Turnaround is 24–48 hours. Quality is checked twice before it leaves us.
 
@@ -1536,7 +1536,7 @@ If you've ever thought "we should outsource this", I'd love to show you what tha
 
 Worth a quick chat?
 
-Calvin Thomas
+Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
@@ -1553,7 +1553,7 @@ Cost is well below what a part-time hire would run you. And the first job is on 
 
 If that sounds like it could help ${co}, just reply and let's figure out if there's a fit.
 
-Calvin
+Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
@@ -1570,7 +1570,7 @@ If you've got overflow work sitting on someone's desk right now, I can have it p
 
 Is that something worth exploring?
 
-Calvin Thomas
+Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
@@ -1579,7 +1579,7 @@ WhatsApp: +27 76 067 9100`,
       subject: pick([`${co} — could we save you some time?`, `admin support for ${co}`, `a simple offer for ${co}`]),
       body: `${greeting}
 
-This is Calvin from CTS BPO. We do the admin and data work that businesses need done but hate managing in-house.
+This is Thomas from CTS BPO. We do the admin and data work that businesses need done but hate managing in-house.
 
 For ${co}${loc}, that might mean ${svc} — or it might be something else on your list. Either way, we're fast, we're careful, and we're significantly cheaper than hiring.
 
@@ -1587,7 +1587,7 @@ I'd like to earn your trust with a free task first. You send us something real, 
 
 Interested?
 
-Calvin Thomas
+Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
@@ -1602,7 +1602,7 @@ We're a BPO team that takes on exactly this kind of work. You send us the files 
 
 I won't take up more of your time than this. If you want to see what our work looks like, I'll do a real task for free — no sales call required. Just reply.
 
-Calvin
+Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
@@ -1617,7 +1617,7 @@ I ask because a lot of businesses we talk to are sitting on a backlog of admin t
 
 First task is free. If it works for ${co}, great. If not, no harm done.
 
-Calvin Thomas
+Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
@@ -1663,7 +1663,7 @@ The free task offer is still on the table if you'd like to see what our output l
 
 Let me know if it's worth talking.
 
-Calvin
+Thomas
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
     },
@@ -1677,7 +1677,7 @@ If there's any kind of data or document task you need done, I'm happy to turn on
 
 Worth a try?
 
-Calvin Thomas
+Thomas
 CTS BPO Solutions
 WhatsApp: +27 76 067 9100`,
     },
@@ -1689,7 +1689,7 @@ ${isOne ? 'Sent a message a couple of days ago' : 'Reached out last week'} about
 
 Happy to do a small task free of charge — data entry, transcription, a document, whatever's on your desk. If you like what comes back, great. If not, no hard feelings.
 
-Calvin
+Thomas
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
     },
@@ -1701,7 +1701,7 @@ Quick follow-up from ${isOne ? 'earlier this week' : 'last week'} — I mentione
 
 Still happy to do that if you'd like a look. Just reply and tell me what you need done.
 
-Calvin
+Thomas
 CTS BPO Solutions
 WhatsApp: +27 76 067 9100`,
     },
@@ -1713,7 +1713,7 @@ ${isOne ? 'Sent you a short note a few days ago' : 'I reached out about a week a
 
 We do the work quickly, it's well-priced, and I'll do the first task at no charge. If that sounds like anything useful, just reply.
 
-Calvin Thomas
+Thomas
 ${REPLY_EMAIL}`,
     },
     {
@@ -1726,7 +1726,7 @@ If the timing's ever right, the free task offer stands. We handle the work quick
 
 Either way, I wish ${co} all the best.
 
-Calvin Thomas
+Thomas
 CTS BPO Solutions
 ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
