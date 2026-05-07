@@ -197,11 +197,13 @@ async function processJobByType(job) {
 async function runAIJobTakeover() {
   try {
     // Find jobs that are overdue (past deadline) or stuck in assigned/in_progress for > 48h
+    // bpo_jobs already has client_email and client_name directly — no join on clients needed
     const overdueQ = await db.query(`
-      SELECT j.*, c.email AS client_email, c.name AS client_name,
+      SELECT j.*,
+             j.client_email,
+             j.client_name,
              s.name AS sub_name, s.email AS sub_email
       FROM bpo_jobs j
-      LEFT JOIN clients c ON c.token = j.client_token
       LEFT JOIN subcontractors s ON s.id = j.assigned_to
       WHERE j.status IN ('assigned', 'in_progress', 'revision')
         AND j.ai_completed IS NOT TRUE
@@ -286,10 +288,11 @@ async function runAIJobTakeover() {
 // ── Manual trigger for a specific job ────────────────────────────────────────
 async function aiCompleteJob(jobId) {
   const q = await db.query(`
-    SELECT j.*, c.email AS client_email, c.name AS client_name,
+    SELECT j.*,
+           j.client_email,
+           j.client_name,
            s.name AS sub_name, s.email AS sub_email
     FROM bpo_jobs j
-    LEFT JOIN clients c ON c.token = j.client_token
     LEFT JOIN subcontractors s ON s.id = j.assigned_to
     WHERE j.id = $1
   `, [jobId]);

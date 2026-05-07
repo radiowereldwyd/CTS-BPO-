@@ -135,31 +135,58 @@ const EMAIL_PREFIXES = ['info', 'contact'];
 
 // BPO/outsourcing provider domains — never email these (they're competitors, not clients)
 const BPO_PROVIDER_DOMAINS = new Set([
-  'microsourcing.com','milengo.com','movate.com','myoutdesk.com','neowork.com',
-  'invensis.net','invedus.com','managedoutsource.com','metasource.com','obgoutsourcing.com',
-  'oceanstalent.com','officebeacon.com','onbrand24.com','outbooks.com','outsource-bookkeeper.com',
-  'intellectoutsource.com','insigniaresource.com','inteklogistics.com','influenceflow.io',
-  'infocapsol.com','inputix.com','inceptiontech.com','outsourcinginsight.com',
-  'scribemedics.com','scanoptics.com','naos-solutions.com','noota.io',
+  // Major BPO giants
   'accenture.com','teleperformance.com','concentrix.com','genpact.com','wipro.com',
   'cognizant.com','infosys.com','tcs.com','capgemini.com','ibm.com','atos.net',
   'sitel.com','taskus.com','supportninja.com','helpware.com','influx.com',
   'magellan-solutions.com','tcwglobal.com','bruntwork.co','auxis.com','ardem.com',
-  'bigoutsource.com','avidxchange.com','bolsterbiz.com','wow24-7.com',
-  'outsourcely.com','datamatics.com','igate.com','mphasis.com','hexaware.com',
-  'firstsource.com','exlservice.com','wns.com','startek.com','sutherland.com',
-  'ienergizer.com','servicesource.com','ttec.com','synnex.com','conduent.com',
+  'bigoutsource.com','outsourcely.com','datamatics.com','igate.com','mphasis.com',
+  'hexaware.com','firstsource.com','exlservice.com','wns.com','startek.com',
+  'sutherland.com','ienergizer.com','ttec.com','synnex.com','conduent.com',
+  'avidxchange.com','bolsterbiz.com','wow24-7.com','wowcustomersupport.com',
+  // Mid-tier BPO / VA providers
+  'microsourcing.com','milengo.com','movate.com','myoutdesk.com','neowork.com',
+  'invensis.net','invedus.com','managedoutsource.com','metasource.com',
+  'oceanstalent.com','officebeacon.com','onbrand24.com','outbooks.com',
+  'outsource-bookkeeper.com','intellectoutsource.com','infocapsol.com',
+  'scribemedics.com','noota.io','wishup.co','wervas.com','ossisto.com',
+  'belay.com','woodbows.com','timeetc.com','getfriday.com','uassist.me',
+  'delegated.com','prialto.com','1840andco.com','wing.ai','boldly.com',
+  'virtually.com','equivity.com','vanadis.com','remotecoworker.com',
+  // Translation / transcription service PROVIDERS
+  'stepes.com','unbabel.com','milengo.com','languageline.com','transperfect.com',
+  'lionbridge.com','welocalize.com','moravia.com','sdl.com','thebigword.com',
+  'translations.com','language-reach.com','pairaphrase.com','usatranslate.com',
+  'alllanguages.com','laoret.com','palexgroup.com','globalinterpreting.com',
+  'rapidtranslate.co','bluente.com','gothamlab.com','dittotranscripts.com',
+  'flatworldsolutions.com','workplacelanguages.com','timedoctor.com',
+  'waywithwords.net','wizscribe.com','voicescript.ai','transcriptionhub.com',
+  'vitalrecordscontrol.com','zydoc.com','scribie.com','gotranscript.com',
+  'rev.com','otter.ai','trint.com','verbit.ai','happyscribe.com','sonix.ai',
+  // Content moderation / virtual assistant service providers
+  'zenius.co','zeni.ai','ziloservices.com','vservesolution.com','vitalitybss.com',
+  'virtualeases.com','velan-virtualassistants.com','workstaff360.com',
+  'yourccsteam.com','vocal.media','wishup.co','wervas.com',
+  // Job boards, directories, social (not clients)
+  'linkedin.com','indeed.com','glassdoor.com','upwork.com','fiverr.com',
+  'clutch.co','goodfirms.co','youtube.com','facebook.com','twitter.com',
+  'instagram.com','google.com','yelp.com','yellowpages.com','reddit.com',
+  'wikipedia.org','trustpilot.com','g2.com','capterra.com','sortlist.com',
 ]);
 
-// Domain/name keyword patterns that indicate a BPO provider (not a client)
+// Domain/name keyword patterns that indicate a BPO/service PROVIDER (not a client)
 const BPO_PROVIDER_KEYWORDS = [
   'outsourc','bponet','callcenter','callcentre','offshoring','nearshore','offshore',
-  'virtual-assistant','virtualassist','remoteteam','staffoutsource','outsource',
+  'virtual-assistant','virtualassist','remoteteam','staffoutsource',
+  'transcription-service','transcriptionserv','translation-service','translationserv',
+  'dataentry-serv','data-entry-serv','backoffice-serv','back-office-serv',
+  'contentmoderat','moderationserv','multilingual-serv',
 ];
 
 function isBpoProvider(domain) {
-  if (BPO_PROVIDER_DOMAINS.has(domain)) return true;
+  if (!domain) return false;
   const d = domain.toLowerCase();
+  if (BPO_PROVIDER_DOMAINS.has(d)) return true;
   return BPO_PROVIDER_KEYWORDS.some(kw => d.includes(kw));
 }
 

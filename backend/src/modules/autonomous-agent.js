@@ -360,7 +360,43 @@ function extractEmailFromText(text) {
   return match ? match[0].toLowerCase() : null;
 }
 
-const EMAIL_PREFIXES = ['info', 'contact', 'hello', 'enquiries', 'admin', 'sales', 'support'];
+// Only two real prefixes — reduces bounces and avoids hitting BPO company support desks
+const EMAIL_PREFIXES = ['info', 'contact'];
+
+// ── Comprehensive BPO provider / competitor filter ─────────────────────────
+// These are companies that SELL BPO services — NOT potential clients.
+// Emailing them is a complete waste and hurts sender reputation.
+const AGENT_BPO_DOMAINS = new Set([
+  'wow24-7.com','wowcustomersupport.com','wishup.co','wervas.com','waywithwords.net',
+  'vservesolution.com','voicescript.ai','vitalitybss.com','virtualeases.com',
+  'velan-virtualassistants.com','workstaff360.com','wizscribe.com',
+  'zenius.co','zeni.ai','ziloservices.com','zydoc.com','yourccsteam.com',
+  'transcriptionhub.com','vocal.media','vitalrecordscontrol.com',
+  'accenture.com','teleperformance.com','concentrix.com','genpact.com','wipro.com',
+  'cognizant.com','infosys.com','tcs.com','capgemini.com','ibm.com','atos.net',
+  'sitel.com','taskus.com','supportninja.com','helpware.com','influx.com',
+  'magellan-solutions.com','tcwglobal.com','bruntwork.co','auxis.com','ardem.com',
+  'bigoutsource.com','outsourcely.com','datamatics.com','hexaware.com',
+  'firstsource.com','exlservice.com','wns.com','startek.com','sutherland.com',
+  'ttec.com','conduent.com','invensis.net','myoutdesk.com','belay.com',
+  'uassist.me','ossisto.com','iworker.com','delegated.com','prialto.com',
+  'woodbows.com','timeetc.com','getfriday.com','24task.com','1840andco.com',
+  'youtube.com','facebook.com','twitter.com','instagram.com','linkedin.com',
+  'google.com','yelp.com','yellowpages.com','reddit.com','wikipedia.org',
+]);
+
+const AGENT_BPO_KEYWORDS = [
+  'outsourc','bpo','callcenter','callcentre','virtual-assistant','virtualassist',
+  'remoteteam','staffoutsourc','transcription-service','translation-service',
+  'dataentry-service','offshoring','nearshore','officebeacon','backoffice-service',
+];
+
+function isAgentBpoProvider(domain) {
+  if (!domain) return false;
+  if (AGENT_BPO_DOMAINS.has(domain.toLowerCase())) return true;
+  const d = domain.toLowerCase();
+  return AGENT_BPO_KEYWORDS.some(kw => d.includes(kw));
+}
 
 function buildContactEmail(domain) {
   if (!domain) return null;
@@ -413,6 +449,9 @@ async function runLeadSearch() {
 
         const domain = extractDomain(url);
         if (!domain) continue;
+
+        // Skip BPO service providers — we want clients, not competitors
+        if (isAgentBpoProvider(domain)) continue;
 
         const emailFromSnippet = extractEmailFromText(r.snippet) || extractEmailFromText(r.title);
 
@@ -1415,6 +1454,14 @@ async function runJobLeadOutreach() {
   for (const lead of newLeads.rows) {
     if (!circuitCheck()) break;
     try {
+      // ── BPO competitor filter — never email BPO providers ─────────────────
+      const leadDomain = lead.contact_email?.split('@')[1]?.toLowerCase() || '';
+      if (isAgentBpoProvider(leadDomain)) {
+        await db.query(`UPDATE job_leads SET status='blocked', updated_at=NOW() WHERE id=$1`, [lead.id]);
+        console.log(`[OUTREACH] Blocked BPO competitor: ${lead.contact_email}`);
+        continue;
+      }
+
       // Bounce guard
       const bounced = await db.query(
         `SELECT id FROM ai_leads WHERE LOWER(contact_email)=LOWER($1) AND bounced_at IS NOT NULL LIMIT 1`,
