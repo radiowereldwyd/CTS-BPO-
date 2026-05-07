@@ -68,6 +68,8 @@ export default function TargetedScraper({ token }) {
 
   const [loading, setLoading]               = useState(false);
   const [aiLoading, setAiLoading]           = useState(false);
+  const [kwLoading, setKwLoading]           = useState(false);
+  const [kwHint, setKwHint]                 = useState('');
   const [scanning, setScanning]             = useState(false);
   const [scanStatus, setScanStatus]         = useState('');
   const [partnerScanning, setPartnerScanning] = useState(false);
@@ -363,6 +365,24 @@ export default function TargetedScraper({ token }) {
     setTimeout(() => setScanStatus(''), 6000);
   }
 
+  async function handleSuggestKeywords() {
+    setKwLoading(true);
+    setKwHint('');
+    try {
+      const res = await axios.post(`${API}/api/targeted-scrape/suggest-keywords`,
+        { country, industry },
+        { headers: authHeader }
+      );
+      setKeywords(res.data.keywords || '');
+      setKwHint(res.data.queryHint || '');
+      setTimeout(() => setKwHint(''), 8000);
+    } catch (err) {
+      setKwHint('Could not suggest keywords — try again');
+      setTimeout(() => setKwHint(''), 4000);
+    }
+    setKwLoading(false);
+  }
+
   const isRunning  = session?.active;
   const isDone     = session && !session.active && session.completedAt;
   const foundCount = session?.found || 0;
@@ -402,18 +422,49 @@ export default function TargetedScraper({ token }) {
           </label>
         </div>
 
-        <label style={{ ...labelStyle, display: 'block', marginBottom: 16 }}>
-          Keywords <span style={{ color: '#94a3b8', fontWeight: 400 }}>(e.g. "specials", "safety products", "BBBEE")</span>
+        <label style={{ ...labelStyle, display: 'block', marginBottom: 4 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <span>
+              Keywords <span style={{ color: '#94a3b8', fontWeight: 400 }}>(e.g. "medical billing", "BBBEE", "outsourcing")</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleSuggestKeywords}
+              disabled={kwLoading || isRunning}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: kwLoading
+                  ? '#f5f3ff'
+                  : 'linear-gradient(135deg, #7c3aed, #6366f1)',
+                color: kwLoading ? '#7c3aed' : '#fff',
+                border: kwLoading ? '1px solid #c4b5fd' : 'none',
+                borderRadius: 8, padding: '6px 14px', fontSize: 12,
+                fontWeight: 700, cursor: kwLoading ? 'default' : 'pointer',
+                letterSpacing: 0.2, whiteSpace: 'nowrap',
+                boxShadow: kwLoading ? 'none' : '0 2px 8px rgba(99,102,241,0.35)',
+              }}
+            >
+              {kwLoading
+                ? <><span style={spinner} />Thinking…</>
+                : <>✨ AI Suggest</>}
+            </button>
+          </div>
           <input
             type="text"
             value={keywords}
             onChange={e => setKeywords(e.target.value)}
-            placeholder='Type any word — e.g. specials, discount, healthcare, schools'
+            placeholder='Click "AI Suggest" to auto-fill, or type your own keywords'
             style={inputStyle}
             disabled={isRunning}
             onKeyDown={e => { if (e.key === 'Enter') handleScrapeAndCompose(); }}
           />
+          {kwHint && (
+            <div style={{ marginTop: 6, fontSize: 12, color: '#6366f1', background: '#eef2ff', borderRadius: 6, padding: '6px 10px', fontStyle: 'italic' }}>
+              💡 Search hint: {kwHint}
+            </div>
+          )}
         </label>
+        <div style={{ marginBottom: 16 }} />
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <button

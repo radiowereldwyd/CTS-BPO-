@@ -1270,6 +1270,90 @@ app.get('/api/ai-agent/scraped-contacts', requireAuth, async (req, res) => {
 // Multer — store PDF in memory (max 20 MB)
 const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
+// POST /api/targeted-scrape/suggest-keywords — AI picks best keywords for country + industry
+app.post('/api/targeted-scrape/suggest-keywords', requireAuth, async (req, res) => {
+  const { country, industry } = req.body;
+
+  // Industry keyword banks — terms that suggest a company needs BPO services
+  const INDUSTRY_KEYWORDS = {
+    'law firm':               ['case management', 'legal transcription', 'document review', 'paralegal support', 'court filing', 'legal admin'],
+    'medical clinic':         ['medical billing', 'patient records', 'healthcare admin', 'clinical transcription', 'insurance claims', 'medical coding'],
+    'dental practice':        ['dental billing', 'appointment scheduling', 'patient admin', 'dental transcription', 'insurance verification', 'claims processing'],
+    'school':                 ['student records', 'admin support', 'enrollment data', 'academic transcription', 'exam processing', 'education admin'],
+    'retail shop':            ['inventory data entry', 'product listing', 'order processing', 'customer support', 'e-commerce admin', 'stock reconciliation'],
+    'accounting firm':        ['bookkeeping', 'payroll processing', 'tax data entry', 'financial reconciliation', 'accounts payable', 'invoice processing'],
+    'insurance company':      ['claims processing', 'policy admin', 'data entry', 'customer support', 'underwriting support', 'document indexing'],
+    'logistics company':      ['shipment tracking', 'freight data entry', 'customs documentation', 'supply chain admin', 'order fulfilment', 'transport admin'],
+    'real estate agency':     ['property listings', 'lease admin', 'document processing', 'tenant records', 'title search support', 'CRM data entry'],
+    'recruitment agency':     ['CV screening', 'candidate data entry', 'job board posting', 'talent sourcing', 'background checks', 'HR admin'],
+    'IT services company':    ['helpdesk support', 'technical documentation', 'ticket processing', 'data migration', 'software testing', 'IT admin'],
+    'financial services':     ['KYC data entry', 'compliance documentation', 'financial reporting', 'transaction processing', 'audit support', 'back-office'],
+    'healthcare company':     ['patient data', 'medical records', 'billing support', 'clinical admin', 'health insurance claims', 'HIPAA compliance'],
+    'pharmaceutical company': ['regulatory documentation', 'clinical trial data', 'drug registration admin', 'compliance records', 'product data entry', 'lab transcription'],
+    'manufacturing company':  ['production data entry', 'quality control records', 'supply chain admin', 'BOM processing', 'inventory management', 'ERP data'],
+    'construction company':   ['project documentation', 'contract management', 'site reports', 'procurement admin', 'compliance filing', 'billing admin'],
+    'hospitality hotel':      ['reservation management', 'guest records', 'invoice processing', 'loyalty program admin', 'review management', 'F&B data entry'],
+    'NGO nonprofit':          ['donor records', 'grant reporting', 'volunteer data', 'impact reporting', 'beneficiary admin', 'fundraising support'],
+    'government agency':      ['public records', 'compliance documentation', 'data capture', 'citizen services', 'regulatory filing', 'report processing'],
+  };
+
+  // Country signals — terms that resonate in each market
+  const COUNTRY_SIGNALS = {
+    'South Africa': ['BBBEE', 'BEE compliant', 'POPIA', 'SARS', 'UIF', 'South African'],
+    'Nigeria':      ['FIRS', 'CAC registered', 'Lagos', 'Abuja', 'NGN', 'Nigerian'],
+    'Kenya':        ['KRA', 'Nairobi', 'M-Pesa', 'KES', 'East Africa', 'Kenyan'],
+    'Ghana':        ['GRA', 'Accra', 'CAGD', 'GHS', 'West Africa', 'Ghanaian'],
+    'United States': ['US-based', 'SOC 2', 'HIPAA', 'IRS filing', 'American', 'SaaS'],
+    'United Kingdom': ['HMRC', 'ICO', 'GDPR', 'Companies House', 'UK-based', 'British'],
+    'Australia':    ['ATO', 'ABN', 'Australian', 'GST', 'ASIC', 'Sydney'],
+    'Canada':       ['CRA', 'PIPEDA', 'Canadian', 'bilingual', 'Toronto', 'GST/HST'],
+    'Germany':      ['DSGVO', 'HGB', 'German', 'EU compliance', 'Frankfurt', 'Bundesagentur'],
+    'Netherlands':  ['KVK', 'Dutch', 'AVG', 'EU compliance', 'Amsterdam', 'BTW'],
+    'Singapore':    ['MAS regulated', 'PDPA', 'Singapore-based', 'ACRA', 'SGD', 'FinTech'],
+    'UAE':          ['DIFC', 'Dubai', 'Abu Dhabi', 'VAT registered', 'free zone', 'Arabic'],
+    'India':        ['GST registered', 'MCA', 'Indian', 'Mumbai', 'Bangalore', 'compliance'],
+    'Africa':       ['Sub-Saharan', 'African market', 'continent-wide', 'multilingual', 'mobile-first'],
+    'Global':       ['international', 'multinational', 'cross-border', 'global operations', 'multi-region'],
+  };
+
+  // General BPO need signals that work universally
+  const UNIVERSAL = ['outsourcing', 'back-office', 'data entry', 'remote support', 'admin support', 'cost reduction'];
+
+  // Pick the best keyword for the combination
+  const industryKws = INDUSTRY_KEYWORDS[industry] || [];
+  const countryKws  = COUNTRY_SIGNALS[country] || [];
+
+  // Strategy: 2 top industry terms + 1 country signal + 1 universal BPO term
+  const chosen = [];
+
+  if (industryKws.length >= 2) {
+    // Shuffle slightly so repeat clicks give variety
+    const shuffled = [...industryKws].sort(() => Math.random() - 0.5);
+    chosen.push(shuffled[0], shuffled[1]);
+  } else if (industryKws.length === 1) {
+    chosen.push(industryKws[0]);
+  }
+
+  if (countryKws.length > 0) {
+    const shuffled = [...countryKws].sort(() => Math.random() - 0.5);
+    chosen.push(shuffled[0]);
+  }
+
+  // Fill remaining with universal terms
+  const universalShuffled = [...UNIVERSAL].sort(() => Math.random() - 0.5);
+  while (chosen.length < 3) chosen.push(universalShuffled[chosen.length] || 'outsourcing');
+
+  // Format as a clean comma-separated string (max 3 terms to keep searches focused)
+  const keywords = chosen.slice(0, 3).join(', ');
+
+  // Also surface a scrape query suggestion
+  const queryHint = industry
+    ? `${industry} companies ${country ? `in ${country}` : ''} needing ${industryKws[0] || 'outsourcing'}`
+    : `businesses needing BPO outsourcing ${country ? `in ${country}` : ''}`;
+
+  res.json({ keywords, queryHint, terms: chosen });
+});
+
 // POST /api/targeted-scrape/start — kick off a new targeted scrape session
 app.post('/api/targeted-scrape/start', requireAuth, requireAdmin, async (req, res) => {
   try {
