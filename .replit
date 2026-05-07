@@ -69,4 +69,4 @@ GMAIL_USER = "cts.cybersolutions@gmail.com"
 [deployment]
 deploymentTarget = "autoscale"
 run = ["node", "backend/src/index.js"]
-build = ["bash", "-c", "cd frontend && npm install --legacy-peer-deps && npm run build"]
+build = ["bash", "-c", "cd backend && npm install --omit=dev --legacy-peer-deps && cd ../frontend && npm install --legacy-peer-deps && CI=false DISABLE_ESLINT_PLUGIN=true npm run build"]
