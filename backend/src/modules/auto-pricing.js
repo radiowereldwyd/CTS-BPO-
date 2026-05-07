@@ -143,7 +143,8 @@ If this sounds relevant for ${co}, just reply and I'll set it up today.
 
 Calvin Thomas
 CTS BPO Solutions
-cts.bposolutions@gmail.com`;
+cts.bposolutions@gmail.com
+WhatsApp: +27 76 067 9100`;
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
@@ -222,6 +223,7 @@ tr:last-child td{border-bottom:none}
       Calvin Thomas<br>
       <strong>CTS BPO Solutions</strong><br>
       cts.bposolutions@gmail.com<br>
+      <a href="https://wa.me/27760679100" style="color:#25d366;font-weight:700;text-decoration:none">💬 WhatsApp: +27 76 067 9100</a><br>
       <em>South Africa's most competitive BPO — priced 15–25% below market, always.</em>
     </div>
   </div>

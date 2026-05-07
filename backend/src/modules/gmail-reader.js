@@ -384,7 +384,7 @@ async function processInboxReplies() {
               </div>
               <p style="font-size:13px;color:#64748b">Or copy this link into your browser:<br><span style="color:#2563eb">${portalLink}</span></p>
               <hr style="border-color:#f1f5f9;margin:20px 0">
-              <p><strong>Calvin Thomas</strong><br>CTS BPO Solutions<br>cts.bposolutions@gmail.com</p>
+              <p><strong>Calvin Thomas</strong><br>CTS BPO Solutions<br>cts.bposolutions@gmail.com<br><a href="https://wa.me/27760679100" style="color:#25d366;font-weight:700;text-decoration:none">💬 WhatsApp: +27 76 067 9100</a></p>
             </div>
           </div>`;
 
@@ -392,7 +392,7 @@ async function processInboxReplies() {
           to: email.from,
           subject: `Welcome to CTS BPO — Your portal is ready, ${firstName}!`,
           html: welcomeHtml,
-          text: `Hi ${firstName},\n\nWelcome! I've set up your client portal at: ${portalLink}\n\nYour first task is completely free. Upload your files through the portal and we'll get started immediately.\n\nCalvin Thomas\nCTS BPO Solutions`,
+          text: `Hi ${firstName},\n\nWelcome! I've set up your client portal at: ${portalLink}\n\nYour first task is completely free. Upload your files through the portal and we'll get started immediately.\n\nCalvin Thomas\nCTS BPO Solutions\ncts.bposolutions@gmail.com\nWhatsApp: +27 76 067 9100`,
         }).catch(e => console.error('[INBOX] Welcome email failed:', e.message));
 
         // Log to activity
@@ -418,12 +418,12 @@ async function processInboxReplies() {
         const aiAnswer = await geminiReply(email.body.slice(0, 800), firstName);
 
         if (aiAnswer) {
-          const replyText = `Hi ${firstName},\n\n${aiAnswer}\n\nCalvin Thomas\nCTS BPO Solutions\ncts.bposolutions@gmail.com`;
+          const replyText = `Hi ${firstName},\n\n${aiAnswer}\n\nCalvin Thomas\nCTS BPO Solutions\ncts.bposolutions@gmail.com\nWhatsApp: +27 76 067 9100`;
           await emailOutreach.sendMail({
             to: email.from,
             subject: `Re: ${email.subject}`,
             text:    replyText,
-            html:    `<div style="font-family:Arial,sans-serif;max-width:580px;color:#1e293b;line-height:1.7"><p>Hi ${firstName},</p><p>${aiAnswer.replace(/\n/g, '<br>')}</p><hr style="border-color:#f1f5f9;margin:20px 0"><p><strong>Calvin Thomas</strong><br>CTS BPO Solutions<br>cts.bposolutions@gmail.com</p></div>`,
+            html:    `<div style="font-family:Arial,sans-serif;max-width:580px;color:#1e293b;line-height:1.7"><p>Hi ${firstName},</p><p>${aiAnswer.replace(/\n/g, '<br>')}</p><hr style="border-color:#f1f5f9;margin:20px 0"><p><strong>Calvin Thomas</strong><br>CTS BPO Solutions<br>cts.bposolutions@gmail.com<br><a href="https://wa.me/27760679100" style="color:#25d366;font-weight:700;text-decoration:none">💬 WhatsApp: +27 76 067 9100</a></p></div>`,
           }).catch(e => console.error('[INBOX] Info reply failed:', e.message));
 
           await dbMod.query(

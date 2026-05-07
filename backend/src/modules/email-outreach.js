@@ -1243,7 +1243,8 @@ Would that be useful right now?
 
 Calvin Thomas
 CTS BPO Solutions
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`could we take ${svc} off your plate?`, `a thought for ${co}`, `${svc} — done for you`]),
@@ -1257,7 +1258,8 @@ Happy to do the first task completely free so you can see what you get. Just rep
 
 Calvin Thomas
 CTS BPO Solutions
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`${co} — a quick note on admin costs`, `reducing overhead at ${co}`, `question for the team at ${co}`]),
@@ -1273,7 +1275,8 @@ Worth a quick chat?
 
 Calvin Thomas
 CTS BPO Solutions
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`saving time on ${svc} at ${co}`, `the admin problem most businesses have`, `${co} — a practical question`]),
@@ -1289,7 +1292,8 @@ If that sounds like it could help ${co}, just reply and let's figure out if ther
 
 Calvin
 CTS BPO Solutions
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`outsourcing ${svc} — is it on your radar?`, `${co} — a thought on efficiency`, `quick note for ${co}`]),
@@ -1305,7 +1309,8 @@ Is that something worth exploring?
 
 Calvin Thomas
 CTS BPO Solutions
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`${co} — could we save you some time?`, `admin support for ${co}`, `a simple offer for ${co}`]),
@@ -1321,7 +1326,8 @@ Interested?
 
 Calvin Thomas
 CTS BPO Solutions
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`reducing ${svc} overhead at ${co}`, `${svc} — handled`, `a practical note for ${co}`]),
@@ -1335,7 +1341,8 @@ I won't take up more of your time than this. If you want to see what our work lo
 
 Calvin
 CTS BPO Solutions
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`a straight question for ${co}`, `${co} — we handle ${svc}`, `does ${co} outsource any admin?`]),
@@ -1349,7 +1356,8 @@ First task is free. If it works for ${co}, great. If not, no harm done.
 
 Calvin Thomas
 CTS BPO Solutions
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
   ];
 
@@ -1393,7 +1401,8 @@ The free task offer is still on the table if you'd like to see what our output l
 Let me know if it's worth talking.
 
 Calvin
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`${co} — did my message land?`, `re: ${svc} help`, `quick follow-up`]),
@@ -1406,7 +1415,8 @@ If there's any kind of data or document task you need done, I'm happy to turn on
 Worth a try?
 
 Calvin Thomas
-CTS BPO Solutions`,
+CTS BPO Solutions
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`one more thought`, `${svc} — last note from me`, `still happy to help if useful`]),
@@ -1417,7 +1427,8 @@ ${isOne ? 'Sent a message a couple of days ago' : 'Reached out last week'} about
 Happy to do a small task free of charge — data entry, transcription, a document, whatever's on your desk. If you like what comes back, great. If not, no hard feelings.
 
 Calvin
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`following up — ${co}`, `quick one`, `${svc} — just in case`]),
@@ -1428,7 +1439,8 @@ Quick follow-up from ${isOne ? 'earlier this week' : 'last week'} — I mentione
 Still happy to do that if you'd like a look. Just reply and tell me what you need done.
 
 Calvin
-CTS BPO Solutions`,
+CTS BPO Solutions
+WhatsApp: +27 76 067 9100`,
     },
     {
       subject: pick([`checking in on my last email`, `${co} — did this reach you?`, `last follow-up from me`]),
@@ -1453,7 +1465,8 @@ Either way, I wish ${co} all the best.
 
 Calvin Thomas
 CTS BPO Solutions
-${REPLY_EMAIL}`,
+${REPLY_EMAIL}
+WhatsApp: +27 76 067 9100`,
     },
   ];
 
@@ -1767,7 +1780,7 @@ function portalLogoHeader() {
 
 function portalFooter() {
   return `<div style="background:#080f1f;padding:20px 36px;text-align:center;font-size:12px;color:#475569">
-    CTS BPO Solutions · cts.bposolutions@gmail.com · AI-Powered Outsourcing
+    CTS BPO Solutions · cts.bposolutions@gmail.com · WhatsApp: +27 76 067 9100 · AI-Powered Outsourcing
   </div>`;
 }
 

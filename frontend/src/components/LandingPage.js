@@ -578,9 +578,14 @@ export default function LandingPage() {
           <div style={{ marginTop: 44, textAlign: 'center', background: '#f8fafc', borderRadius: 16, padding: '36px 28px' }}>
             <HiOutlineEnvelope style={{ fontSize: 36, color: '#6366f1', marginBottom: 12 }} />
             <p style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Still have a question?</p>
-            <a href="mailto:cts.bposolutions@gmail.com" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#6366f1', color: '#fff', padding: '12px 28px', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
-              <HiOutlineEnvelope style={{ fontSize: 16 }} /> Email Us Directly
-            </a>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <a href="mailto:cts.bposolutions@gmail.com" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#6366f1', color: '#fff', padding: '12px 28px', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+                <HiOutlineEnvelope style={{ fontSize: 16 }} /> Email Us
+              </a>
+              <a href="https://wa.me/27760679100" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: '#25d366', color: '#fff', padding: '12px 28px', borderRadius: 10, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+                💬 WhatsApp: +27 76 067 9100
+              </a>
+            </div>
           </div>
         </div>
       </section>
@@ -660,8 +665,12 @@ export default function LandingPage() {
               <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.85, maxWidth: 340, margin: '0 0 20px' }}>
                 South Africa's trusted worldwide business process outsourcing partner. Precision, quality and confidentiality on every contract.
               </p>
-              <a href="mailto:cts.bposolutions@gmail.com" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#6366f1', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+              <a href="mailto:cts.bposolutions@gmail.com" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#6366f1', fontWeight: 700, fontSize: 14, textDecoration: 'none', marginBottom: 8 }}>
                 <HiOutlineEnvelope style={{ fontSize: 16 }} /> cts.bposolutions@gmail.com
+              </a>
+              <br />
+              <a href="https://wa.me/27760679100" target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#25d366', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}>
+                💬 +27 76 067 9100
               </a>
             </div>
             <div>
