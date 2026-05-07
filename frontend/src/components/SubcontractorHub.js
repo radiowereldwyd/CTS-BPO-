@@ -111,6 +111,15 @@ export default function SubcontractorHub({ token }) {
     setLoading(p => ({ ...p, recruit: false }));
   }
 
+  async function handleRecruitBlast() {
+    setLoading(p => ({ ...p, blast: true }));
+    try {
+      const r = await axios.post(`${API}/api/subcontractors/recruit-blast`, {}, { headers: auth });
+      flash(r.data.message || `BPO recruitment drive launched — ${r.data.queued || 0} emails queued.`);
+    } catch (e) { flash(e.response?.data?.error || 'Blast failed.', true); }
+    setLoading(p => ({ ...p, blast: false }));
+  }
+
   async function handleReview(id, status) {
     setLoading(p => ({ ...p, [`rev_${id}`]: true }));
     try {
@@ -284,10 +293,49 @@ export default function SubcontractorHub({ token }) {
 
       {/* ── RECRUITMENT TAB ── */}
       {tab === 'recruit' && (
-        <div style={{ maxWidth: 720 }}>
-          <h3 style={{ margin: '0 0 8px', color: '#334155' }}>AI Recruitment Campaign</h3>
-          <p style={{ margin: '0 0 20px', color: '#64748b', fontSize: 14 }}>
-            Enter prospect details below. Each line: <strong>Full Name, email@address.com</strong> (or just an email address). The system will send a professional work-from-home opportunity email with an application link.
+        <div style={{ maxWidth: 760 }}>
+
+          {/* ── BPO RECRUITMENT DRIVE BLAST ── */}
+          <div style={{ background: 'linear-gradient(135deg,#0f172a,#1e3a5f)', borderRadius: 14, padding: '28px 32px', marginBottom: 28, border: '1px solid rgba(99,102,241,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'inline-block', background: 'rgba(99,102,241,0.2)', border: '1px solid rgba(99,102,241,0.5)', borderRadius: 20, padding: '4px 14px', marginBottom: 12 }}>
+                  <span style={{ color: '#a5b4fc', fontSize: 10, letterSpacing: 3, textTransform: 'uppercase', fontWeight: 700 }}>AI-Powered Campaign</span>
+                </div>
+                <h3 style={{ margin: '0 0 8px', color: '#fff', fontSize: 18, fontWeight: 900 }}>🚀 Launch BPO Recruitment Drive</h3>
+                <p style={{ margin: '0 0 14px', color: '#94a3b8', fontSize: 13, lineHeight: 1.7 }}>
+                  Instantly blast a premium recruitment advert to <strong style={{ color: '#a5b4fc' }}>all discovered leads</strong> in your database — every AI lead, every scraped contact with a verified email. The email is designed specifically for professionals with BPO experience, showcasing earning potential of <strong style={{ color: '#10b981' }}>R5,000–R25,000/month</strong> working remotely.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                  {['📊 Data Entry', '🎙️ Transcription', '📄 Document Processing', '💰 Payroll', '🧾 Finance Admin', '🤖 Virtual Assistants', '🌐 Translation', '📞 Customer Support'].map(s => (
+                    <span key={s} style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#6ee7b7', fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 600 }}>{s}</span>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 20, fontSize: 12, color: '#64748b' }}>
+                  <span>✓ Targets all ai_leads + scraped contacts</span>
+                  <span>✓ Skips already-contacted addresses</span>
+                  <span>✓ MX-verified emails only</span>
+                  <span>✓ Runs in background (non-blocking)</span>
+                </div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <button onClick={handleRecruitBlast} disabled={loading.blast} style={{
+                  padding: '14px 32px', background: loading.blast ? '#475569' : 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                  color: '#fff', border: 'none', borderRadius: 10, fontWeight: 800, fontSize: 15,
+                  cursor: loading.blast ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
+                  boxShadow: '0 8px 24px rgba(99,102,241,0.35)', minWidth: 180,
+                }}>
+                  {loading.blast ? '⏳ Launching...' : '🚀 Launch Drive'}
+                </button>
+                <div style={{ marginTop: 8, fontSize: 11, color: '#64748b' }}>Up to 250 prospects per blast</div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── MANUAL TARGET LIST ── */}
+          <h3 style={{ margin: '0 0 8px', color: '#334155' }}>Manual Recruitment Campaign</h3>
+          <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14 }}>
+            Or target specific prospects. Each line: <strong>Full Name, email@address.com</strong> (or just an email address).
           </p>
 
           <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '14px 18px', marginBottom: 20 }}>

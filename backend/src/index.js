@@ -1054,6 +1054,47 @@ app.post('/api/subcontractors/jobs/remind', requireAuth, requireAdmin, async (re
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST recruit-blast — sends premium BPO recruitment campaign to all leads in DB
+app.post('/api/subcontractors/recruit-blast', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    // Pull unique emails from ai_leads + scraped_contacts not already recruited
+    const leadsQ = await db.query(`
+      SELECT DISTINCT email, company_name AS name
+      FROM ai_leads
+      WHERE email IS NOT NULL AND email != ''
+        AND email NOT IN (
+          SELECT DISTINCT recipient_email FROM email_tracking WHERE recipient_email IS NOT NULL
+        )
+      UNION
+      SELECT DISTINCT email, company AS name
+      FROM scraped_contacts
+      WHERE email IS NOT NULL AND email != ''
+        AND status NOT IN ('contacted', 'unsubscribed', 'bounced')
+        AND mx_verified IS NOT FALSE
+      LIMIT 250
+    `);
+    const targets = (leadsQ.rows || []).filter(r => r.email?.includes('@'));
+    if (!targets.length) return res.json({ success: true, sent: 0, message: 'No eligible targets found in database.' });
+
+    res.json({ success: true, queued: targets.length, message: `Recruitment drive started — sending to ${targets.length} BPO prospects in background.` });
+
+    // Send in background so the API call returns immediately
+    (async () => {
+      let sent = 0, failed = 0;
+      for (const t of targets) {
+        try {
+          const r = await emailOutreach.sendBPORecruitmentDrive({ name: t.name || 'BPO Professional', email: t.email });
+          if (r.sent) sent++;
+          await new Promise(resolve => setTimeout(resolve, 400)); // rate-limit
+        } catch (e) { failed++; console.error('[RECRUIT BLAST]', e.message); }
+      }
+      await auditLogger.log('subcontractor.bpo_recruit_blast', null, null,
+        `BPO recruitment drive complete: ${sent} sent, ${failed} failed of ${targets.length} targets`, null, 'info');
+      console.log(`[RECRUIT BLAST] Done — ${sent} sent, ${failed} failed`);
+    })();
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST recruit — AI sends recruitment emails to a list of targets
 app.post('/api/subcontractors/recruit', requireAuth, requireAdmin, async (req, res) => {
   try {

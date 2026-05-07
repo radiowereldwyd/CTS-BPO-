@@ -1132,6 +1132,269 @@ async function sendSubcontractorRecruitment({ name, email }) {
   return { sent: true, to: email };
 }
 
+// ─── BPO Industry Recruitment Drive Email ────────────────────────────────────
+// Targets professionals with existing BPO experience — more senior, authoritative tone
+
+async function sendBPORecruitmentDrive({ name, email }) {
+  const subject = `BPO Career Opportunity — Earn R5,000–R25,000/Month Working Remotely with CTS BPO`;
+  const firstName = (name || 'there').split(' ')[0];
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BPO Career Opportunity — CTS BPO Solutions</title>
+</head>
+<body style="margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;background:#0d1117;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;padding:32px 16px;">
+<tr><td align="center">
+<table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:20px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+
+  <!-- ── HERO BANNER ─────────────────────────────────────────────────── -->
+  <tr><td style="background:linear-gradient(160deg,#0f172a 0%,#1a2744 40%,#0c2340 70%,#071628 100%);padding:48px 56px 44px;text-align:center;position:relative;">
+    <img src="${LOGO_B64}" alt="CTS BPO Solutions" width="220" style="display:block;margin:0 auto 28px;max-width:220px;height:auto;opacity:0.95;">
+    <div style="display:inline-block;background:rgba(99,102,241,0.2);border:1px solid rgba(99,102,241,0.5);border-radius:30px;padding:7px 22px;margin-bottom:22px;">
+      <span style="color:#a5b4fc;font-size:11px;letter-spacing:3px;text-transform:uppercase;font-weight:700;">For BPO Professionals</span>
+    </div>
+    <h1 style="margin:0 0 12px;color:#ffffff;font-size:34px;font-weight:900;line-height:1.2;letter-spacing:-0.5px;">
+      Your BPO Experience<br>
+      <span style="background:linear-gradient(90deg,#6366f1,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">Is Worth More Than You Think</span>
+    </h1>
+    <p style="margin:0 0 28px;color:#94a3b8;font-size:15px;line-height:1.6;">
+      CTS BPO is actively recruiting skilled BPO professionals to join our<br>
+      remote subcontractor network — fully managed, contract-guaranteed.
+    </p>
+    <!-- Earnings badges -->
+    <div style="display:inline-flex;gap:16px;flex-wrap:wrap;justify-content:center;">
+      <div style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.4);border-radius:12px;padding:12px 20px;text-align:center;min-width:120px;">
+        <div style="font-size:22px;font-weight:900;color:#10b981;">R 5,000</div>
+        <div style="font-size:10px;color:#6ee7b7;letter-spacing:1px;text-transform:uppercase;margin-top:2px;">Entry Level / Month</div>
+      </div>
+      <div style="background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.4);border-radius:12px;padding:12px 20px;text-align:center;min-width:120px;">
+        <div style="font-size:22px;font-weight:900;color:#818cf8;">R 12,500</div>
+        <div style="font-size:10px;color:#a5b4fc;letter-spacing:1px;text-transform:uppercase;margin-top:2px;">Mid Level / Month</div>
+      </div>
+      <div style="background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:12px 20px;text-align:center;min-width:120px;">
+        <div style="font-size:22px;font-weight:900;color:#fbbf24;">R 25,000</div>
+        <div style="font-size:10px;color:#fde68a;letter-spacing:1px;text-transform:uppercase;margin-top:2px;">Senior Level / Month</div>
+      </div>
+    </div>
+  </td></tr>
+
+  <!-- ── OPENING ─────────────────────────────────────────────────────── -->
+  <tr><td style="padding:44px 56px 0;">
+    <p style="margin:0 0 16px;font-size:16px;color:#1e293b;line-height:1.7;">
+      Dear <strong style="color:#0f172a;">${esc(firstName)}</strong>,
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#334155;line-height:1.8;">
+      If you have experience in business process outsourcing — whether in data management, transcription, finance administration, document processing, customer support, or any related field — <strong style="color:#6366f1;">we want to work with you</strong>. Not as an employee. As a valued partner who earns directly from the contracts we bring you.
+    </p>
+    <p style="margin:0 0 28px;font-size:15px;color:#334155;line-height:1.8;">
+      CTS BPO Solutions is a fast-growing South African BPO company with active clients across South Africa, the United Kingdom, and East Africa. Our AI-powered platform matches incoming client work to our network of verified subcontractors within hours — so you never waste time hunting for work. <strong style="color:#0f172a;">We bring the clients. You deliver the expertise. We both profit.</strong>
+    </p>
+  </td></tr>
+
+  <!-- ── WHY CTS BPO ─────────────────────────────────────────────────── -->
+  <tr><td style="padding:0 56px;">
+    <div style="background:linear-gradient(135deg,#eef2ff,#e0f2fe);border:1px solid #c7d2fe;border-radius:14px;padding:30px 32px;margin-bottom:28px;">
+      <h2 style="margin:0 0 20px;font-size:17px;color:#312e81;font-weight:800;">Why BPO Professionals Choose CTS BPO</h2>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        ${[
+          ['🎯','Guaranteed Contracts','No client hunting, no cold calling. Our AI allocates work directly to you the moment it is verified.'],
+          ['💸','Transparent Earnings','You see exactly what you will earn before you accept any job. No hidden deductions, no surprises.'],
+          ['🏠','100% Remote','Work from anywhere with a laptop and internet connection. We operate nationwide and internationally.'],
+          ['⚡','Fast Payments','Payment is released within 48 hours of verified work delivery. No chasing invoices.'],
+          ['📈','Grow With Us','The more contracts you complete successfully, the higher your earnings tier — with no ceiling.'],
+          ['🤝','Experienced Network','Join a network of over 200 verified BPO professionals already earning with us.'],
+        ].map(([icon, title, desc]) => `
+        <tr style="margin-bottom:14px;">
+          <td style="vertical-align:top;width:44px;padding-bottom:16px;">
+            <div style="width:38px;height:38px;background:#fff;border-radius:10px;text-align:center;line-height:38px;font-size:20px;box-shadow:0 2px 8px rgba(99,102,241,0.15);">${icon}</div>
+          </td>
+          <td style="vertical-align:top;padding-left:14px;padding-bottom:16px;">
+            <strong style="font-size:14px;color:#1e1b4b;">${title}</strong>
+            <p style="margin:3px 0 0;font-size:13px;color:#4338ca;line-height:1.5;">${desc}</p>
+          </td>
+        </tr>`).join('')}
+      </table>
+    </div>
+  </td></tr>
+
+  <!-- ── ROLES WE ARE HIRING FOR ─────────────────────────────────────── -->
+  <tr><td style="padding:0 56px 28px;">
+    <h2 style="margin:0 0 18px;font-size:17px;color:#0f172a;font-weight:800;">Roles We Are Actively Recruiting For</h2>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:0 8px;">
+      ${[
+        ['📊','Data Entry & Capture Specialists','High-volume data processing, CRM updates, database management'],
+        ['🎙️','Transcription Professionals','Audio/video transcription, legal, medical, and corporate minutes'],
+        ['🌐','Translation & Localisation Experts','Multilingual document translation and content localisation'],
+        ['📄','Document Processing Officers','Forms processing, PDF extraction, insurance & legal docs'],
+        ['🧾','Finance & Accounts Processing','Invoice processing, accounts payable/receivable, bookkeeping'],
+        ['💰','Payroll Administration','Payroll calculations, statutory submissions, payslip generation'],
+        ['🏥','Medical Records & Billing','Medical coding, patient records, insurance claim processing'],
+        ['🤖','Virtual Assistants','Executive support, scheduling, email management, research'],
+        ['📞','Customer Support Agents','Inbound/outbound email & chat support, complaint resolution'],
+        ['📒','Bookkeeping & Accounting','Monthly management accounts, trial balances, reconciliations'],
+      ].map(([icon, title, desc]) => `
+      <tr>
+        <td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 18px;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="width:36px;font-size:24px;">${icon}</td>
+              <td style="padding-left:12px;">
+                <strong style="font-size:14px;color:#0f172a;display:block;">${title}</strong>
+                <span style="font-size:12px;color:#64748b;">${desc}</span>
+              </td>
+              <td style="width:80px;text-align:right;">
+                <span style="background:#dcfce7;color:#15803d;font-size:11px;font-weight:700;padding:4px 10px;border-radius:12px;white-space:nowrap;">● OPEN</span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`).join('')}
+    </table>
+  </td></tr>
+
+  <!-- ── HOW IT WORKS ────────────────────────────────────────────────── -->
+  <tr><td style="padding:0 56px 28px;">
+    <div style="background:#0f172a;border-radius:14px;padding:32px 36px;">
+      <h2 style="margin:0 0 6px;font-size:18px;color:#ffffff;font-weight:800;">How the Partnership Works</h2>
+      <p style="margin:0 0 24px;font-size:13px;color:#64748b;">Straightforward. Professional. Reliable.</p>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        ${[
+          ['1','Apply Online','Complete our short application form (under 5 minutes). Tell us your skills, experience, and availability.','#6366f1'],
+          ['2','Verification & Onboarding','We review your application within 24 hours. Approved partners receive a welcome email with onboarding details and your subcontractor portal access.','#0ea5e9'],
+          ['3','Receive Contracts','Our AI matches incoming client work to your skill set. You receive job notifications with full briefs, deadlines, and payment details before you accept.','#8b5cf6'],
+          ['4','Deliver & Get Paid','Submit completed work through your secure portal. We quality-verify it, invoice the client, and pay you within 48 hours of verification.','#10b981'],
+        ].map(([num, title, desc, color]) => `
+        <tr>
+          <td style="vertical-align:top;width:44px;padding-bottom:20px;">
+            <div style="width:36px;height:36px;background:${color};border-radius:50%;text-align:center;line-height:36px;color:#fff;font-weight:900;font-size:15px;">${num}</div>
+          </td>
+          <td style="vertical-align:top;padding-left:14px;padding-bottom:20px;">
+            <strong style="font-size:14px;color:#f1f5f9;display:block;margin-bottom:4px;">${title}</strong>
+            <span style="font-size:13px;color:#94a3b8;line-height:1.6;">${desc}</span>
+          </td>
+        </tr>`).join('')}
+      </table>
+    </div>
+  </td></tr>
+
+  <!-- ── STATS BAR ───────────────────────────────────────────────────── -->
+  <tr><td style="padding:0 56px 28px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:2px solid #86efac;border-radius:14px;overflow:hidden;">
+      <tr>
+        ${[
+          ['98.6%','Client Satisfaction Rate'],
+          ['R2.4M+','Monthly Contract Volume'],
+          ['200+','Active Subcontractors'],
+          ['48hrs','Average Payment Time'],
+        ].map(([val, label], i, arr) => `
+        <td style="text-align:center;padding:22px 10px;${i < arr.length - 1 ? 'border-right:1px solid #bbf7d0;' : ''}">
+          <div style="font-size:24px;font-weight:900;color:#14532d;">${val}</div>
+          <div style="font-size:11px;color:#166534;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px;">${label}</div>
+        </td>`).join('')}
+      </tr>
+    </table>
+  </td></tr>
+
+  <!-- ── TESTIMONIAL ─────────────────────────────────────────────────── -->
+  <tr><td style="padding:0 56px 28px;">
+    <div style="background:#fafafa;border-left:4px solid #6366f1;border-radius:0 12px 12px 0;padding:22px 28px;">
+      <p style="margin:0 0 12px;font-size:15px;color:#1e293b;line-height:1.8;font-style:italic;">
+        "I was working as a data capturer at a local firm earning R8,000 a month. Within my first three months at CTS BPO, I was consistently earning R14,000 working from home — with better work, better clients, and no office politics. This is the best professional decision I ever made."
+      </p>
+      <div style="font-size:13px;color:#6366f1;font-weight:700;">— Nomvula T., Data Entry Specialist · Johannesburg</div>
+    </div>
+  </td></tr>
+
+  <!-- ── REQUIREMENTS ────────────────────────────────────────────────── -->
+  <tr><td style="padding:0 56px 28px;">
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:22px 28px;">
+      <h3 style="margin:0 0 14px;font-size:15px;color:#92400e;font-weight:800;">Minimum Requirements</h3>
+      <table cellpadding="0" cellspacing="0" width="100%">
+        ${[
+          'At least 1 year of BPO, admin, or data processing experience',
+          'Reliable laptop or desktop computer (less than 5 years old)',
+          'Stable internet connection (minimum 10 Mbps recommended)',
+          'Professional email address and ability to access a secure portal',
+          'Commitment to deadlines and quality standards',
+          'South African bank account for payment processing',
+        ].map(req => `
+        <tr>
+          <td style="vertical-align:top;width:24px;padding-bottom:8px;"><span style="color:#10b981;font-weight:700;font-size:15px;">✓</span></td>
+          <td style="vertical-align:top;padding-left:8px;padding-bottom:8px;font-size:13px;color:#7c2d12;line-height:1.5;">${req}</td>
+        </tr>`).join('')}
+      </table>
+    </div>
+  </td></tr>
+
+  <!-- ── PRIMARY CTA ─────────────────────────────────────────────────── -->
+  <tr><td style="padding:0 56px 36px;text-align:center;">
+    <p style="margin:0 0 20px;font-size:15px;color:#334155;line-height:1.7;">
+      Applications are reviewed daily. The sooner you apply, the sooner you can start receiving work.
+    </p>
+    <a href="${APPLICATION_URL}" style="display:inline-block;background:linear-gradient(135deg,#6366f1 0%,#4f46e5 50%,#4338ca 100%);color:#ffffff;text-decoration:none;padding:18px 56px;border-radius:12px;font-size:16px;font-weight:800;letter-spacing:0.3px;box-shadow:0 8px 30px rgba(99,102,241,0.4);">
+      ✅ Apply Now — Free &amp; Takes Under 5 Minutes
+    </a>
+    <p style="margin:16px 0 0;font-size:13px;color:#94a3b8;">
+      No application fee · No commitment until you accept a job · Cancel anytime
+    </p>
+    <div style="margin:24px 0 0;padding:16px 24px;background:#f8fafc;border-radius:10px;display:inline-block;">
+      <p style="margin:0;font-size:13px;color:#475569;line-height:1.6;">
+        Questions? Contact us directly:<br>
+        <a href="mailto:cts.cybersolutions@gmail.com" style="color:#6366f1;font-weight:700;text-decoration:none;">cts.cybersolutions@gmail.com</a>
+        &nbsp;·&nbsp;
+        <a href="https://wa.me/27760679100" style="color:#10b981;font-weight:700;text-decoration:none;">WhatsApp: +27 76 067 9100</a>
+      </p>
+    </div>
+  </td></tr>
+
+  <!-- ── SIGN-OFF ─────────────────────────────────────────────────────── -->
+  <tr><td style="padding:0 56px 36px;">
+    <p style="font-size:14px;color:#334155;line-height:1.7;margin:0 0 12px;">We look forward to having you on the CTS BPO team.</p>
+    <p style="font-size:15px;color:#0f172a;font-weight:700;margin:0;">
+      Warm regards,<br>
+      <strong>Calvin</strong><br>
+      <span style="font-size:13px;color:#64748b;font-weight:400;">Founder &amp; Director, CTS BPO Solutions</span><br>
+      <span style="font-size:12px;color:#94a3b8;font-weight:400;">📞 +27 76 067 9100 &nbsp;·&nbsp; 📧 cts.cybersolutions@gmail.com</span>
+    </p>
+  </td></tr>
+
+  <!-- ── FOOTER ──────────────────────────────────────────────────────── -->
+  <tr><td style="background:#0f172a;padding:28px 56px;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td>
+          <img src="${LOGO_B64}" alt="CTS BPO" style="height:36px;width:auto;opacity:0.8;">
+        </td>
+        <td style="text-align:right;vertical-align:middle;">
+          <p style="color:#64748b;font-size:11px;margin:0;">© ${new Date().getFullYear()} CTS BPO Solutions. All rights reserved.</p>
+          <p style="color:#475569;font-size:11px;margin:4px 0 0;">Registered Business Process Outsourcing Company · South Africa</p>
+        </td>
+      </tr>
+    </table>
+    <div style="border-top:1px solid #1e293b;margin:18px 0 12px;"></div>
+    <p style="color:#475569;font-size:11px;margin:0;text-align:center;line-height:1.6;">
+      You received this message because your professional profile matches our current hiring criteria.<br>
+      To stop receiving recruitment emails, reply with <strong>UNSUBSCRIBE</strong> and we will remove you immediately.
+    </p>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body></html>`;
+
+  const _r = await sendMail({ to: email, subject, html });
+  if (_r.preview) { console.log('[EMAIL STUB] BPO Recruitment Drive →', email); return { sent: false, simulated: true, to: email }; }
+  if (_r.skipped || _r.error) return { sent: false, to: email };
+  await auditLogger.log('outreach.bpo_recruitment_sent', null, null, `BPO recruitment drive email sent to ${email} via ${_r.mode}`, null, 'info');
+  return { sent: true, to: email };
+}
+
 // ─── Subcontractor Task Reminder Email ───────────────────────────────────────
 
 async function sendSubcontractorReminder({ name, email, jobTitle, dueDate, jobId }) {
@@ -1810,7 +2073,7 @@ function portalFooter() {
 module.exports = {
   sendMail,
   sendOutreachEmail, runCampaign, previewTemplate,
-  sendSubcontractorRecruitment, sendSubcontractorReminder,
+  sendSubcontractorRecruitment, sendBPORecruitmentDrive, sendSubcontractorReminder,
   sendClientColdOutreach, sendClientFollowUp,
   sendSubcontractorAcknowledgment, sendSubcontractorApproval,
   sendContractAssignment,
