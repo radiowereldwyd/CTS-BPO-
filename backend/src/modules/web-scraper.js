@@ -253,6 +253,86 @@ function extractDomain(url) {
   } catch { return null; }
 }
 
+// ── Real email extraction from company websites ───────────────────────────
+// Tries to find actual email addresses on company contact/about pages
+// before falling back to guessed info@/contact@ prefixes.
+const _emailCache = new Map();   // domain → real email or null
+const EMAIL_REGEX  = /\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,7}\b/g;
+const SKIP_EMAIL_DOMAINS = new Set([
+  'sentry.io','wix.com','wordpress.com','shopify.com','example.com',
+  'yourdomain.com','domain.com','email.com','placeholder.com','test.com',
+  'google.com','facebook.com','twitter.com','instagram.com','linkedin.com',
+  'schema.org','w3.org','bootstrap.com','jquery.com','cloudflare.com',
+]);
+
+async function tryExtractRealEmail(domain, pageUrl) {
+  if (!domain) return null;
+  if (_emailCache.has(domain)) return _emailCache.get(domain);
+
+  const pages = [
+    pageUrl,
+    `https://${domain}/contact`,
+    `https://${domain}/contact-us`,
+    `https://${domain}/about`,
+    `https://${domain}/`,
+  ].filter(Boolean);
+
+  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36';
+
+  for (const url of pages) {
+    try {
+      const res = await axios.get(url, {
+        headers: { 'User-Agent': ua, 'Accept': 'text/html' },
+        timeout: 5000,
+        maxRedirects: 3,
+      });
+      const html = res.data || '';
+      const $ = cheerio.load(html);
+
+      // 1. Prefer mailto: links (most reliable)
+      let found = null;
+      $('a[href^="mailto:"]').each((_, el) => {
+        if (found) return;
+        const href = $(el).attr('href') || '';
+        const email = href.replace('mailto:', '').split('?')[0].trim().toLowerCase();
+        if (email && email.includes('@')) {
+          const emailDomain = email.split('@')[1];
+          if (!SKIP_EMAIL_DOMAINS.has(emailDomain) && emailDomain === domain) {
+            found = email;
+          }
+        }
+      });
+      if (found) { _emailCache.set(domain, found); return found; }
+
+      // 2. Scan visible text for email patterns (strips scripts/styles first)
+      $('script,style,noscript,iframe').remove();
+      const text = $('body').text();
+      const matches = text.match(EMAIL_REGEX) || [];
+      for (const m of matches) {
+        const em = m.toLowerCase();
+        const emDomain = em.split('@')[1];
+        if (emDomain === domain && !SKIP_EMAIL_DOMAINS.has(emDomain)) {
+          _emailCache.set(domain, em);
+          return em;
+        }
+      }
+
+      // Found first page — no point checking others if it loaded and had no email
+      if (url === pageUrl) break;
+    } catch { /* network error or timeout — try next page */ }
+  }
+
+  _emailCache.set(domain, null);
+  return null;
+}
+
+async function buildEmailList(domain, pageUrl) {
+  if (!domain) return [];
+  const real = await tryExtractRealEmail(domain, pageUrl);
+  if (real) return [real];                                    // Use only the real address
+  return EMAIL_PREFIXES.map(p => `${p}@${domain}`);          // Fallback: guessed prefixes
+}
+
 function buildEmailVariants(domain) {
   if (!domain) return [];
   return EMAIL_PREFIXES.map(p => `${p}@${domain}`);
@@ -492,13 +572,14 @@ async function scrapeGoogleCSE() {
       for (const item of items) {
         const domain = extractDomain(item.link);
         if (!domain) continue;
-        const variants = buildEmailVariants(domain);
-        for (const email of variants) {
+        const emails = await buildEmailList(domain, item.link);
+        for (const email of emails) {
           contacts.push({
             company: item.title || domain, website: item.link, domain, email,
             source: 'google_cse', query: q, snippet: item.snippet || null,
           });
         }
+        await sleep(200);
       }
 
       const inserted = await storeContacts(contacts);
@@ -563,35 +644,40 @@ async function scrapeDuckDuckGo() {
       });
 
       const $ = cheerio.load(res.data);
-      const contacts = [];
 
+      // Collect domain+link pairs first, then resolve real emails in parallel
+      const items = [];
       $('.result').each((_, el) => {
         const titleEl = $(el).find('.result__title a');
         const snippet = $(el).find('.result__snippet').text().trim();
         let link = titleEl.attr('href') || '';
-
-        // DDG uses redirect URLs — extract the actual URL
         if (link.includes('uddg=')) {
           try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {}
         }
-
         const domain = extractDomain(link);
         if (!domain || domain.includes('duckduckgo') || domain.includes('google')) return;
+        items.push({ domain, link, title: titleEl.text().trim() || domain, snippet });
+      });
 
-        const variants = buildEmailVariants(domain);
-        const title = titleEl.text().trim() || domain;
-
-        for (const email of variants) {
+      // Try real email extraction for each domain (with concurrency limit)
+      const contacts = [];
+      for (const item of items) {
+        const emails = await buildEmailList(item.domain, item.link);
+        const realFlag = emails.length === 1 && !EMAIL_PREFIXES.some(p => emails[0].startsWith(p + '@'));
+        for (const email of emails) {
           contacts.push({
-            company: title, website: link, domain, email,
-            source: 'duckduckgo', query: q, snippet: snippet || null,
+            company: item.title, website: item.link, domain: item.domain, email,
+            source: 'duckduckgo', query: q, snippet: item.snippet || null,
+            ...(realFlag ? { business_type: 'verified_email' } : {}),
           });
         }
-      });
+        await sleep(300); // small gap between page fetches
+      }
 
       const inserted = await storeContacts(contacts);
       totalInserted += inserted;
-      console.log(`🦆 [SCRAPER] DDG "${q.slice(0, 50)}..." → ${contacts.length / EMAIL_PREFIXES.length | 0} sites, ${inserted} new contacts`);
+      const realCount = contacts.filter(c => c.business_type === 'verified_email').length;
+      console.log(`🦆 [SCRAPER] DDG "${q.slice(0, 50)}..." → ${items.length} sites, ${realCount} real emails found, ${inserted} new contacts`);
     } catch (err) {
       if (err.response?.status === 429 || err.response?.status === 403) {
         console.warn('⚠️  [SCRAPER] DuckDuckGo rate-limited — pausing DDG this run');
@@ -599,7 +685,7 @@ async function scrapeDuckDuckGo() {
       }
       console.error(`❌ [SCRAPER] DDG error for "${q.slice(0,40)}":`, err.message);
     }
-    await sleep(SCRAPE_DELAY_MS * 3); // more polite delay for HTML scraping
+    await sleep(SCRAPE_DELAY_MS * 3);
   }
 
   return totalInserted;
@@ -639,13 +725,14 @@ async function scrapeViaSerpAPI() {
       for (const r of results) {
         const domain = extractDomain(r.link);
         if (!domain) continue;
-        const variants = buildEmailVariants(domain);
-        for (const email of variants) {
+        const emails = await buildEmailList(domain, r.link);
+        for (const email of emails) {
           contacts.push({
             company: r.title || domain, website: r.link, domain, email,
             source: 'serpapi_bpo', query: q, snippet: r.snippet || null,
           });
         }
+        await sleep(200);
       }
 
       const inserted = await storeContacts(contacts);
@@ -662,27 +749,28 @@ async function scrapeViaSerpAPI() {
 
 // ── Main orchestrator ────────────────────────────────────────────────────────
 // ── 5. Bing Web Search scraping ─────────────────────────────────────────────
+// BING targets: companies that NEED BPO services — NOT BPO/outsourcing firms
 const BING_QUERIES = [
-  'outsourcing company "contact us" -site:linkedin.com -site:indeed.com',
-  'BPO services "get a quote" company -site:linkedin.com',
-  'data entry company "contact" "email" -site:linkedin.com',
-  'virtual assistant outsourcing "hire" company -site:linkedin.com',
-  'accounting outsourcing firm "contact us" -site:linkedin.com',
-  'medical billing BPO company contact email',
-  'back office outsourcing provider "request a quote"',
-  'payroll outsourcing service "contact us" email',
-  'customer support BPO company "get in touch"',
-  'document processing outsourcing "contact us"',
-  'HR outsourcing company "free quote" email',
-  'content moderation outsourcing contact',
-  'legal transcription outsource "email us"',
-  'translation company outsource "free quote"',
-  'invoice processing BPO "contact us" email',
-  'law firm South Africa "contact us" outsource admin',
-  'accounting firm UK "contact us" "bookkeeping" OR "data entry"',
-  'medical practice Australia "contact" "admin" OR "records"',
-  'real estate agency USA "contact us" "admin" OR "data"',
-  'insurance broker "contact us" -site:linkedin.com',
+  'dental practice "contact us" "patient records" OR "billing" South Africa -site:linkedin.com',
+  'dentist office "contact" email South Africa -site:linkedin.com',
+  'law firm "contact us" South Africa small -site:linkedin.com -site:legalaid.co.za',
+  'attorney firm South Africa "contact us" -site:linkedin.com -site:lawsociety.org.za',
+  'accounting firm "contact us" South Africa small -site:linkedin.com',
+  'chartered accountant "email" "contact" South Africa -site:linkedin.com',
+  'medical practice "contact us" "admin" South Africa -site:linkedin.com',
+  'GP clinic "contact" "admin" South Africa -site:linkedin.com',
+  'real estate agency "contact" email South Africa small -site:linkedin.com',
+  'property management "contact us" South Africa -site:linkedin.com',
+  'insurance broker "contact us" South Africa small -site:linkedin.com',
+  'financial advisor "contact us" South Africa -site:linkedin.com -site:moneyweb.co.za',
+  'e-commerce shop "contact" email South Africa -site:linkedin.com -site:takealot.com',
+  'online retailer "contact us" South Africa small -site:linkedin.com',
+  'HR consulting "contact us" South Africa -site:linkedin.com',
+  'payroll company "contact" email South Africa -site:linkedin.com',
+  'recruitment company "contact us" South Africa small -site:linkedin.com',
+  'law firm "contact us" UK small solicitors -site:linkedin.com',
+  'accounting firm UK small "contact" email -site:linkedin.com',
+  'dental practice UK "contact us" -site:linkedin.com',
 ];
 
 async function scrapeBing() {

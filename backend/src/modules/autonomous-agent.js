@@ -315,6 +315,22 @@ async function ensureTables() {
 
   // scraped_contacts — multi-source web scraper results
   await webScraper.ensureTable();
+
+  // job_seeker_leads — people seeking remote/BPO work to recruit as subcontractors
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS job_seeker_leads (
+      id               SERIAL PRIMARY KEY,
+      name             TEXT,
+      email            TEXT UNIQUE,
+      domain           TEXT,
+      source_url       TEXT,
+      snippet          TEXT,
+      status           TEXT DEFAULT 'new',
+      outreach_sent_at TIMESTAMPTZ,
+      bounced_at       TIMESTAMPTZ,
+      created_at       TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -1591,6 +1607,113 @@ async function sendWeeklyClientReports() {
   }
 }
 
+// ── Job Seeker Recruitment Campaign ─────────────────────────────────────────
+// Searches for people actively looking for remote/BPO work and emails them
+// the BPO recruitment drive template to join as CTS BPO subcontractors.
+const JOB_SEEKER_QUERIES = [
+  { q: '"looking for remote work" "data entry" OR "admin" email South Africa', label: 'SA remote seekers' },
+  { q: '"seeking employment" "data entry" OR "transcription" South Africa email contact', label: 'SA employment seekers' },
+  { q: '"available for work" "virtual assistant" OR "admin" South Africa email', label: 'SA VA seekers' },
+  { q: '"BPO experience" "looking for" OR "seeking" remote job South Africa email', label: 'SA BPO experienced' },
+  { q: '"data capturer" "available" OR "looking for work" South Africa email contact', label: 'SA data capturer' },
+  { q: '"transcriptionist" "available" OR "freelance" South Africa email', label: 'SA transcriptionist' },
+  { q: '"bookkeeper" "available" OR "seeking" remote South Africa email', label: 'SA bookkeeper' },
+  { q: '"payroll administrator" "available" OR "looking for" South Africa email', label: 'SA payroll admin' },
+  { q: '"virtual assistant" "available" OR "seeking" South Africa email site:gumtree.co.za OR site:careers24.com OR site:pnet.co.za', label: 'SA VA job boards' },
+  { q: '"work from home" "data entry" OR "admin" "contact me" OR "email me" South Africa', label: 'SA WFH seekers' },
+];
+
+async function runJobSeekerRecruitment() {
+  if (!SERPAPI_KEY) return;
+  if (isSerpApiCooling()) return;
+  if (!circuitCheck()) return;
+
+  let totalSent = 0;
+  let totalFound = 0;
+
+  // 1. Search for job seekers using SerpAPI
+  const selected = pickRandom(JOB_SEEKER_QUERIES, 3);
+  for (const { q, label } of selected) {
+    try {
+      const res = await axios.get('https://serpapi.com/search', {
+        params: { q, api_key: SERPAPI_KEY, engine: 'google', num: 20, hl: 'en', gl: 'za' },
+        timeout: 15000,
+      });
+
+      const results = res.data.organic_results || [];
+      for (const r of results) {
+        // Extract email from snippet or title
+        const text = `${r.snippet || ''} ${r.title || ''}`;
+        const emailMatch = text.match(/\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,7}\b/);
+        if (!emailMatch) continue;
+        const email = emailMatch[0].toLowerCase();
+        const domain = email.split('@')[1];
+
+        // Skip generic/shared domains and admin-looking addresses
+        const skip = ['gmail.com','yahoo.com','hotmail.com','outlook.com','icloud.com','me.com'];
+        // For personal emails (gmail etc) we do want to reach them — they're individuals
+        // Only skip our own domain and known spam traps
+        if (['ctsbpo.com','cts-bpo.com'].includes(domain)) continue;
+
+        // Extract name from title if possible
+        const nameMatch = r.title?.match(/^([A-Z][a-z]+ [A-Z][a-z]+)/);
+        const name = nameMatch ? nameMatch[1] : 'there';
+
+        // Store in job_seeker_leads
+        try {
+          await db.query(
+            `INSERT INTO job_seeker_leads (name, email, domain, source_url, snippet)
+             VALUES ($1,$2,$3,$4,$5)
+             ON CONFLICT (email) DO NOTHING`,
+            [name, email, domain, r.link || null, text.slice(0, 300)]
+          );
+          totalFound++;
+        } catch { /* already in db or error — skip */ }
+      }
+
+      await sleep(1500);
+    } catch (err) {
+      if (err.response?.status === 429) { serpApiRateLimit(); break; }
+      console.error(`[JOB SEEKER] Search error for "${label}":`, err.message);
+    }
+  }
+
+  // 2. Email uncontacted job seekers (up to 20 per run)
+  let leads;
+  try {
+    leads = await db.query(
+      `SELECT id, name, email FROM job_seeker_leads
+       WHERE status = 'new' AND outreach_sent_at IS NULL AND bounced_at IS NULL
+       ORDER BY created_at ASC LIMIT 20`
+    );
+  } catch { return; }
+
+  for (const lead of (leads.rows || [])) {
+    try {
+      const result = await emailOutreach.sendBPORecruitmentDrive({ name: lead.name, email: lead.email });
+      if (result.sent) {
+        await db.query(
+          `UPDATE job_seeker_leads SET status='contacted', outreach_sent_at=NOW() WHERE id=$1`,
+          [lead.id]
+        );
+        await logActivity('job_seeker_outreach', `Recruitment email sent to job seeker: ${lead.email}`, 'job_seeker_leads', lead.id, 'success');
+        totalSent++;
+        liveStats.outreach.sentThisSession++;
+        liveStats.outreach.sentToday++;
+        await sleep(2000);
+      }
+    } catch (e) {
+      if (isAuthError(e)) { circuitTrip(e.message); break; }
+      console.error('[JOB SEEKER] Email error:', e.message);
+    }
+  }
+
+  if (totalFound > 0 || totalSent > 0) {
+    await logActivity('job_seeker_recruitment', `Job seeker sweep: ${totalFound} new seekers found, ${totalSent} recruitment emails sent`, null, null, 'success');
+    console.log(`👥 [JOB SEEKER] Found ${totalFound} seekers, sent ${totalSent} recruitment emails`);
+  }
+}
+
 // ── Start the agent ────────────────────────────────────────────────────────
 // ── One-time DB cleanup at startup ────────────────────────────────────────
 // Fixes existing records: marks duplicate same-domain "new" contacts as contacted
@@ -1771,6 +1894,13 @@ async function startAgent() {
   cron.schedule('15 */2 * * *', () => {
     runScrapedContactsFollowUps().catch(e => logActivity('scrape_followup', `Cron error: ${e.message}`, null, null, 'error'));
   });
+
+  // Job seeker recruitment every 4 hours — emails people looking for remote/BPO work
+  cron.schedule('0 */4 * * *', () => {
+    runJobSeekerRecruitment().catch(e => logActivity('job_seeker_recruitment', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+  // Run once 3 minutes after boot
+  setTimeout(() => runJobSeekerRecruitment().catch(console.error), 180_000);
 
   // Daily heartbeat log
   cron.schedule('0 8 * * *', () => {
