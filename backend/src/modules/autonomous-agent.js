@@ -1425,6 +1425,26 @@ async function runPlatformScan() {
       { found: result.found, errors: result.errors?.length }
     );
     console.log(`🎯 [PLATFORM] Found ${result.found} new platform jobs`);
+
+    // Auto-bid on all new handleable jobs immediately after scan
+    if (result.found > 0 || true) { // also pick up any previously unprocessed jobs
+      try {
+        const autoBidder = require('./auto-bidder');
+        const bidResult  = await autoBidder.autoBidNewJobs();
+        if (bidResult.processed > 0) {
+          await logActivity(
+            'platform_scan',
+            `Auto-bidder: ${bidResult.processed} proposals generated, ${bidResult.emailed} direct emails sent, ${bidResult.notified} admin digests sent`,
+            null, null, 'success',
+            bidResult
+          );
+          console.log(`🤖 [AUTO-BID] ${bidResult.processed} bids sent (${bidResult.emailed} direct, ${bidResult.notified} via admin)`);
+        }
+      } catch (bidErr) {
+        console.warn(`[AUTO-BID] Error: ${bidErr.message}`);
+        await logActivity('platform_scan', `Auto-bid error: ${bidErr.message}`, null, null, 'warning');
+      }
+    }
   } catch (err) {
     await logActivity('platform_scan', `Platform scan error: ${err.message}`, null, null, 'error');
   }

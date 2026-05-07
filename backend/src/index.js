@@ -1417,6 +1417,15 @@ app.patch('/api/ai-agent/platform-jobs/:id/bid', requireAuth, requireAdmin, asyn
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/ai-agent/platform-jobs/auto-bid — run auto-bidder on demand
+app.post('/api/ai-agent/platform-jobs/auto-bid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const autoBidder = require('./modules/auto-bidder');
+    const result = await autoBidder.autoBidNewJobs();
+    res.json({ ok: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Targeted Scrape ─────────────────────────────────────────────────────────
 // Multer — store PDF in memory (max 20 MB)
 const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });

@@ -858,11 +858,44 @@ const JOB_TYPE_LABELS = {
   'general': '🔧 General BPO',
 };
 
-function PlatformJobsPanel({ data, loading, onRefresh, onTriggerScan, onMarkBid }) {
+function ProposalBlock({ proposal }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied]     = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(proposal).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <div style={{ background: '#f0f4ff', border: '1px solid #c7d2fe', borderRadius: 8, marginBottom: 8 }}>
+      <button onClick={() => setExpanded(e => !e)}
+        style={{ width: '100%', background: 'none', border: 'none', padding: '8px 12px', textAlign: 'left', cursor: 'pointer', fontWeight: 700, fontSize: 12, color: '#4f46e5', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>🤖 AI Proposal Ready</span>
+        <span>{expanded ? '▲ Hide' : '▼ View & Copy'}</span>
+      </button>
+      {expanded && (
+        <div style={{ padding: '0 12px 12px' }}>
+          <pre style={{ fontSize: 11, color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.6, margin: '0 0 8px', fontFamily: 'inherit', maxHeight: 260, overflowY: 'auto', background: '#fff', borderRadius: 6, padding: 10, border: '1px solid #e2e8f0' }}>
+            {proposal}
+          </pre>
+          <button onClick={copy}
+            style={{ background: copied ? '#10b981' : '#6366f1', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 16px', fontWeight: 700, fontSize: 12, cursor: 'pointer', width: '100%' }}>
+            {copied ? '✅ Copied!' : '📋 Copy Proposal'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlatformJobsPanel({ data, loading, token, onRefresh, onTriggerScan, onMarkBid }) {
   const [filterPlatform, setFilterPlatform] = useState('all');
   const [filterType, setFilterType]         = useState('all');
-  const [filterStatus, setFilterStatus]     = useState('new');
+  const [filterStatus, setFilterStatus]     = useState('bid_sent');
   const [scanning, setScanning]             = useState(false);
+  const [autoBidding, setAutoBidding]       = useState(false);
+  const [autoBidMsg, setAutoBidMsg]         = useState('');
 
   const stats = data?.stats || {};
   const jobs  = (data?.jobs  || []).filter(j => {
@@ -881,6 +914,23 @@ function PlatformJobsPanel({ data, loading, onRefresh, onTriggerScan, onMarkBid 
     setTimeout(() => { setScanning(false); onRefresh(); }, 12000);
   }
 
+  async function handleAutoBid() {
+    setAutoBidding(true);
+    setAutoBidMsg('');
+    try {
+      const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const r = await fetch(`${API}/api/ai-agent/platform-jobs/auto-bid`, { method: 'POST', headers: h });
+      const d = await r.json();
+      setAutoBidMsg(`✅ Done: ${d.processed} proposals generated, ${d.emailed} direct emails sent, ${d.notified} admin digests sent`);
+      setFilterStatus('bid_sent');
+      setTimeout(() => onRefresh(), 1500);
+    } catch (e) {
+      setAutoBidMsg('⚠️ Auto-bid error — check backend logs');
+    } finally {
+      setAutoBidding(false);
+    }
+  }
+
   if (loading && !data) {
     return (
       <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8' }}>
@@ -894,21 +944,29 @@ function PlatformJobsPanel({ data, loading, onRefresh, onTriggerScan, onMarkBid 
     <div style={{ fontFamily: '-apple-system,BlinkMacSystemFont,sans-serif' }}>
 
       {/* ── Intro banner ── */}
-      <div style={{ background: 'linear-gradient(135deg,#1e3a5f,#0f5499)', borderRadius: 14, padding: '20px 24px', marginBottom: 20, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ background: 'linear-gradient(135deg,#1e3a5f,#0f5499)', borderRadius: 14, padding: '20px 24px', marginBottom: 12, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 4 }}>🎯 Freelance Platform Jobs Board</div>
           <div style={{ fontSize: 13, color: '#93c5fd', maxWidth: 560 }}>
-            Live BPO job postings from <strong>Upwork, Freelancer, Guru &amp; PeoplePerHour</strong>. These buyers are actively posting right now — click <em>Open Job</em> to submit your proposal directly on the platform.
+            Live BPO jobs from <strong>Upwork, Freelancer, Guru &amp; PeoplePerHour</strong>. AI scans automatically every 3 hours, generates a tailored proposal for every job, and either emails the buyer directly or sends you the ready-to-paste proposal.
           </div>
         </div>
-        <button
-          onClick={handleScan}
-          disabled={scanning}
-          style={{ background: scanning ? '#64748b' : '#f59e0b', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 22px', fontWeight: 800, fontSize: 14, cursor: scanning ? 'default' : 'pointer' }}
-        >
-          {scanning ? '⏳ Scanning...' : '🔍 Scan Now'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={handleScan} disabled={scanning || autoBidding}
+            style={{ background: scanning ? '#64748b' : '#f59e0b', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 18px', fontWeight: 800, fontSize: 13, cursor: (scanning || autoBidding) ? 'default' : 'pointer' }}>
+            {scanning ? '⏳ Scanning...' : '🔍 Scan Now'}
+          </button>
+          <button onClick={handleAutoBid} disabled={autoBidding || scanning}
+            style={{ background: autoBidding ? '#64748b' : '#10b981', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 18px', fontWeight: 800, fontSize: 13, cursor: (autoBidding || scanning) ? 'default' : 'pointer' }}>
+            {autoBidding ? '⏳ Bidding...' : '🤖 Auto-Bid Now'}
+          </button>
+        </div>
       </div>
+      {autoBidMsg && (
+        <div style={{ background: autoBidMsg.startsWith('✅') ? '#ecfdf5' : '#fff7ed', border: `1px solid ${autoBidMsg.startsWith('✅') ? '#6ee7b7' : '#fcd34d'}`, borderRadius: 10, padding: '10px 16px', marginBottom: 14, fontWeight: 700, fontSize: 13, color: autoBidMsg.startsWith('✅') ? '#065f46' : '#92400e' }}>
+          {autoBidMsg}
+        </div>
+      )}
 
       {/* ── KPI row ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(140px,1fr))', gap: 12, marginBottom: 20 }}>
@@ -1015,6 +1073,16 @@ function PlatformJobsPanel({ data, loading, onRefresh, onTriggerScan, onMarkBid 
                       💵 {job.budget}
                     </span>
                   )}
+                  {job.auto_bid && (
+                    <span style={{ background: '#fef3c7', color: '#92400e', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+                      🤖 Auto-Bid
+                    </span>
+                  )}
+                  {job.bid_method === 'email_direct' && (
+                    <span style={{ background: '#dcfce7', color: '#166534', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+                      📧 Email Sent
+                    </span>
+                  )}
                   {isBid && (
                     <span style={{ background: '#e0f2fe', color: '#0369a1', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
                       ✅ Bid Sent {job.bid_sent_at ? new Date(job.bid_sent_at).toLocaleDateString('en-ZA') : ''}
@@ -1027,8 +1095,13 @@ function PlatformJobsPanel({ data, loading, onRefresh, onTriggerScan, onMarkBid 
                   )}
                 </div>
 
+                {/* Proposal text (collapsible) */}
+                {job.proposal_text && (
+                  <ProposalBlock proposal={job.proposal_text} />
+                )}
+
                 {/* Actions */}
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <a href={job.job_url} target="_blank" rel="noopener noreferrer"
                     style={{ flex: 1, textAlign: 'center', background: pc.text, color: '#fff', borderRadius: 8, padding: '8px 0', fontWeight: 700, fontSize: 13, textDecoration: 'none' }}>
                     🔗 Open Job
