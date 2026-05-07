@@ -161,6 +161,7 @@ export default function LandingPage() {
             {[['Services', 'services'], ['How It Works', 'how-it-works'], ['Examples', 'examples'], ['FAQ', 'faq'], ['Online Jobs', 'online-jobs']].map(([label, id]) => (
               <button key={id} onClick={() => scrollTo(id)} style={{ background: 'none', border: 'none', color: '#cbd5e1', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '6px 0', letterSpacing: 0.2 }}>{label}</button>
             ))}
+            <Link to="/pricing" style={{ background: 'none', border: 'none', color: '#fbbf24', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: '6px 0', letterSpacing: 0.2, textDecoration: 'none' }}>Pricing</Link>
             <Link to="/subcontractor/login" style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid #10b981', color: '#34d399', padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Subcontractor Login</Link>
             <Link to="/login" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid #6366f1', color: '#a5b4fc', padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>Admin</Link>
           </div>
@@ -178,6 +179,7 @@ export default function LandingPage() {
           {[['Services', 'services'], ['How It Works', 'how-it-works'], ['Examples', 'examples'], ['FAQ', 'faq'], ['Online Jobs', 'online-jobs']].map(([label, id]) => (
             <button key={id} onClick={() => scrollTo(id)}>{label}</button>
           ))}
+          <Link to="/pricing" className="lp-mob-login" style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid #fbbf24', color: '#fbbf24', borderRadius: 8, fontWeight: 700, marginTop: 6 }}>Pricing</Link>
           <Link to="/subcontractor/login" className="lp-mob-login" style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid #10b981', color: '#34d399', borderRadius: 8, fontWeight: 700 }}>Subcontractor Login</Link>
           <Link to="/login" className="lp-mob-login" style={{ background: 'rgba(99,102,241,0.18)', border: '1px solid #6366f1', color: '#a5b4fc', borderRadius: 8, fontWeight: 700, marginTop: 6 }}>Admin Login</Link>
         </div>

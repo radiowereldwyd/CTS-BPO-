@@ -19,6 +19,7 @@ import CTSLogo from './components/CTSLogo';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import ClientPortal from './components/ClientPortal';
 import TargetedScraper from './components/TargetedScraper';
+import PricingTable from './components/PricingTable';
 import './App.css';
 
 function NavLink({ to, children }) {
@@ -161,6 +162,7 @@ function App() {
       <Routes>
         {/* Always public */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/pricing" element={<PricingTable />} />
         <Route path="/apply" element={<ApplyPage />} />
 
         {/* Client portal — public, accessed via token link from delivery email */}
