@@ -1533,6 +1533,64 @@ async function runJobLeadFollowUps() {
   }
 }
 
+// ── Weekly client performance report ──────────────────────────────────────
+async function sendWeeklyClientReports() {
+  try {
+    const jobDelivery = require('./job-delivery');
+    const clients = await jobDelivery.getWeeklyClientSummaries();
+    if (!clients.length) return;
+    let sent = 0;
+    for (const c of clients) {
+      if (!c.client_email) continue;
+      try {
+        await emailOutreach.sendMail({
+          to: c.client_email,
+          subject: `📊 Your Weekly BPO Report — CTS BPO`,
+          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+                 <div style="background:#1e3a5f;padding:24px;text-align:center;border-radius:12px 12px 0 0">
+                   <h2 style="color:#fff;margin:0">📊 Weekly BPO Update</h2>
+                   <p style="color:#93c5fd;margin:6px 0 0;font-size:14px">Week ending ${new Date().toLocaleDateString('en-ZA', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</p>
+                 </div>
+                 <div style="padding:28px;background:#fff;border:1px solid #e2e8f0;border-radius:0 0 12px 12px">
+                   <p>Hi ${c.client_name || 'there'},</p>
+                   <p>Here's your weekly summary of BPO activity on the CTS BPO platform:</p>
+                   <div style="display:flex;gap:16px;margin:20px 0">
+                     <div style="flex:1;background:#ecfdf5;border-radius:10px;padding:16px;text-align:center">
+                       <div style="font-size:32px;font-weight:900;color:#10b981">${c.delivered_this_week || 0}</div>
+                       <div style="font-size:12px;color:#166534;font-weight:700;text-transform:uppercase">Delivered This Week</div>
+                     </div>
+                     <div style="flex:1;background:#eef2ff;border-radius:10px;padding:16px;text-align:center">
+                       <div style="font-size:32px;font-weight:900;color:#6366f1">${c.active_jobs || 0}</div>
+                       <div style="font-size:12px;color:#4338ca;font-weight:700;text-transform:uppercase">Active Jobs</div>
+                     </div>
+                     <div style="flex:1;background:#f8fafc;border-radius:10px;padding:16px;text-align:center">
+                       <div style="font-size:32px;font-weight:900;color:#64748b">${c.total_jobs || 0}</div>
+                       <div style="font-size:12px;color:#475569;font-weight:700;text-transform:uppercase">Total All Time</div>
+                     </div>
+                   </div>
+                   <p>Log into your client portal to view all jobs, download completed work, and submit new requests:</p>
+                   <div style="text-align:center;margin:20px 0">
+                     <a href="${process.env.APP_URL || ''}/client/portal" style="background:#6366f1;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:700;display:inline-block">
+                       View My Portal →
+                     </a>
+                   </div>
+                   <p style="color:#64748b;font-size:12px;border-top:1px solid #e2e8f0;padding-top:16px;margin-top:20px">
+                     CTS BPO · <a href="https://wa.me/27760679100">WhatsApp: +27 76 067 9100</a> · <a href="mailto:info@ctsbpo.com">info@ctsbpo.com</a><br>
+                     To unsubscribe from weekly reports, reply with "unsubscribe reports".
+                   </p>
+                 </div></div>`,
+          text: `Weekly BPO Update: ${c.delivered_this_week || 0} delivered this week, ${c.active_jobs || 0} active jobs. Visit your portal: ${process.env.APP_URL || ''}/client/portal`,
+        });
+        sent++;
+        await new Promise(r => setTimeout(r, 1200));
+      } catch {}
+    }
+    logActivity('weekly_report', `Weekly reports sent to ${sent}/${clients.length} clients`, null, null, 'info');
+  } catch (e) {
+    console.error('[WEEKLY REPORT]', e.message);
+  }
+}
+
 // ── Start the agent ────────────────────────────────────────────────────────
 // ── One-time DB cleanup at startup ────────────────────────────────────────
 // Fixes existing records: marks duplicate same-domain "new" contacts as contacted
@@ -1716,6 +1774,11 @@ async function startAgent() {
   // Daily heartbeat log
   cron.schedule('0 8 * * *', () => {
     logActivity('heartbeat', `Daily check — leads: ${agentState.totalLeadsFound}, emails: ${agentState.totalEmailsSent}, apps: ${agentState.totalAppProcessed}, contracts: ${agentState.totalContractsAssigned}`);
+  });
+
+  // ── Weekly client performance report — every Monday 8am ──────────────────
+  cron.schedule('0 8 * * 1', () => {
+    sendWeeklyClientReports().catch(e => logActivity('weekly_report', `Error: ${e.message}`, null, null, 'error'));
   });
 
   // ── System health monitor every 15 minutes — auto-detects and logs issues ──

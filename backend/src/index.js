@@ -81,6 +81,10 @@ app.use('/api/sub/auth', authLimiter, subAuthRouter);
 const subPortalRouter = require('./routes/subcontractor-portal');
 app.use('/api/sub', subPortalRouter);
 
+// BPO Job Delivery pipeline
+const bpoJobsRouter = require('./routes/bpo-jobs');
+app.use('/api/bpo-jobs', bpoJobsRouter);
+
 // ─── Protected routes (require JWT) ──────────────────────────────────────────
 
 // Dashboard metrics — uses actual DB tables (ai_leads, subcontractor_applications, subcontractor_jobs, job_submissions)

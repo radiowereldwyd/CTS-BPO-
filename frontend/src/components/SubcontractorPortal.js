@@ -40,6 +40,7 @@ function payBadge(s) {
 function SubcontractorPortal({ user, token, onLogout }) {
   const [tab, setTab]               = useState('jobs');
   const [jobs, setJobs]             = useState([]);
+  const [bpoJobs, setBpoJobs]       = useState([]);
   const [payments, setPayments]     = useState({ jobs: [], summary: {} });
   const [submissions, setSubmissions] = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -48,7 +49,12 @@ function SubcontractorPortal({ user, token, onLogout }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg]   = useState(null);
   const [isDragging, setIsDragging] = useState(false);
-  const fileRef = useRef();
+  const [bpoFiles, setBpoFiles]     = useState([]);
+  const [bpoSubmitId, setBpoSubmitId] = useState('');
+  const [bpoSubmitting, setBpoSubmitting] = useState(false);
+  const [bpoMsg, setBpoMsg]         = useState(null);
+  const fileRef    = useRef();
+  const bpoFileRef = useRef();
 
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -61,14 +67,16 @@ function SubcontractorPortal({ user, token, onLogout }) {
 
   async function fetchAll() {
     try {
-      const [jr, pr, sr] = await Promise.all([
-        axios.get(`${API_BASE}/api/sub/jobs`,       { headers }),
-        axios.get(`${API_BASE}/api/sub/payments`,   { headers }),
+      const [jr, pr, sr, br] = await Promise.all([
+        axios.get(`${API_BASE}/api/sub/jobs`,        { headers }),
+        axios.get(`${API_BASE}/api/sub/payments`,    { headers }),
         axios.get(`${API_BASE}/api/sub/submissions`, { headers }),
+        axios.get(`${API_BASE}/api/bpo-jobs/mine`,   { headers }).catch(() => ({ data: { jobs: [] } })),
       ]);
       setJobs(Array.isArray(jr.data) ? jr.data : []);
       setPayments(pr.data || { jobs: [], summary: {} });
       setSubmissions(Array.isArray(sr.data) ? sr.data : []);
+      setBpoJobs(Array.isArray(br.data?.jobs) ? br.data.jobs : []);
     } catch {}
     setLoading(false);
   }
@@ -176,7 +184,7 @@ function SubcontractorPortal({ user, token, onLogout }) {
         <div style={S.tabs}>
           {(isAdmin
             ? [['jobs','📋 All Jobs'],['payments','💳 All Payments']]
-            : [['jobs','📋 My Jobs'],['submit','⬆ Submit Work'],['payments','💳 Payments']]
+            : [['jobs','📋 My Jobs'],['bpo_jobs','🏭 BPO Jobs'],['submit','⬆ Submit Work'],['payments','💳 Payments']]
           ).map(([id, label]) => (
             <button key={id} style={S.tab(tab === id)} onClick={() => setTab(id)}>{label}</button>
           ))}
@@ -232,6 +240,129 @@ function SubcontractorPortal({ user, token, onLogout }) {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── BPO JOBS TAB ── */}
+        {!loading && tab === 'bpo_jobs' && !isAdmin && (
+          <div>
+            {bpoJobs.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 0', color: '#64748b' }}>
+                <div style={{ fontSize: 48, marginBottom: 16 }}>🏭</div>
+                <div style={{ fontSize: 18, color: '#94a3b8' }}>No BPO jobs assigned yet.</div>
+                <div style={{ marginTop: 8, fontSize: 14 }}>When the admin assigns you a BPO job, it will appear here.</div>
+              </div>
+            ) : bpoJobs.map(job => {
+              const pri = { urgent:'#ef4444', high:'#f59e0b', normal:'#10b981', low:'#94a3b8' }[job.priority] || '#94a3b8';
+              const deadline = job.deadline ? Math.ceil((new Date(job.deadline) - Date.now()) / 86400000) : null;
+              return (
+                <div key={job.id} style={{ ...S.card, borderLeft: `4px solid ${pri}`, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 800, fontSize: 16, color: '#fff', marginBottom: 4 }}>
+                        #{job.id} — {job.title}
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12, color: '#64748b' }}>
+                        <span>🏷 {job.job_type?.replace(/_/g, ' ')}</span>
+                        <span style={{ color: pri, fontWeight: 700, textTransform: 'uppercase' }}>{job.priority}</span>
+                        {deadline !== null && (
+                          <span style={{ color: deadline < 0 ? '#ef4444' : deadline <= 2 ? '#f59e0b' : '#94a3b8', fontWeight: 700 }}>
+                            {deadline < 0 ? `⚠️ Overdue ${Math.abs(deadline)}d` : deadline === 0 ? '🔥 Due today' : `📅 ${deadline} days`}
+                          </span>
+                        )}
+                        <span style={{ background: 'rgba(99,102,241,0.15)', color: '#818cf8', padding: '1px 8px', borderRadius: 10, fontWeight: 700 }}>
+                          {job.status?.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {job.description && <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>{job.description}</p>}
+                  {job.instructions && (
+                    <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>INSTRUCTIONS</div>
+                      <div style={{ fontSize: 13, color: '#e2e8f0', lineHeight: 1.6 }}>{job.instructions}</div>
+                    </div>
+                  )}
+                  {job.revision_notes && (
+                    <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>🔄 REVISION REQUESTED</div>
+                      <div style={{ fontSize: 13, color: '#fca5a5', lineHeight: 1.6 }}>{job.revision_notes}</div>
+                    </div>
+                  )}
+
+                  {/* Source files */}
+                  {(job.source_files?.length > 0 || job.source_file_count > 0) && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 6 }}>SOURCE FILES TO DOWNLOAD</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {Array.from({ length: job.source_file_count || job.source_files?.length || 0 }).map((_, i) => (
+                          <a key={i} href={`/api/bpo-jobs/${job.id}/download/source/${i}`} target="_blank" rel="noopener noreferrer"
+                            style={{ background: 'rgba(14,165,233,0.15)', color: '#38bdf8', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 8, padding: '6px 14px', fontWeight: 700, fontSize: 12, textDecoration: 'none' }}>
+                            ⬇ Source File {i + 1}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Start + Submit work */}
+                  {job.status === 'assigned' && (
+                    <button onClick={async () => {
+                      try {
+                        await axios.patch(`${API_BASE}/api/bpo-jobs/${job.id}/start`, {}, { headers });
+                        fetchAll();
+                      } catch {}
+                    }} style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 8, padding: '9px 20px', cursor: 'pointer', fontWeight: 700, fontSize: 13, marginBottom: 10 }}>
+                      ▶ Accept & Start Working
+                    </button>
+                  )}
+
+                  {['in_progress', 'assigned', 'revision'].includes(job.status) && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 8 }}>SUBMIT COMPLETED WORK</div>
+                      {bpoMsg?.jobId === job.id && (
+                        <div style={{ background: bpoMsg.ok ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', border: `1px solid ${bpoMsg.ok ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: 8, padding: '10px 14px', color: bpoMsg.ok ? '#10b981' : '#ef4444', marginBottom: 12, fontSize: 13, fontWeight: 600 }}>
+                          {bpoMsg.text}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input ref={bpoSubmitId === String(job.id) ? bpoFileRef : undefined} type="file" multiple hidden id={`bpo-file-${job.id}`}
+                          onChange={e => { setBpoSubmitId(String(job.id)); setBpoFiles(Array.from(e.target.files)); }} />
+                        <label htmlFor={`bpo-file-${job.id}`} style={{ background: 'rgba(99,102,241,0.15)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+                          📎 {bpoSubmitId === String(job.id) && bpoFiles.length > 0 ? `${bpoFiles.length} file(s) selected` : 'Choose Files'}
+                        </label>
+                        {bpoSubmitId === String(job.id) && bpoFiles.length > 0 && (
+                          <button onClick={async () => {
+                            setBpoSubmitting(true); setBpoMsg(null);
+                            try {
+                              const fd = new FormData();
+                              bpoFiles.forEach(f => fd.append('files', f));
+                              await axios.patch(`${API_BASE}/api/bpo-jobs/${job.id}/submit`, fd, { headers: { ...headers, 'Content-Type': 'multipart/form-data' } });
+                              setBpoMsg({ jobId: String(job.id), ok: true, text: '✅ Work submitted! Admin will review and deliver to the client.' });
+                              setBpoFiles([]); setBpoSubmitId('');
+                              fetchAll();
+                            } catch (e) {
+                              setBpoMsg({ jobId: String(job.id), ok: false, text: `❌ ${e.response?.data?.error || e.message}` });
+                            }
+                            setBpoSubmitting(false);
+                          }} disabled={bpoSubmitting}
+                            style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', cursor: 'pointer', fontWeight: 700, fontSize: 13 }}>
+                            {bpoSubmitting ? '⏳ Uploading…' : '⬆ Submit for Review'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {job.status === 'review' && (
+                    <div style={{ background: 'rgba(236,72,153,0.1)', border: '1px solid rgba(236,72,153,0.3)', borderRadius: 8, padding: '10px 14px', color: '#f472b6', fontSize: 13, fontWeight: 600 }}>
+                      🔍 Work submitted — Admin is reviewing. You'll be notified of the outcome.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 

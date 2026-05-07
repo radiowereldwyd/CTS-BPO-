@@ -22,6 +22,7 @@ import TargetedScraper from './components/TargetedScraper';
 import PricingTable from './components/PricingTable';
 import PriceNegotiator from './components/PriceNegotiator';
 import AIControlRoom from './components/AIControlRoom';
+import JobQueue from './components/JobQueue';
 import './App.css';
 
 function NavLink({ to, children }) {
@@ -56,6 +57,7 @@ function AdminShell({ user, token, onLogout }) {
           <NavLink to="/targeted-scraper">🎯 Targeted</NavLink>
           <NavLink to="/price-negotiator">💰 Pricing</NavLink>
           <NavLink to="/control-room">🖥️ Control Room</NavLink>
+          <NavLink to="/job-queue">📋 Job Queue</NavLink>
         </nav>
         <div className="header-user">
           <Link to="/" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none', marginRight: 12 }}>← Public Site</Link>
@@ -80,6 +82,7 @@ function AdminShell({ user, token, onLogout }) {
           <Route path="/targeted-scraper" element={<TargetedScraper token={token} />} />
           <Route path="/price-negotiator" element={<PriceNegotiator token={token} />} />
           <Route path="/control-room" element={<AIControlRoom token={token} />} />
+          <Route path="/job-queue" element={<JobQueue token={token} />} />
           <Route path="/login" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

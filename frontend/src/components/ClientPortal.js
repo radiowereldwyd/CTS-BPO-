@@ -46,7 +46,13 @@ export default function ClientPortal() {
   const [error,   setError]   = useState('');
   const [tab,     setTab]     = useState('jobs');
   const [upload,  setUpload]  = useState({ file:null, uploading:false, msg:'' });
-  const fileRef = useRef();
+  const [bpoJobs, setBpoJobs] = useState([]);
+  const [newJob,  setNewJob]  = useState({ jobType:'', title:'', description:'', instructions:'', deadline:'', priority:'normal' });
+  const [jobFiles, setJobFiles] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMsg, setSubmitMsg]   = useState('');
+  const fileRef    = useRef();
+  const jobFileRef = useRef();
 
   useEffect(() => {
     if (!token || token === 'portal') { setError('Invalid access link.'); setLoading(false); return; }
@@ -57,7 +63,13 @@ export default function ClientPortal() {
         .catch(e => { setError(e.message); setLoading(false); });
     }
     loadPortal();
-    const iv = setInterval(loadPortal, 15000);
+    fetch(`${API}/api/bpo-jobs/client/${token}`)
+      .then(r => r.json()).then(d => setBpoJobs(d.jobs || [])).catch(() => {});
+    const iv = setInterval(() => {
+      loadPortal();
+      fetch(`${API}/api/bpo-jobs/client/${token}`)
+        .then(r => r.json()).then(d => setBpoJobs(d.jobs || [])).catch(() => {});
+    }, 15000);
     return () => clearInterval(iv);
   }, [token]);
 
@@ -165,14 +177,14 @@ export default function ClientPortal() {
         )}
 
         {/* Tabs */}
-        <div style={{display:'flex',gap:4,borderBottom:'2px solid #e2e8f0',marginBottom:24}}>
-          {['jobs','upload','invoices'].map(t => (
+        <div style={{display:'flex',gap:4,borderBottom:'2px solid #e2e8f0',marginBottom:24,flexWrap:'wrap'}}>
+          {[['jobs','📋 My Jobs'],['new_job','🆕 Submit New Job'],['upload','📤 Upload Files'],['invoices','🧾 Invoices']].map(([t,label]) => (
             <button key={t} onClick={() => setTab(t)} style={{
               background:tab===t?'#6366f1':'transparent',
               color:tab===t?'#fff':'#64748b',
               border:'none',borderRadius:'8px 8px 0 0',padding:'9px 22px',
-              fontWeight:700,cursor:'pointer',fontSize:13,textTransform:'capitalize',
-            }}>{t==='jobs'?'📋 My Jobs':t==='upload'?'📤 Upload Files':'🧾 Invoices'}</button>
+              fontWeight:700,cursor:'pointer',fontSize:13,
+            }}>{label}</button>
           ))}
         </div>
 
@@ -213,6 +225,124 @@ export default function ClientPortal() {
               </div>
             )}
           </div>
+        )}
+
+        {/* SUBMIT NEW JOB TAB */}
+        {tab === 'new_job' && (
+          <Card>
+            <h3 style={{margin:'0 0 6px',color:'#1e3a5f',fontSize:18,fontWeight:900}}>🆕 Submit a New BPO Job</h3>
+            <p style={{color:'#64748b',fontSize:13,margin:'0 0 24px'}}>
+              Tell us what you need done. We'll assign a specialist and deliver completed work to this portal.
+            </p>
+            {submitMsg && (
+              <div style={{background: submitMsg.startsWith('✅')?'rgba(16,185,129,0.1)':'rgba(239,68,68,0.1)', color: submitMsg.startsWith('✅')?'#10b981':'#ef4444', padding:'12px 16px', borderRadius:10, marginBottom:20, fontWeight:600, fontSize:14}}>
+                {submitMsg}
+              </div>
+            )}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px 24px',marginBottom:16}}>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:6}}>JOB TYPE *</label>
+                <select value={newJob.jobType} onChange={e=>setNewJob(j=>({...j,jobType:e.target.value}))}
+                  style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid #d1d5db',fontSize:14,background:'#f9fafb',boxSizing:'border-box'}}>
+                  <option value="">— Select the type of work needed —</option>
+                  {[['data_entry','📊 Data Entry & Capture'],['transcription','🎙️ Audio / Video Transcription'],['translation','🌐 Document Translation'],['document_processing','📄 Document Processing'],['invoice_processing','🧾 Invoice Processing'],['payroll','💰 Payroll Administration'],['medical_billing','🏥 Medical Billing & Records'],['legal','⚖️ Legal Document Processing'],['bookkeeping','📒 Bookkeeping & Accounts'],['content','✍️ Content Moderation / Writing'],['virtual_assistant','🤖 Virtual Assistant Tasks'],['other','📌 Other (describe below)']].map(([v,l])=>(
+                    <option key={v} value={v}>{l}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:6}}>JOB TITLE *</label>
+                <input type="text" placeholder="e.g. Transcribe 10 customer interviews" value={newJob.title} onChange={e=>setNewJob(j=>({...j,title:e.target.value}))}
+                  style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid #d1d5db',fontSize:14,boxSizing:'border-box'}}/>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:6}}>DESCRIPTION</label>
+                <textarea rows={3} placeholder="Brief overview of the job and expected output…" value={newJob.description} onChange={e=>setNewJob(j=>({...j,description:e.target.value}))}
+                  style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid #d1d5db',fontSize:13,resize:'vertical',boxSizing:'border-box'}}/>
+              </div>
+              <div style={{gridColumn:'1/-1'}}>
+                <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:6}}>INSTRUCTIONS FOR THE SPECIALIST</label>
+                <textarea rows={4} placeholder="Specific requirements, format, naming conventions, special instructions…" value={newJob.instructions} onChange={e=>setNewJob(j=>({...j,instructions:e.target.value}))}
+                  style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid #d1d5db',fontSize:13,resize:'vertical',boxSizing:'border-box'}}/>
+              </div>
+              <div>
+                <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:6}}>DEADLINE</label>
+                <input type="date" value={newJob.deadline} onChange={e=>setNewJob(j=>({...j,deadline:e.target.value}))}
+                  style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid #d1d5db',fontSize:14,boxSizing:'border-box'}}/>
+              </div>
+              <div>
+                <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:6}}>PRIORITY</label>
+                <select value={newJob.priority} onChange={e=>setNewJob(j=>({...j,priority:e.target.value}))}
+                  style={{width:'100%',padding:'10px 12px',borderRadius:8,border:'1px solid #d1d5db',fontSize:14,boxSizing:'border-box'}}>
+                  <option value="low">🟢 Low — flexible timeline</option>
+                  <option value="normal">🔵 Normal — standard turnaround</option>
+                  <option value="high">🟠 High — needed soon</option>
+                  <option value="urgent">🔴 Urgent — ASAP</option>
+                </select>
+              </div>
+            </div>
+            {/* File upload */}
+            <div style={{marginBottom:20}}>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#374151',marginBottom:6}}>SOURCE FILES (optional — up to 5 files, 10MB each)</label>
+              <div style={{border:'2px dashed #c7d2fe',borderRadius:10,padding:'20px',textAlign:'center',background:'#f8fafc',cursor:'pointer'}}
+                onClick={()=>jobFileRef.current?.click()}>
+                <input ref={jobFileRef} type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.mp3,.mp4,.wav,.zip,.rar,.png,.jpg,.jpeg" hidden
+                  onChange={e=>setJobFiles(Array.from(e.target.files))}/>
+                <div style={{fontSize:28,marginBottom:6}}>📎</div>
+                {jobFiles.length > 0 ? (
+                  <div>{jobFiles.map((f,i)=>(
+                    <div key={i} style={{fontSize:13,color:'#374151',fontWeight:600}}>📄 {f.name} ({(f.size/1024).toFixed(0)} KB)</div>
+                  ))}</div>
+                ) : (
+                  <div style={{fontSize:13,color:'#94a3b8'}}>Click to attach source files (documents, audio, spreadsheets…)</div>
+                )}
+              </div>
+            </div>
+            <button disabled={submitting||!newJob.jobType||!newJob.title.trim()} onClick={async()=>{
+              setSubmitting(true); setSubmitMsg('');
+              try {
+                const fd = new FormData();
+                fd.append('clientToken', token);
+                fd.append('clientName', data?.client?.name || '');
+                fd.append('clientEmail', data?.client?.email || '');
+                fd.append('jobType', newJob.jobType);
+                fd.append('title', newJob.title);
+                fd.append('description', newJob.description);
+                fd.append('instructions', newJob.instructions);
+                fd.append('deadline', newJob.deadline);
+                fd.append('priority', newJob.priority);
+                jobFiles.forEach(f=>fd.append('files',f));
+                const r = await fetch(`${API}/api/bpo-jobs`,{method:'POST',body:fd});
+                const d = await r.json();
+                if(!r.ok) throw new Error(d.error);
+                setSubmitMsg('✅ Job submitted! We\'ll assign a specialist and notify you when work begins.');
+                setNewJob({jobType:'',title:'',description:'',instructions:'',deadline:'',priority:'normal'});
+                setJobFiles([]);
+                if(jobFileRef.current) jobFileRef.current.value='';
+                fetch(`${API}/api/bpo-jobs/client/${token}`).then(r=>r.json()).then(d=>setBpoJobs(d.jobs||[])).catch(()=>{});
+              } catch(e){ setSubmitMsg(`❌ ${e.message}`); }
+              setSubmitting(false);
+            }} style={{width:'100%',background:submitting||!newJob.jobType||!newJob.title.trim()?'#94a3b8':'#6366f1',color:'#fff',border:'none',borderRadius:10,padding:'13px',fontSize:15,fontWeight:800,cursor:submitting||!newJob.jobType||!newJob.title.trim()?'not-allowed':'pointer'}}>
+              {submitting?'⏳ Submitting…':'🚀 Submit Job Request'}
+            </button>
+            {/* Show existing BPO jobs below the form */}
+            {bpoJobs.length > 0 && (
+              <div style={{marginTop:28}}>
+                <h4 style={{margin:'0 0 14px',color:'#1e3a5f',fontWeight:800}}>Your Active BPO Jobs</h4>
+                {bpoJobs.map(j=>(
+                  <div key={j.id} style={{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:10,padding:'14px 16px',marginBottom:10,display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:8}}>
+                    <div>
+                      <div style={{fontWeight:700,color:'#1e3a5f',fontSize:14}}>#{j.id} — {j.title}</div>
+                      <div style={{fontSize:12,color:'#64748b',marginTop:3}}>
+                        {j.job_type?.replace(/_/g,' ')} · {j.deadline ? `Due ${new Date(j.deadline).toLocaleDateString('en-ZA')}` : 'No deadline'}
+                      </div>
+                    </div>
+                    <StatusBadge status={j.status}/>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         )}
 
         {/* UPLOAD TAB */}
