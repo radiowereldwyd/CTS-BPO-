@@ -1354,6 +1354,26 @@ app.post('/api/targeted-scrape/suggest-keywords', requireAuth, async (req, res) 
   res.json({ keywords, queryHint, terms: chosen });
 });
 
+// POST /api/price-negotiator/send — send a competitive pricing proposal email
+app.post('/api/price-negotiator/send', requireAuth, async (req, res) => {
+  try {
+    const { to, name, subject, body } = req.body;
+    if (!to || !body) return res.status(400).json({ error: 'Missing to or body' });
+
+    const { sendEmail } = require('./modules/email-outreach');
+    const html = `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.65;font-size:14px;max-width:680px;">${body}</pre>`;
+    await sendEmail({ to, subject: subject || 'CTS BPO Pricing Proposal', text: body, html });
+
+    // Log to activity
+    try { await db.query(`INSERT INTO ai_activity_log (action, details, created_at) VALUES ($1,$2,NOW())`, ['price_proposal_sent', `Proposal emailed to ${to} (${name || 'client'})`]); } catch(_){}
+
+    res.json({ success: true, message: `Proposal sent to ${to}` });
+  } catch (err) {
+    console.error('[PRICE NEGOTIATOR SEND]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/targeted-scrape/start — kick off a new targeted scrape session
 app.post('/api/targeted-scrape/start', requireAuth, requireAdmin, async (req, res) => {
   try {
