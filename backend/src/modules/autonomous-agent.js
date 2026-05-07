@@ -1631,12 +1631,13 @@ async function cleanupExistingContacts() {
 }
 
 async function startAgent() {
+  // Mark running IMMEDIATELY so the dashboard shows ONLINE during DB setup
+  agentState.running = true;
+  agentState.startedAt = new Date().toISOString();
   await ensureTables();
   // Ensure scraped_contacts has new intelligence columns (mx_verified, prospect_score)
   // Must run BEFORE any crons or queries reference these columns
   await webScraper.ensureTable().catch(e => console.warn('[AGENT] webScraper.ensureTable():', e.message));
-  agentState.running = true;
-  agentState.startedAt = new Date().toISOString();
 
   // Ensure email analytics tables exist (non-blocking)
   emailAnalytics.ensureTables().catch(e => console.warn('[ANALYTICS] Table init error:', e.message));
