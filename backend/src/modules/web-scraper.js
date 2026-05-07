@@ -1038,8 +1038,12 @@ async function runTargetedScrape({ country, industry, keywords, limit = 100, ses
       if (keywordKw) {
         attempts.push({ label: 'keyword-only', q: `WHERE (LOWER(company) LIKE $2 OR LOWER(domain) LIKE $2 OR LOWER(COALESCE(snippet,'')) LIKE $2) ${nb}`, p: [sourceTag, keywordKw] });
       }
-      // Attempt 6: broadest — any uncontacted contact ordered by score
-      attempts.push({ label: 'any-new', q: `WHERE status = 'new'`, p: [sourceTag] });
+      // Attempt 6: keyword in query_used column (catches SerpAPI/DDG query terms)
+      if (keywordKw) {
+        attempts.push({ label: 'query-used', q: `WHERE LOWER(COALESCE(query_used,'')) LIKE $2 ${nb}`, p: [sourceTag, keywordKw] });
+      }
+      // Attempt 7: broadest — any non-bounced contact ordered by score (last resort)
+      attempts.push({ label: 'any-non-bounced', q: `WHERE status != 'bounced'`, p: [sourceTag] });
 
       let dbFound = 0;
       for (const attempt of attempts) {

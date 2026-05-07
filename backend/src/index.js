@@ -1301,11 +1301,60 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
     const session = webScraper.getTargetedSession();
     let contacts = [];
 
-    // Session always takes priority — show contacts from the current/last scrape session
-    // Only fall back to global DB search if there is no session at all.
+    // Helper: global DB search with progressive broadening (used both for no-session and fallback)
+    async function globalDbSearch(kw, country, industry) {
+      // Try progressively broader queries until we get results
+      const searches = [];
+
+      // Build layered attempts from strict → broad
+      if (kw) {
+        const like = `%${kw.toLowerCase()}%`;
+        const kwCond = `(LOWER(company) LIKE $IDX OR LOWER(email) LIKE $IDX OR LOWER(domain) LIKE $IDX` +
+          ` OR LOWER(business_type) LIKE $IDX OR LOWER(COALESCE(snippet,'')) LIKE $IDX OR LOWER(COALESCE(query_used,'')) LIKE $IDX)`;
+
+        if (country && industry) {
+          searches.push({ label: 'kw+country+industry', conds: [kwCond, `LOWER(country) LIKE $IDX`, `LOWER(business_type) LIKE $IDX`], vals: [like, like, like, like, like, like, `%${country.toLowerCase()}%`, `%${industry.toLowerCase()}%`] });
+          searches.push({ label: 'kw+country', conds: [kwCond, `LOWER(country) LIKE $IDX`], vals: [like, like, like, like, like, like, `%${country.toLowerCase()}%`] });
+          searches.push({ label: 'kw+industry', conds: [kwCond, `LOWER(business_type) LIKE $IDX`], vals: [like, like, like, like, like, like, `%${industry.toLowerCase()}%`] });
+        } else if (country) {
+          searches.push({ label: 'kw+country', conds: [kwCond, `LOWER(country) LIKE $IDX`], vals: [like, like, like, like, like, like, `%${country.toLowerCase()}%`] });
+        } else if (industry) {
+          searches.push({ label: 'kw+industry', conds: [kwCond, `LOWER(business_type) LIKE $IDX`], vals: [like, like, like, like, like, like, `%${industry.toLowerCase()}%`] });
+        }
+        searches.push({ label: 'kw-only', conds: [kwCond], vals: [like, like, like, like, like, like] });
+      }
+
+      if (country && industry) {
+        searches.push({ label: 'country+industry', conds: [`LOWER(country) LIKE $IDX`, `LOWER(business_type) LIKE $IDX`], vals: [`%${country.toLowerCase()}%`, `%${industry.toLowerCase()}%`] });
+      }
+      if (industry) {
+        searches.push({ label: 'industry-only', conds: [`LOWER(business_type) LIKE $IDX`], vals: [`%${industry.toLowerCase()}%`] });
+      }
+      if (country) {
+        searches.push({ label: 'country-only', conds: [`LOWER(country) LIKE $IDX`], vals: [`%${country.toLowerCase()}%`] });
+      }
+      // Last resort: any non-bounced contact
+      searches.push({ label: 'any-non-bounced', conds: [`status != 'bounced'`], vals: [] });
+
+      for (const s of searches) {
+        // Reindex $IDX placeholders sequentially
+        let idx = 1;
+        const conds = s.conds.map(c => c.replace(/\$IDX/g, () => `$${idx++}`));
+        const where = `WHERE ${conds.join(' AND ')}`;
+        const result = await db.query(
+          `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, bpo_likely, bpo_provider, created_at
+           FROM scraped_contacts ${where} AND status != 'bounced'
+           ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`,
+          s.vals
+        );
+        if (result.rows.length > 0) return result.rows;
+      }
+      return [];
+    }
+
+    // Session takes priority — show contacts from the current/last scrape session
     if (session.sessionId) {
       const sourceTag = `targeted_${session.sessionId}`;
-      // Allow keyword sub-filter within the session (explicit query param only — never from session metadata)
       const kw = req.query.keywords || null;
       let q = `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, bpo_likely, bpo_provider, created_at
                FROM scraped_contacts WHERE source = $1`;
@@ -1317,48 +1366,23 @@ app.get('/api/targeted-scrape/status', requireAuth, async (req, res) => {
       }
       q += ` ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`;
       contacts = (await db.query(q, params)).rows;
+
+      // If session exists but is empty (scrapers hit rate limits, DB fallback also missed),
+      // do a broader global search so the user always gets results
+      if (contacts.length === 0 && !session.active) {
+        const kw       = req.query.keywords || null;
+        const country  = req.query.country  || null;
+        const industry = req.query.industry || null;
+        contacts = await globalDbSearch(kw, country, industry);
+      }
     } else {
-      // No session — pure DB search using EXPLICIT query params only (no session metadata bleed)
+      // No session — pure DB search
       const kw       = req.query.keywords || null;
       const country  = req.query.country  || null;
       const industry = req.query.industry || null;
 
       if (kw || country || industry) {
-        const conditions = [];
-        const params     = [];
-        let idx = 1;
-
-        if (kw) {
-          const like = `%${kw.toLowerCase()}%`;
-          conditions.push(
-            `(LOWER(company) LIKE $${idx} OR LOWER(email) LIKE $${idx+1}` +
-            ` OR LOWER(domain) LIKE $${idx+2} OR LOWER(business_type) LIKE $${idx+3}` +
-            ` OR LOWER(COALESCE(snippet,'')) LIKE $${idx+4}` +
-            ` OR LOWER(COALESCE(query_used,'')) LIKE $${idx+5})`
-          );
-          params.push(like, like, like, like, like, like);
-          idx += 6;
-        }
-        if (country) {
-          // STRICT: only records where country actually matches — don't include null-country records
-          conditions.push(`LOWER(country) LIKE $${idx}`);
-          params.push(`%${country.toLowerCase()}%`);
-          idx++;
-        }
-        if (industry) {
-          // STRICT: only records where business_type actually matches
-          conditions.push(`LOWER(business_type) LIKE $${idx}`);
-          params.push(`%${industry.toLowerCase()}%`);
-          idx++;
-        }
-
-        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-        const result = await db.query(
-          `SELECT id, company, domain, email, business_type, city, country, source, status, snippet, bpo_likely, bpo_provider, created_at
-           FROM scraped_contacts ${where} ORDER BY prospect_score DESC NULLS LAST, created_at DESC LIMIT 500`,
-          params
-        );
-        contacts = result.rows;
+        contacts = await globalDbSearch(kw, country, industry);
       }
     }
 
