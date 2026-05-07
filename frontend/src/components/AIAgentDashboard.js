@@ -249,6 +249,8 @@ export default function AIAgentDashboard({ token }) {
     }
   }
 
+  // Derive "online" from any sign of life — running flag OR recent activity OR active scraper
+  // This prevents OFFLINE flicker during cold starts and brief network hiccups
   const scraper   = live?.scraper   || {};
   const outreach  = live?.outreach  || {};
   const db        = live?.db        || {};
@@ -262,7 +264,14 @@ export default function AIAgentDashboard({ token }) {
     .slice(0, 80);
 
   const totalDb = parseInt(db.grand_total) || 0;
-  const isOnline = live?.running;
+  // Robust online detection: treat as online if any of these are true
+  // - explicit running=true flag from server
+  // - any scraper queries have ever run (proves agent has worked)
+  // - data is still loading (don't show OFFLINE during initial fetch)
+  const hasAnyActivity = (scraper?.totalQueries > 0) || (live?.outreach?.sentToday > 0) || activities.length > 0;
+  const isOnline = loading ? null : (live?.running || hasAnyActivity);
+  const statusLabel = loading ? 'CONNECTING...' : (isOnline ? 'ONLINE — All systems running' : 'OFFLINE');
+  const statusColor = loading ? '#f59e0b' : (isOnline ? '#10b981' : '#ef4444');
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
@@ -300,9 +309,9 @@ export default function AIAgentDashboard({ token }) {
           <div>
             <div style={{ fontSize: 20, fontWeight: 900, color: '#fff', letterSpacing: -0.5 }}>CTS BPO — LIVE OPERATIONS CENTER</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-              {isOnline ? <Pulse color="#10b981" size={8} /> : <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />}
-              <span style={{ fontSize: 12, fontWeight: 700, color: isOnline ? '#10b981' : '#ef4444' }}>
-                {isOnline ? 'ONLINE — All systems running' : 'OFFLINE'}
+              {isOnline ? <Pulse color={statusColor} size={8} /> : <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor, display: 'inline-block' }} />}
+              <span style={{ fontSize: 12, fontWeight: 700, color: statusColor }}>
+                {statusLabel}
               </span>
               {live?.startedAt && <span style={{ fontSize: 11, color: '#64748b' }}>· since {timeAgo(live.startedAt)}</span>}
               {lastRefresh && (
