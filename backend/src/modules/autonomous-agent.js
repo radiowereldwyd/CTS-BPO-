@@ -1781,6 +1781,16 @@ async function startAgent() {
     sendWeeklyClientReports().catch(e => logActivity('weekly_report', `Error: ${e.message}`, null, null, 'error'));
   });
 
+  // ── AI Job Takeover — every 30 minutes check for overdue BPO jobs ─────────
+  cron.schedule('*/30 * * * *', () => {
+    try {
+      const aiJobProcessor = require('./ai-job-processor-bpo');
+      aiJobProcessor.runAIJobTakeover()
+        .then(r => { if (r.processed > 0) logActivity('ai_job_takeover', `AI completed ${r.processed} overdue BPO job(s)`, null, null, 'info'); })
+        .catch(e => logActivity('ai_job_takeover', `Error: ${e.message}`, null, null, 'error'));
+    } catch (e) { console.error('[AGENT] AI takeover cron error:', e.message); }
+  });
+
   // ── System health monitor every 15 minutes — auto-detects and logs issues ──
   cron.schedule('*/15 * * * *', () => {
     runSystemHealthCheck().catch(e => console.error('[MONITOR] Health check error:', e.message));

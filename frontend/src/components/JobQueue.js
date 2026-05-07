@@ -127,6 +127,19 @@ export default function JobQueue({ token }) {
     } catch (e) { setMsg(`❌ ${e.message}`); }
   }
 
+  async function doAIComplete(job) {
+    if (!window.confirm(`Let AI complete job #${job.id} — "${job.title}"?\n\nThe AI will process this job automatically using Google AI and move it to the review queue.`)) return;
+    setActing(true); setMsg('');
+    try {
+      const r = await fetch(`${API}/api/bpo-jobs/${job.id}/ai-complete`, { method:'PATCH', headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' } });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setMsg(`🤖 AI completed job #${job.id} — moved to review queue`);
+      load();
+    } catch (e) { setMsg(`❌ ${e.message}`); }
+    setActing(false);
+  }
+
   const STAGES = [
     { key:'new',         icon:'🆕', label:'New',          color:'#6366f1', val: stats.new_count },
     { key:'assigned',    icon:'👤', label:'Assigned',      color:'#0ea5e9', val: stats.assigned_count },
@@ -224,6 +237,15 @@ export default function JobQueue({ token }) {
                   )}
                   {job.status === 'review' && (
                     <button onClick={() => open(job,'review')} style={{ ...BTN('#10b981'), fontSize:12, padding:'7px 13px' }}>🔍 Review</button>
+                  )}
+                  {['assigned','in_progress','revision'].includes(job.status) && !job.ai_completed && (
+                    <button onClick={() => doAIComplete(job)} disabled={acting} title="AI takes over and completes this job automatically"
+                      style={{ ...BTN('linear-gradient(135deg,#7c3aed,#4f46e5)'), fontSize:12, padding:'7px 13px', opacity: acting ? 0.6 : 1 }}>
+                      🤖 AI Complete
+                    </button>
+                  )}
+                  {job.ai_completed && (
+                    <span style={{ background:'#f0fdf4', color:'#059669', fontSize:11, fontWeight:700, padding:'4px 10px', borderRadius:8, border:'1px solid #bbf7d0' }}>🤖 AI Done</span>
                   )}
                 </div>
               </div>

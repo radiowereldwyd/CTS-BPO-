@@ -1,7 +1,7 @@
 {
-  "sentToday": 665,
+  "sentToday": 696,
   "todayDate": "Thu May 07 2026",
-  "savedAt": "2026-05-07T08:49:27.246Z",
+  "savedAt": "2026-05-07T09:01:57.475Z",
   "provider": "brevo",
   "gmail": {
     "sentToday": 94,
@@ -20,7 +20,7 @@
     "todayDate": "Fri May 01 2026"
   },
   "brevo": {
-    "sentToday": 10,
+    "sentToday": 9,
     "todayDate": "Thu May 07 2026"
   }
 }

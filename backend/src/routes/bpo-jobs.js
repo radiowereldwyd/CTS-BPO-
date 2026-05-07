@@ -270,6 +270,17 @@ router.get('/:id/download/:type/:fileIndex', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+/* ── PATCH /:id/ai-complete — admin manually triggers AI to complete a job ── */
+router.patch('/:id/ai-complete', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const aiProcessor = require('../modules/ai-job-processor-bpo');
+    const result = await aiProcessor.aiCompleteJob(req.params.id);
+    await auditLogger.log('bpo.ai_manual', null, req.user?.id,
+      `Manual AI completion triggered for job #${req.params.id}`, null, 'info');
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // Ensure DB tables exist when module is loaded
 jobDelivery.ensureTables().catch(e => console.error('[BPO] Table setup error:', e.message));
 

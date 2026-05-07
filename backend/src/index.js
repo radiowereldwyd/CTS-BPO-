@@ -82,8 +82,11 @@ const subPortalRouter = require('./routes/subcontractor-portal');
 app.use('/api/sub', subPortalRouter);
 
 // BPO Job Delivery pipeline
-const bpoJobsRouter = require('./routes/bpo-jobs');
+const bpoJobsRouter   = require('./routes/bpo-jobs');
 app.use('/api/bpo-jobs', bpoJobsRouter);
+
+const callCentreRouter = require('./routes/call-centre');
+app.use('/api/call-centre', callCentreRouter);
 
 // ─── Protected routes (require JWT) ──────────────────────────────────────────
 
