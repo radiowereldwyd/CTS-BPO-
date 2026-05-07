@@ -915,18 +915,425 @@ async function scrapeBusinessDirectories() {
   return totalInserted;
 }
 
+// ── 9. Instagram Business Profiles ──────────────────────────────────────────
+const INSTAGRAM_QUERIES = [
+  'site:instagram.com "accounting firm" "South Africa" "email"',
+  'site:instagram.com "law firm" "South Africa" contact email',
+  'site:instagram.com "medical clinic" "South Africa" "email"',
+  'site:instagram.com "insurance" "South Africa" "contact" "email"',
+  'site:instagram.com "real estate" "South Africa" "email" contact',
+  'site:instagram.com "recruitment agency" UK "email" contact',
+  'site:instagram.com "financial services" UK "email"',
+  'site:instagram.com "dental" "South Africa" "contact" email',
+  'site:instagram.com "bookkeeping" company "email"',
+  'site:instagram.com "property management" "South Africa" "email"',
+  'site:instagram.com "HR consulting" company "email" contact',
+  'site:instagram.com "logistics" company "South Africa" "email"',
+  'site:instagram.com "IT services" company "South Africa" email',
+  'site:instagram.com "accounting" firm UK "email" "contact"',
+  'site:instagram.com "mortgage broker" UK "email" contact',
+];
+
+async function scrapeInstagramViaSearch() {
+  const IG_QUERIES_PER_RUN = parseInt(process.env.IG_QUERIES_PER_RUN || '8', 10);
+  const selected = pickRandom(INSTAGRAM_QUERIES, IG_QUERIES_PER_RUN);
+  let totalInserted = 0;
+  const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+  const SKIP = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'instagram.com', 'icloud.com']);
+
+  for (const q of selected) {
+    try {
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        timeout: 20000,
+      });
+
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+
+      $('.result').each((_, el) => {
+        const titleEl = $(el).find('.result__title a');
+        const snippet = $(el).find('.result__snippet').text().trim();
+        let link = titleEl.attr('href') || '';
+        if (link.includes('uddg=')) { try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {} }
+        const title = titleEl.text().trim();
+
+        // Emails in snippet
+        const emails = (snippet.match(EMAIL_RE) || []).filter(e => !SKIP.has(e.split('@')[1]));
+        for (const email of emails) {
+          contacts.push({ company: title, website: link, domain: email.split('@')[1], email, source: 'instagram_search', query: q, snippet: snippet || null });
+        }
+
+        // Website URL in snippet (linktree, bio links, etc.)
+        const urlMatch = (snippet.match(/https?:\/\/(?!instagram)[^\s,)]+/g) || []).find(u => u.length > 10);
+        if (emails.length === 0 && urlMatch) {
+          const domain = extractDomain(urlMatch);
+          if (domain && !SKIP.has(domain)) {
+            for (const email of buildEmailVariants(domain)) {
+              contacts.push({ company: title, website: urlMatch, domain, email, source: 'instagram_search', query: q, snippet: snippet || null });
+            }
+          }
+        }
+      });
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      console.log(`📸 [SCRAPER] Instagram search "${q.slice(0, 50)}..." → ${inserted} new contacts`);
+    } catch (err) {
+      if (err.response?.status === 429 || err.response?.status === 403) { console.warn('⚠️  [SCRAPER] Instagram search rate-limited'); break; }
+      console.error(`❌ [SCRAPER] Instagram search error:`, err.message);
+    }
+    await sleep(SCRAPE_DELAY_MS * 3);
+  }
+  return totalInserted;
+}
+
+// ── 10. TikTok Business Profiles ─────────────────────────────────────────────
+const TIKTOK_QUERIES = [
+  'site:tiktok.com "accounting firm" "South Africa" "email" OR "contact"',
+  'site:tiktok.com "law firm" "South Africa" contact email',
+  'site:tiktok.com "medical" "South Africa" "email" contact',
+  'site:tiktok.com "insurance" "South Africa" "email"',
+  'site:tiktok.com "real estate" "South Africa" "email"',
+  'site:tiktok.com "recruitment" agency UK "email"',
+  'site:tiktok.com "financial services" UK "email" contact',
+  'site:tiktok.com "dental" "South Africa" "contact" email',
+  'site:tiktok.com "bookkeeping" "email" contact',
+  'site:tiktok.com "property management" "email" contact',
+  'site:tiktok.com "HR" company "South Africa" email',
+  'site:tiktok.com "logistics" company "email" contact',
+  'site:tiktok.com "IT services" "South Africa" email',
+];
+
+async function scrapeTikTokViaSearch() {
+  const TT_QUERIES_PER_RUN = parseInt(process.env.TT_QUERIES_PER_RUN || '7', 10);
+  const selected = pickRandom(TIKTOK_QUERIES, TT_QUERIES_PER_RUN);
+  let totalInserted = 0;
+  const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+  const SKIP = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'tiktok.com', 'icloud.com']);
+
+  for (const q of selected) {
+    try {
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        timeout: 20000,
+      });
+
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+
+      $('.result').each((_, el) => {
+        const titleEl = $(el).find('.result__title a');
+        const snippet = $(el).find('.result__snippet').text().trim();
+        let link = titleEl.attr('href') || '';
+        if (link.includes('uddg=')) { try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {} }
+        const title = titleEl.text().trim();
+
+        const emails = (snippet.match(EMAIL_RE) || []).filter(e => !SKIP.has(e.split('@')[1]));
+        for (const email of emails) {
+          contacts.push({ company: title, website: link, domain: email.split('@')[1], email, source: 'tiktok_search', query: q, snippet: snippet || null });
+        }
+
+        const urlMatch = (snippet.match(/https?:\/\/(?!tiktok)[^\s,)]+/g) || []).find(u => u.length > 10);
+        if (emails.length === 0 && urlMatch) {
+          const domain = extractDomain(urlMatch);
+          if (domain && !SKIP.has(domain)) {
+            for (const email of buildEmailVariants(domain)) {
+              contacts.push({ company: title, website: urlMatch, domain, email, source: 'tiktok_search', query: q, snippet: snippet || null });
+            }
+          }
+        }
+      });
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      console.log(`🎵 [SCRAPER] TikTok search "${q.slice(0, 50)}..." → ${inserted} new contacts`);
+    } catch (err) {
+      if (err.response?.status === 429 || err.response?.status === 403) { console.warn('⚠️  [SCRAPER] TikTok search rate-limited'); break; }
+      console.error(`❌ [SCRAPER] TikTok search error:`, err.message);
+    }
+    await sleep(SCRAPE_DELAY_MS * 3);
+  }
+  return totalInserted;
+}
+
+// ── 11. LinkedIn Company Pages ────────────────────────────────────────────────
+// Search LinkedIn company pages via DDG — extract website from snippet/description
+const LINKEDIN_QUERIES = [
+  'site:linkedin.com/company "accounting firm" "South Africa" -jobs',
+  'site:linkedin.com/company "law firm" "South Africa" -jobs',
+  'site:linkedin.com/company "medical clinic" "South Africa" -jobs',
+  'site:linkedin.com/company "insurance" "South Africa" -jobs',
+  'site:linkedin.com/company "real estate" "South Africa" -jobs',
+  'site:linkedin.com/company "recruitment agency" UK -jobs',
+  'site:linkedin.com/company "financial services" UK -jobs',
+  'site:linkedin.com/company "IT services" "South Africa" -jobs',
+  'site:linkedin.com/company "logistics" "South Africa" -jobs',
+  'site:linkedin.com/company "dental" "South Africa" -jobs',
+  'site:linkedin.com/company "bookkeeping" "South Africa" -jobs',
+  'site:linkedin.com/company "HR consulting" "South Africa" -jobs',
+  'site:linkedin.com/company "property management" "South Africa" -jobs',
+  'site:linkedin.com/company "accounting" UK -jobs',
+  'site:linkedin.com/company "mortgage broker" UK -jobs',
+  'site:linkedin.com/company "pharmaceutical" "South Africa" -jobs',
+  'site:linkedin.com/company "management consulting" "South Africa" -jobs',
+];
+
+async function scrapeLinkedInViaSearch() {
+  const LI_QUERIES_PER_RUN = parseInt(process.env.LI_QUERIES_PER_RUN || '8', 10);
+  const selected = pickRandom(LINKEDIN_QUERIES, LI_QUERIES_PER_RUN);
+  let totalInserted = 0;
+  // LinkedIn snippets sometimes contain website URLs or company domains
+  const URL_RE = /https?:\/\/(?!linkedin|lnkd\.in)[^\s,)>]+/g;
+  const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+  const SKIP = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'linkedin.com', 'lnkd.in']);
+
+  for (const q of selected) {
+    try {
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        timeout: 20000,
+      });
+
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+
+      $('.result').each((_, el) => {
+        const titleEl = $(el).find('.result__title a');
+        const snippet = $(el).find('.result__snippet').text().trim();
+        let link = titleEl.attr('href') || '';
+        if (link.includes('uddg=')) { try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {} }
+        const title = titleEl.text().trim();
+
+        // Emails directly in snippet
+        const emails = (snippet.match(EMAIL_RE) || []).filter(e => !SKIP.has(e.split('@')[1]));
+        for (const email of emails) {
+          contacts.push({ company: title, website: link, domain: email.split('@')[1], email, source: 'linkedin_search', query: q, snippet: snippet || null });
+        }
+
+        // Extract any website URLs mentioned in the LinkedIn snippet/description
+        const urls = (snippet.match(URL_RE) || []).filter(u => u.length > 12);
+        if (emails.length === 0) {
+          for (const url of urls.slice(0, 2)) {
+            const domain = extractDomain(url);
+            if (!domain || SKIP.has(domain)) continue;
+            for (const email of buildEmailVariants(domain)) {
+              contacts.push({ company: title, website: url, domain, email, source: 'linkedin_search', query: q, snippet: snippet || null });
+            }
+          }
+        }
+
+        // If nothing found but we have a company name, try to guess domain from title
+        if (emails.length === 0 && urls.length === 0 && title) {
+          const guessed = title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 30);
+          if (guessed.length > 4) {
+            for (const tld of ['.com', '.co.za', '.co.uk']) {
+              const domain = guessed + tld;
+              for (const email of buildEmailVariants(domain)) {
+                contacts.push({ company: title, website: null, domain, email, source: 'linkedin_search', query: q, snippet: snippet || null });
+              }
+            }
+          }
+        }
+      });
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      console.log(`💼 [SCRAPER] LinkedIn search "${q.slice(0, 50)}..." → ${inserted} new contacts`);
+    } catch (err) {
+      if (err.response?.status === 429 || err.response?.status === 403) { console.warn('⚠️  [SCRAPER] LinkedIn search rate-limited'); break; }
+      console.error(`❌ [SCRAPER] LinkedIn search error:`, err.message);
+    }
+    await sleep(SCRAPE_DELAY_MS * 3);
+  }
+  return totalInserted;
+}
+
+// ── 12. Twitter / X Business Accounts ────────────────────────────────────────
+const TWITTER_QUERIES = [
+  'site:twitter.com "accounting firm" "South Africa" "email" OR "contact"',
+  'site:x.com "accounting firm" "South Africa" email contact',
+  'site:twitter.com "law firm" "South Africa" email contact',
+  'site:twitter.com "medical clinic" "South Africa" email',
+  'site:twitter.com "insurance" "South Africa" "email"',
+  'site:twitter.com "real estate agency" "South Africa" email',
+  'site:twitter.com "recruitment agency" UK email contact',
+  'site:twitter.com "financial services" UK email',
+  'site:twitter.com "IT services" "South Africa" email contact',
+  'site:twitter.com "logistics" company "South Africa" email',
+  'site:twitter.com "bookkeeping" company "email" contact',
+  'site:twitter.com "HR consulting" "South Africa" email',
+];
+
+async function scrapeTwitterViaSearch() {
+  const TW_QUERIES_PER_RUN = parseInt(process.env.TW_QUERIES_PER_RUN || '7', 10);
+  const selected = pickRandom(TWITTER_QUERIES, TW_QUERIES_PER_RUN);
+  let totalInserted = 0;
+  const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+  const SKIP = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'twitter.com', 'x.com', 't.co', 'icloud.com']);
+
+  for (const q of selected) {
+    try {
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        timeout: 20000,
+      });
+
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+
+      $('.result').each((_, el) => {
+        const titleEl = $(el).find('.result__title a');
+        const snippet = $(el).find('.result__snippet').text().trim();
+        let link = titleEl.attr('href') || '';
+        if (link.includes('uddg=')) { try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {} }
+        const title = titleEl.text().trim();
+
+        const emails = (snippet.match(EMAIL_RE) || []).filter(e => !SKIP.has(e.split('@')[1]));
+        for (const email of emails) {
+          contacts.push({ company: title, website: link, domain: email.split('@')[1], email, source: 'twitter_search', query: q, snippet: snippet || null });
+        }
+
+        // Twitter/X bios often contain website URLs
+        const urlMatch = (snippet.match(/https?:\/\/(?!twitter|t\.co|x\.com)[^\s,)]+/g) || []).find(u => u.length > 10);
+        if (emails.length === 0 && urlMatch) {
+          const domain = extractDomain(urlMatch);
+          if (domain && !SKIP.has(domain)) {
+            for (const email of buildEmailVariants(domain)) {
+              contacts.push({ company: title, website: urlMatch, domain, email, source: 'twitter_search', query: q, snippet: snippet || null });
+            }
+          }
+        }
+      });
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      console.log(`🐦 [SCRAPER] Twitter/X search "${q.slice(0, 50)}..." → ${inserted} new contacts`);
+    } catch (err) {
+      if (err.response?.status === 429 || err.response?.status === 403) { console.warn('⚠️  [SCRAPER] Twitter search rate-limited'); break; }
+      console.error(`❌ [SCRAPER] Twitter search error:`, err.message);
+    }
+    await sleep(SCRAPE_DELAY_MS * 3);
+  }
+  return totalInserted;
+}
+
+// ── 13. Trustpilot Business Directory ────────────────────────────────────────
+const TRUSTPILOT_TARGETS = [
+  { url: 'https://www.trustpilot.com/categories/accountant',          source: 'trustpilot', label: 'Trustpilot Accountants'    },
+  { url: 'https://www.trustpilot.com/categories/legal_services',      source: 'trustpilot', label: 'Trustpilot Legal'          },
+  { url: 'https://www.trustpilot.com/categories/hr',                  source: 'trustpilot', label: 'Trustpilot HR'             },
+  { url: 'https://www.trustpilot.com/categories/insurance_agency',    source: 'trustpilot', label: 'Trustpilot Insurance'      },
+  { url: 'https://www.trustpilot.com/categories/financial_services',  source: 'trustpilot', label: 'Trustpilot Finance'        },
+  { url: 'https://www.trustpilot.com/categories/it_services',         source: 'trustpilot', label: 'Trustpilot IT'             },
+  { url: 'https://www.trustpilot.com/categories/real_estate_agency',  source: 'trustpilot', label: 'Trustpilot Real Estate'    },
+  { url: 'https://www.trustpilot.com/categories/logistics_service',   source: 'trustpilot', label: 'Trustpilot Logistics'      },
+  { url: 'https://www.trustpilot.com/categories/staffing_agency',     source: 'trustpilot', label: 'Trustpilot Staffing'       },
+  { url: 'https://www.trustpilot.com/categories/medical_clinic',      source: 'trustpilot', label: 'Trustpilot Medical'        },
+  { url: 'https://www.trustpilot.com/categories/bookkeeper',          source: 'trustpilot', label: 'Trustpilot Bookkeeping'    },
+  { url: 'https://www.trustpilot.com/categories/payroll_service',     source: 'trustpilot', label: 'Trustpilot Payroll'        },
+];
+
+async function scrapeTrustpilot() {
+  const TP_PAGES_PER_RUN = parseInt(process.env.TP_PAGES_PER_RUN || '4', 10);
+  const selected = pickRandom(TRUSTPILOT_TARGETS, TP_PAGES_PER_RUN);
+  let totalInserted = 0;
+
+  for (const target of selected) {
+    try {
+      const res = await axios.get(target.url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 25000,
+      });
+
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+      const seen = new Set();
+
+      // Trustpilot business cards have links to their profile pages
+      // and often embed the business website URL
+      $('a[href]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const text = $(el).text().trim();
+        if (!href.startsWith('http')) return;
+        const domain = extractDomain(href);
+        if (!domain || domain.includes('trustpilot') || domain.includes('google') || domain.includes('linkedin') || domain.includes('facebook')) return;
+        if (seen.has(domain)) return;
+        seen.add(domain);
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({ company: text || domain, website: href, domain, email, source: 'trustpilot', query: target.url, snippet: `Listed on ${target.label}` });
+        }
+      });
+
+      // Also grab any data-business-unit or data-website attributes
+      $('[data-business-website-url], [href*="//"]').each((_, el) => {
+        const siteUrl = $(el).attr('data-business-website-url') || '';
+        if (!siteUrl.startsWith('http')) return;
+        const domain = extractDomain(siteUrl);
+        if (!domain || seen.has(domain) || domain.includes('trustpilot')) return;
+        seen.add(domain);
+        const company = $(el).attr('data-business-display-name') || $(el).text().trim() || domain;
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({ company, website: siteUrl, domain, email, source: 'trustpilot', query: target.url, snippet: `Listed on ${target.label}` });
+        }
+      });
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      console.log(`⭐ [SCRAPER] Trustpilot ${target.label} → ${contacts.length} candidates, ${inserted} new contacts`);
+    } catch (err) {
+      if (err.response?.status === 429 || err.response?.status === 403 || err.response?.status === 451) {
+        console.warn(`⚠️  [SCRAPER] Trustpilot blocked — skipping ${target.label}`);
+        continue;
+      }
+      console.error(`❌ [SCRAPER] Trustpilot ${target.label} error:`, err.message);
+    }
+    await sleep(SCRAPE_DELAY_MS * 4);
+  }
+  return totalInserted;
+}
+
 async function runAllScrapers() {
-  console.log('🕷️  [SCRAPER] Starting multi-source scrape run (8 sources)...');
+  console.log('🕷️  [SCRAPER] Starting multi-source scrape run (13 sources)...');
   let total = 0;
 
-  try { total += await scrapeGooglePlaces(); }       catch (e) { console.error('[SCRAPER] Places failed:', e.message); }
-  try { total += await scrapeGoogleCSE(); }           catch (e) { console.error('[SCRAPER] CSE failed:', e.message); }
-  try { total += await scrapeDuckDuckGo(); }          catch (e) { console.error('[SCRAPER] DDG failed:', e.message); }
-  try { total += await scrapeViaSerpAPI(); }          catch (e) { console.error('[SCRAPER] SerpAPI BPO failed:', e.message); }
-  try { total += await scrapeBing(); }                catch (e) { console.error('[SCRAPER] Bing failed:', e.message); }
-  try { total += await scrapeYouTube(); }             catch (e) { console.error('[SCRAPER] YouTube failed:', e.message); }
-  try { total += await scrapeFacebookViaSearch(); }   catch (e) { console.error('[SCRAPER] Facebook search failed:', e.message); }
-  try { total += await scrapeBusinessDirectories(); } catch (e) { console.error('[SCRAPER] Directories failed:', e.message); }
+  try { total += await scrapeGooglePlaces(); }        catch (e) { console.error('[SCRAPER] Places failed:', e.message); }
+  try { total += await scrapeGoogleCSE(); }            catch (e) { console.error('[SCRAPER] CSE failed:', e.message); }
+  try { total += await scrapeDuckDuckGo(); }           catch (e) { console.error('[SCRAPER] DDG failed:', e.message); }
+  try { total += await scrapeViaSerpAPI(); }           catch (e) { console.error('[SCRAPER] SerpAPI BPO failed:', e.message); }
+  try { total += await scrapeBing(); }                 catch (e) { console.error('[SCRAPER] Bing failed:', e.message); }
+  try { total += await scrapeYouTube(); }              catch (e) { console.error('[SCRAPER] YouTube failed:', e.message); }
+  try { total += await scrapeFacebookViaSearch(); }    catch (e) { console.error('[SCRAPER] Facebook search failed:', e.message); }
+  try { total += await scrapeBusinessDirectories(); }  catch (e) { console.error('[SCRAPER] Directories failed:', e.message); }
+  try { total += await scrapeInstagramViaSearch(); }   catch (e) { console.error('[SCRAPER] Instagram failed:', e.message); }
+  try { total += await scrapeTikTokViaSearch(); }      catch (e) { console.error('[SCRAPER] TikTok failed:', e.message); }
+  try { total += await scrapeLinkedInViaSearch(); }    catch (e) { console.error('[SCRAPER] LinkedIn failed:', e.message); }
+  try { total += await scrapeTwitterViaSearch(); }     catch (e) { console.error('[SCRAPER] Twitter/X failed:', e.message); }
+  try { total += await scrapeTrustpilot(); }           catch (e) { console.error('[SCRAPER] Trustpilot failed:', e.message); }
 
   console.log(`✅ [SCRAPER] Run complete — ${total} new contacts stored in scraped_contacts`);
   return total;
@@ -957,6 +1364,16 @@ function buildAllPairs() {
   for (const q of FACEBOOK_QUERIES)   pairs.push({ source: 'facebook_search',  query: q });
   // Business directories (each URL is a pair)
   for (const t of DIRECTORY_TARGETS)  pairs.push({ source: t.source, query: t.url, url: t.url, label: t.label });
+  // Instagram
+  for (const q of INSTAGRAM_QUERIES)  pairs.push({ source: 'instagram_search', query: q });
+  // TikTok
+  for (const q of TIKTOK_QUERIES)     pairs.push({ source: 'tiktok_search',    query: q });
+  // LinkedIn
+  for (const q of LINKEDIN_QUERIES)   pairs.push({ source: 'linkedin_search',  query: q });
+  // Twitter/X
+  for (const q of TWITTER_QUERIES)    pairs.push({ source: 'twitter_search',   query: q });
+  // Trustpilot (each category URL is a pair)
+  for (const t of TRUSTPILOT_TARGETS) pairs.push({ source: 'trustpilot', query: t.url, url: t.url, label: t.label });
   return pairs;
 }
 
@@ -1157,6 +1574,93 @@ async function runOnePair(pair) {
       return await storeContacts(contacts);
     }
 
+    if (pair.source === 'instagram_search' || pair.source === 'tiktok_search' || pair.source === 'twitter_search') {
+      const PLATFORM_SKIP = {
+        instagram_search: new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','instagram.com','icloud.com']),
+        tiktok_search:    new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','tiktok.com','icloud.com']),
+        twitter_search:   new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','twitter.com','x.com','t.co','icloud.com']),
+      };
+      const SKIP = PLATFORM_SKIP[pair.source];
+      const SKIP_HOST = { instagram_search: 'instagram', tiktok_search: 'tiktok', twitter_search: 'twitter|x\\.com|t\\.co' }[pair.source];
+      const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q: pair.query },
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9' },
+        timeout: 20000,
+      });
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+      $('.result').each((_, el) => {
+        const titleEl = $(el).find('.result__title a');
+        const snippet = $(el).find('.result__snippet').text().trim();
+        let link = titleEl.attr('href') || '';
+        if (link.includes('uddg=')) { try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {} }
+        const title = titleEl.text().trim();
+        const emails = (snippet.match(EMAIL_RE) || []).filter(e => !SKIP.has(e.split('@')[1]));
+        for (const email of emails) { contacts.push({ company: title, website: link, domain: email.split('@')[1], email, source: pair.source, query: pair.query, snippet: snippet || null }); }
+        const skipRe = new RegExp(`https?://(${SKIP_HOST})`);
+        const urlMatch = (snippet.match(/https?:\/\/[^\s,)]+/g) || []).find(u => u.length > 10 && !skipRe.test(u));
+        if (emails.length === 0 && urlMatch) {
+          const domain = extractDomain(urlMatch);
+          if (domain && !SKIP.has(domain)) { for (const email of buildEmailVariants(domain)) { contacts.push({ company: title, website: urlMatch, domain, email, source: pair.source, query: pair.query, snippet: snippet || null }); } }
+        }
+      });
+      return await storeContacts(contacts);
+    }
+
+    if (pair.source === 'linkedin_search') {
+      const SKIP = new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','linkedin.com','lnkd.in']);
+      const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+      const URL_RE   = /https?:\/\/(?!linkedin|lnkd\.in)[^\s,)>]+/g;
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q: pair.query },
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36', 'Accept-Language': 'en-US,en;q=0.9' },
+        timeout: 20000,
+      });
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+      $('.result').each((_, el) => {
+        const titleEl = $(el).find('.result__title a');
+        const snippet = $(el).find('.result__snippet').text().trim();
+        let link = titleEl.attr('href') || '';
+        if (link.includes('uddg=')) { try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {} }
+        const title = titleEl.text().trim();
+        const emails = (snippet.match(EMAIL_RE) || []).filter(e => !SKIP.has(e.split('@')[1]));
+        for (const email of emails) { contacts.push({ company: title, website: link, domain: email.split('@')[1], email, source: 'linkedin_search', query: pair.query, snippet: snippet || null }); }
+        if (emails.length === 0) {
+          for (const url of (snippet.match(URL_RE) || []).slice(0, 2)) {
+            const domain = extractDomain(url);
+            if (domain && !SKIP.has(domain)) { for (const email of buildEmailVariants(domain)) { contacts.push({ company: title, website: url, domain, email, source: 'linkedin_search', query: pair.query, snippet: snippet || null }); } }
+          }
+        }
+      });
+      return await storeContacts(contacts);
+    }
+
+    if (pair.source === 'trustpilot') {
+      const target = TRUSTPILOT_TARGETS.find(t => t.url === (pair.url || pair.query));
+      if (!target) return 0;
+      const res = await axios.get(pair.url || pair.query, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36', 'Accept': 'text/html,application/xhtml+xml', 'Accept-Language': 'en-US,en;q=0.9' },
+        timeout: 25000,
+      });
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+      const baseDomain = 'trustpilot.com';
+      const seen = new Set();
+      $('a[href]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const text = $(el).text().trim();
+        if (!href.startsWith('http')) return;
+        const domain = extractDomain(href);
+        if (!domain || domain === baseDomain || domain.includes('google') || domain.includes('linkedin') || domain.includes('facebook')) return;
+        if (seen.has(domain)) return;
+        seen.add(domain);
+        for (const email of buildEmailVariants(domain)) { contacts.push({ company: text || domain, website: href, domain, email, source: 'trustpilot', query: pair.query, snippet: `Listed on ${target.label}` }); }
+      });
+      return await storeContacts(contacts);
+    }
+
     if (['clutch', 'cylex', 'hotfrog_sa', 'bizcommunity', 'yellowpages_sa'].includes(pair.source)) {
       const target = DIRECTORY_TARGETS.find(t => t.url === pair.url || t.url === pair.query);
       if (!target) return 0;
@@ -1229,36 +1733,51 @@ const _continuousStats = {
     hotfrog_sa:       { queries: 0, found: 0 },
     bizcommunity:     { queries: 0, found: 0 },
     yellowpages_sa:   { queries: 0, found: 0 },
+    instagram_search: { queries: 0, found: 0 },
+    tiktok_search:    { queries: 0, found: 0 },
+    linkedin_search:  { queries: 0, found: 0 },
+    twitter_search:   { queries: 0, found: 0 },
+    trustpilot:       { queries: 0, found: 0 },
   },
 };
 
 const SOURCE_LABELS = {
-  google_places:   'Google Places',
-  google_cse:      'Google CSE',
-  duckduckgo:      'DuckDuckGo',
-  serpapi_bpo:     'SerpAPI',
-  bing:            'Bing',
-  youtube_api:     'YouTube',
-  facebook_search: 'Facebook',
-  clutch:          'Clutch.co',
-  cylex:           'Cylex',
-  hotfrog_sa:      'Hotfrog SA',
-  bizcommunity:    'Bizcommunity',
-  yellowpages_sa:  'Yellow Pages SA',
+  google_places:    'Google Places',
+  google_cse:       'Google CSE',
+  duckduckgo:       'DuckDuckGo',
+  serpapi_bpo:      'SerpAPI',
+  bing:             'Bing',
+  youtube_api:      'YouTube',
+  facebook_search:  'Facebook',
+  clutch:           'Clutch.co',
+  cylex:            'Cylex',
+  hotfrog_sa:       'Hotfrog SA',
+  bizcommunity:     'Bizcommunity',
+  yellowpages_sa:   'Yellow Pages SA',
+  instagram_search: 'Instagram',
+  tiktok_search:    'TikTok',
+  linkedin_search:  'LinkedIn',
+  twitter_search:   'Twitter/X',
+  trustpilot:       'Trustpilot',
 };
 const SOURCE_DELAYS = {
-  google_places:   1200,
-  google_cse:      2500,
-  duckduckgo:      3500,
-  serpapi_bpo:     1500,
-  bing:            3500,
-  youtube_api:     2000,
-  facebook_search: 3500,
-  clutch:          4000,
-  cylex:           4000,
-  hotfrog_sa:      4000,
-  bizcommunity:    4000,
-  yellowpages_sa:  3500,
+  google_places:    1200,
+  google_cse:       2500,
+  duckduckgo:       3500,
+  serpapi_bpo:      1500,
+  bing:             3500,
+  youtube_api:      2000,
+  facebook_search:  3500,
+  clutch:           4000,
+  cylex:            4000,
+  hotfrog_sa:       4000,
+  bizcommunity:     4000,
+  yellowpages_sa:   3500,
+  instagram_search: 3500,
+  tiktok_search:    3500,
+  linkedin_search:  3500,
+  twitter_search:   3500,
+  trustpilot:       4000,
 };
 
 async function runContinuous(onUpdate) {
