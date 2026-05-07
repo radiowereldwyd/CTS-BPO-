@@ -16,7 +16,7 @@ const SOURCE_META = {
   bizcommunity:     { label: 'Bizcommunity',    icon: '🏢', color: '#0891b2', bg: '#e0f7fa' },
   yellowpages_sa:   { label: 'Yellow Pages SA', icon: '📒', color: '#ca8a04', bg: '#fef9c3' },
   instagram_search: { label: 'Instagram',       icon: '📸', color: '#e1306c', bg: '#fce4ec' },
-  tiktok_search:    { label: 'TikTok',          icon: '🎵', color: '#010101', bg: '#f5f5f5' },
+  tiktok_search:    { label: 'TikTok',          icon: '🎵', color: '#ee1d52', bg: '#fff0f3' },
   linkedin_search:  { label: 'LinkedIn',        icon: '💼', color: '#0a66c2', bg: '#e8f4fd' },
   twitter_search:   { label: 'Twitter / X',     icon: '🐦', color: '#1d9bf0', bg: '#e7f5fd' },
   trustpilot:       { label: 'Trustpilot',      icon: '⭐', color: '#00b67a', bg: '#e6f9f3' },
