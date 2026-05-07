@@ -3,10 +3,18 @@ import React, { useState, useEffect, useRef } from 'react';
 const API = process.env.REACT_APP_API_URL || '';
 
 const SOURCE_META = {
-  google_places: { label: 'Google Places', icon: '📍', color: '#4285f4', bg: '#e8f0fe' },
-  google_cse:    { label: 'Google CSE',    icon: '🔍', color: '#34a853', bg: '#e6f4ea' },
-  duckduckgo:    { label: 'DuckDuckGo',    icon: '🦆', color: '#de5833', bg: '#fce8e6' },
-  serpapi_bpo:   { label: 'SerpAPI',       icon: '🌐', color: '#10b981', bg: '#d1fae5' },
+  google_places:   { label: 'Google Places',   icon: '📍', color: '#4285f4', bg: '#e8f0fe' },
+  google_cse:      { label: 'Google CSE',      icon: '🔍', color: '#34a853', bg: '#e6f4ea' },
+  duckduckgo:      { label: 'DuckDuckGo',      icon: '🦆', color: '#de5833', bg: '#fce8e6' },
+  serpapi_bpo:     { label: 'SerpAPI',         icon: '🌐', color: '#10b981', bg: '#d1fae5' },
+  bing:            { label: 'Bing',            icon: '🔷', color: '#0078d7', bg: '#e6f2ff' },
+  youtube_api:     { label: 'YouTube',         icon: '📺', color: '#ff0000', bg: '#ffe4e4' },
+  facebook_search: { label: 'Facebook',        icon: '📘', color: '#1877f2', bg: '#e7f0fd' },
+  clutch:          { label: 'Clutch.co',       icon: '📂', color: '#ff3d2e', bg: '#fff0ee' },
+  cylex:           { label: 'Cylex',           icon: '🗂️', color: '#7c3aed', bg: '#ede9fe' },
+  hotfrog_sa:      { label: 'Hotfrog SA',      icon: '🐸', color: '#16a34a', bg: '#dcfce7' },
+  bizcommunity:    { label: 'Bizcommunity',    icon: '🏢', color: '#0891b2', bg: '#e0f7fa' },
+  yellowpages_sa:  { label: 'Yellow Pages SA', icon: '📒', color: '#ca8a04', bg: '#fef9c3' },
 };
 
 const ACTION_ICONS = {

@@ -5,6 +5,11 @@
  *   1. Google Places API (New v1)  — real businesses by type+city → website → email variants
  *   2. Google Custom Search API    — 100 free queries/day (GOOGLE_API_KEY + GOOGLE_CSE_ID)
  *   3. DuckDuckGo HTML scraping    — no key, unlimited (rate-limited to be polite)
+ *   4. SerpAPI BPO queries         — 5 targeted BPO prospect queries (SERPAPI_KEY)
+ *   5. Bing Web Search scraping    — no key, different result pool to DDG
+ *   6. YouTube Data API            — business channels with contact emails (GOOGLE_API_KEY)
+ *   7. Facebook via search         — FB business pages found via DDG, emails extracted from snippets
+ *   8. Business Directories        — Clutch.co, Cylex, Hotfrog SA, Bizcommunity
  *
  * All results stored in `scraped_contacts` table.
  * Outreach pipeline reads from `scraped_contacts` (status='new').
@@ -13,6 +18,7 @@
  *   - Text Search Basic: ~$0.032/request; Contact fields (website): ~$0.003/place
  *   - This module caps at PLACES_QUERIES_PER_RUN queries per invocation.
  *   - At default 15 queries × 4 runs/day = 60/day × $0.092 ≈ $5.52/day → well within $200/mo credit.
+ * YouTube API cost: 100 units/search × 8 searches = 800 units/run (free cap: 10,000/day).
  */
 
 const axios        = require('axios');
@@ -87,6 +93,9 @@ const GOOGLE_CSE_ID  = process.env.GOOGLE_CSE_ID  || '';
 const PLACES_QUERIES_PER_RUN = parseInt(process.env.PLACES_QUERIES_PER_RUN || '15', 10);
 const CSE_QUERIES_PER_RUN    = parseInt(process.env.CSE_QUERIES_PER_RUN    || '10', 10);
 const DDG_QUERIES_PER_RUN    = parseInt(process.env.DDG_QUERIES_PER_RUN    || '12', 10);
+const BING_QUERIES_PER_RUN   = parseInt(process.env.BING_QUERIES_PER_RUN   || '10', 10);
+const YT_QUERIES_PER_RUN     = parseInt(process.env.YT_QUERIES_PER_RUN     || '8',  10);
+const FB_QUERIES_PER_RUN     = parseInt(process.env.FB_QUERIES_PER_RUN     || '6',  10);
 const SCRAPE_DELAY_MS        = parseInt(process.env.SCRAPE_DELAY_MS        || '1200', 10);
 
 // Only ONE primary contact per company — no carpet-bombing all prefixes
@@ -588,14 +597,336 @@ async function scrapeViaSerpAPI() {
 }
 
 // ── Main orchestrator ────────────────────────────────────────────────────────
+// ── 5. Bing Web Search scraping ─────────────────────────────────────────────
+const BING_QUERIES = [
+  'outsourcing company "contact us" -site:linkedin.com -site:indeed.com',
+  'BPO services "get a quote" company -site:linkedin.com',
+  'data entry company "contact" "email" -site:linkedin.com',
+  'virtual assistant outsourcing "hire" company -site:linkedin.com',
+  'accounting outsourcing firm "contact us" -site:linkedin.com',
+  'medical billing BPO company contact email',
+  'back office outsourcing provider "request a quote"',
+  'payroll outsourcing service "contact us" email',
+  'customer support BPO company "get in touch"',
+  'document processing outsourcing "contact us"',
+  'HR outsourcing company "free quote" email',
+  'content moderation outsourcing contact',
+  'legal transcription outsource "email us"',
+  'translation company outsource "free quote"',
+  'invoice processing BPO "contact us" email',
+  'law firm South Africa "contact us" outsource admin',
+  'accounting firm UK "contact us" "bookkeeping" OR "data entry"',
+  'medical practice Australia "contact" "admin" OR "records"',
+  'real estate agency USA "contact us" "admin" OR "data"',
+  'insurance broker "contact us" -site:linkedin.com',
+];
+
+async function scrapeBing() {
+  const selected = pickRandom(BING_QUERIES, BING_QUERIES_PER_RUN);
+  let totalInserted = 0;
+
+  for (const q of selected) {
+    try {
+      const res = await axios.get('https://www.bing.com/search', {
+        params: { q, count: 20, mkt: 'en-US' },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate',
+        },
+        timeout: 20000,
+      });
+
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+
+      $('#b_results .b_algo').each((_, el) => {
+        const link    = $(el).find('h2 a').attr('href') || '';
+        const title   = $(el).find('h2 a').text().trim();
+        const snippet = $(el).find('.b_caption p').text().trim();
+        const domain  = extractDomain(link);
+        if (!domain || domain.includes('bing') || domain.includes('microsoft') || domain.includes('linkedin')) return;
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({ company: title, website: link, domain, email, source: 'bing', query: q, snippet: snippet || null });
+        }
+      });
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      console.log(`🔷 [SCRAPER] Bing "${q.slice(0, 50)}..." → ${Math.floor(contacts.length / EMAIL_PREFIXES.length)} sites, ${inserted} new`);
+    } catch (err) {
+      if (err.response?.status === 429 || err.response?.status === 403) {
+        console.warn('⚠️  [SCRAPER] Bing rate-limited — stopping this run');
+        break;
+      }
+      console.error(`❌ [SCRAPER] Bing error:`, err.message);
+    }
+    await sleep(SCRAPE_DELAY_MS * 3);
+  }
+
+  return totalInserted;
+}
+
+// ── 6. YouTube Data API — business channels with contact emails ──────────────
+const YOUTUBE_SEARCH_TERMS = [
+  'accounting firm South Africa business',
+  'law firm South Africa business contact',
+  'medical clinic South Africa business',
+  'insurance company South Africa business',
+  'real estate agency South Africa business',
+  'recruitment agency UK business',
+  'financial services company UK',
+  'HR consulting firm UK',
+  'IT services company UK business',
+  'logistics company USA business',
+  'dental practice South Africa',
+  'property management company South Africa',
+  'bookkeeping service small business',
+  'payroll services company',
+  'virtual assistant agency business',
+];
+
+async function scrapeYouTube() {
+  if (!GOOGLE_API_KEY) {
+    console.log('⚠️  [SCRAPER] YouTube: GOOGLE_API_KEY not set — skipping');
+    return 0;
+  }
+  const selected = pickRandom(YOUTUBE_SEARCH_TERMS, YT_QUERIES_PER_RUN);
+  let totalInserted = 0;
+  const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+  const SKIP_DOMAINS = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com', 'googlemail.com']);
+
+  for (const q of selected) {
+    try {
+      // Step 1: search channels
+      const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+        params: { key: GOOGLE_API_KEY, q, type: 'channel', part: 'snippet', maxResults: 20, relevanceLanguage: 'en' },
+        timeout: 15000,
+      });
+      const channelIds = (searchRes.data.items || [])
+        .map(i => i.snippet?.channelId || i.id?.channelId)
+        .filter(Boolean);
+      if (channelIds.length === 0) continue;
+
+      // Step 2: get channel details (description + branding)
+      const detailsRes = await axios.get('https://www.googleapis.com/youtube/v3/channels', {
+        params: { key: GOOGLE_API_KEY, id: channelIds.join(','), part: 'snippet,brandingSettings' },
+        timeout: 15000,
+      });
+
+      const contacts = [];
+      for (const ch of (detailsRes.data.items || [])) {
+        const title   = ch.snippet?.title || '';
+        const desc    = ch.snippet?.description || '';
+        const country = ch.snippet?.country || null;
+
+        // Extract emails directly from description
+        const foundEmails = (desc.match(EMAIL_RE) || []).filter(e => !SKIP_DOMAINS.has(e.split('@')[1]));
+        for (const email of foundEmails) {
+          contacts.push({ company: title, website: `https://www.youtube.com/channel/${ch.id}`, domain: email.split('@')[1], email, source: 'youtube_api', query: q, snippet: desc.slice(0, 200), country });
+        }
+
+        // Also try the custom website link in branding
+        const siteLink = ch.brandingSettings?.channel?.unsubscribedTrailer
+          || ch.brandingSettings?.channel?.featuredChannelsUrls?.[0]
+          || null;
+        if (siteLink) {
+          const domain = extractDomain(siteLink);
+          if (domain && !SKIP_DOMAINS.has(domain)) {
+            for (const email of buildEmailVariants(domain)) {
+              contacts.push({ company: title, website: siteLink, domain, email, source: 'youtube_api', query: q, snippet: desc.slice(0, 200), country });
+            }
+          }
+        }
+      }
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      console.log(`📺 [SCRAPER] YouTube "${q}" → ${channelIds.length} channels, ${inserted} new contacts`);
+    } catch (err) {
+      if (err.response?.status === 403) {
+        console.warn('⚠️  [SCRAPER] YouTube quota exceeded — stopping');
+        break;
+      }
+      console.error(`❌ [SCRAPER] YouTube error:`, err.message);
+    }
+    await sleep(SCRAPE_DELAY_MS * 2);
+  }
+
+  return totalInserted;
+}
+
+// ── 7. Facebook Business Pages — found via DuckDuckGo search ────────────────
+const FACEBOOK_QUERIES = [
+  'site:facebook.com "accounting firm" "South Africa" "email" OR "contact"',
+  'site:facebook.com "law firm" "South Africa" contact',
+  'site:facebook.com "medical clinic" "South Africa" contact',
+  'site:facebook.com "insurance" "South Africa" "email"',
+  'site:facebook.com "recruitment agency" UK contact',
+  'site:facebook.com "financial services" UK email',
+  'site:facebook.com "logistics" company contact email',
+  'site:facebook.com "HR consulting" "contact" "email"',
+  'site:facebook.com "real estate" "South Africa" contact',
+  'site:facebook.com "dental" "South Africa" contact email',
+  'site:facebook.com "bookkeeping" company contact email',
+  'site:facebook.com "property management" "South Africa" contact',
+];
+
+async function scrapeFacebookViaSearch() {
+  const selected = pickRandom(FACEBOOK_QUERIES, FB_QUERIES_PER_RUN);
+  let totalInserted = 0;
+  const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+  const SKIP_DOMAINS = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'facebook.com', 'icloud.com']);
+
+  for (const q of selected) {
+    try {
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        timeout: 20000,
+      });
+
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+
+      $('.result').each((_, el) => {
+        const titleEl = $(el).find('.result__title a');
+        const snippet = $(el).find('.result__snippet').text().trim();
+        let link = titleEl.attr('href') || '';
+        if (link.includes('uddg=')) { try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {} }
+
+        const title = titleEl.text().trim();
+
+        // Extract any business emails from the snippet
+        const emails = (snippet.match(EMAIL_RE) || []).filter(e => !SKIP_DOMAINS.has(e.split('@')[1]));
+        for (const email of emails) {
+          contacts.push({ company: title, website: link, domain: email.split('@')[1], email, source: 'facebook_search', query: q, snippet: snippet || null });
+        }
+
+        // If no email in snippet but there's a website link in the snippet, infer email from domain
+        const urlInSnippet = (snippet.match(/https?:\/\/[^\s]+/g) || []).find(u => !u.includes('facebook'));
+        if (emails.length === 0 && urlInSnippet) {
+          const domain = extractDomain(urlInSnippet);
+          if (domain && !SKIP_DOMAINS.has(domain)) {
+            for (const email of buildEmailVariants(domain)) {
+              contacts.push({ company: title, website: urlInSnippet, domain, email, source: 'facebook_search', query: q, snippet: snippet || null });
+            }
+          }
+        }
+      });
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      console.log(`📘 [SCRAPER] Facebook search "${q.slice(0, 50)}..." → ${inserted} new contacts`);
+    } catch (err) {
+      if (err.response?.status === 429 || err.response?.status === 403) {
+        console.warn('⚠️  [SCRAPER] Facebook search rate-limited — stopping');
+        break;
+      }
+      console.error(`❌ [SCRAPER] Facebook search error:`, err.message);
+    }
+    await sleep(SCRAPE_DELAY_MS * 3);
+  }
+
+  return totalInserted;
+}
+
+// ── 8. Business Directories — Clutch.co, Cylex, Hotfrog SA, Bizcommunity ────
+const DIRECTORY_TARGETS = [
+  { url: 'https://clutch.co/bpo/data-entry',                     source: 'clutch',       label: 'Clutch Data Entry' },
+  { url: 'https://clutch.co/bpo/document-management',            source: 'clutch',       label: 'Clutch Doc Mgmt' },
+  { url: 'https://clutch.co/bpo',                                source: 'clutch',       label: 'Clutch BPO' },
+  { url: 'https://clutch.co/bpo/customer-service',               source: 'clutch',       label: 'Clutch CX' },
+  { url: 'https://www.cylex.us.com/companies/outsourcing.html',  source: 'cylex',        label: 'Cylex Outsourcing' },
+  { url: 'https://www.hotfrog.co.za/company/accounting',         source: 'hotfrog_sa',   label: 'Hotfrog SA Accounting' },
+  { url: 'https://www.hotfrog.co.za/company/law-firm',           source: 'hotfrog_sa',   label: 'Hotfrog SA Law' },
+  { url: 'https://www.hotfrog.co.za/company/medical',            source: 'hotfrog_sa',   label: 'Hotfrog SA Medical' },
+  { url: 'https://www.bizcommunity.com/companies/',              source: 'bizcommunity', label: 'Bizcommunity SA' },
+  { url: 'https://www.yellowpages.co.za/yp/accountants',         source: 'yellowpages_sa', label: 'YP SA Accountants' },
+  { url: 'https://www.yellowpages.co.za/yp/attorneys',           source: 'yellowpages_sa', label: 'YP SA Attorneys' },
+  { url: 'https://www.yellowpages.co.za/yp/insurance',           source: 'yellowpages_sa', label: 'YP SA Insurance' },
+];
+
+async function scrapeBusinessDirectories() {
+  let totalInserted = 0;
+  const selected = pickRandom(DIRECTORY_TARGETS, 4);
+
+  for (const target of selected) {
+    try {
+      const res = await axios.get(target.url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 25000,
+      });
+
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+      const baseDomain = extractDomain(target.url) || '';
+      const seen = new Set();
+
+      // Generic approach: extract any external links pointing to company websites
+      $('a[href]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const text = $(el).text().trim();
+        if (!href.startsWith('http')) return;
+        const domain = extractDomain(href);
+        if (!domain || domain === baseDomain || domain.includes('google') || domain.includes('linkedin') || domain.includes('facebook')) return;
+        if (seen.has(domain)) return;
+        seen.add(domain);
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({ company: text || domain, website: href, domain, email, source: target.source, query: target.url, snippet: `Listed on ${target.label}` });
+        }
+      });
+
+      // Also try to find any emails directly on the page
+      const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+      const pageText = $.text();
+      const SKIP_DOMAINS = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', baseDomain]);
+      const foundEmails = (pageText.match(EMAIL_RE) || []).filter(e => !SKIP_DOMAINS.has(e.split('@')[1]));
+      for (const email of foundEmails) {
+        const domain = email.split('@')[1];
+        if (!seen.has(email)) {
+          seen.add(email);
+          contacts.push({ company: domain, website: null, domain, email, source: target.source, query: target.url, snippet: `Found on ${target.label}` });
+        }
+      }
+
+      const inserted = await storeContacts(contacts);
+      totalInserted += inserted;
+      console.log(`📂 [SCRAPER] Directory ${target.label} → ${contacts.length} candidates, ${inserted} new contacts`);
+    } catch (err) {
+      if (err.response?.status === 429 || err.response?.status === 403) {
+        console.warn(`⚠️  [SCRAPER] Directory ${target.label} blocked — skipping`);
+        continue;
+      }
+      console.error(`❌ [SCRAPER] Directory ${target.label} error:`, err.message);
+    }
+    await sleep(SCRAPE_DELAY_MS * 4);
+  }
+
+  return totalInserted;
+}
+
 async function runAllScrapers() {
-  console.log('🕷️  [SCRAPER] Starting multi-source scrape run...');
+  console.log('🕷️  [SCRAPER] Starting multi-source scrape run (8 sources)...');
   let total = 0;
 
-  try { total += await scrapeGooglePlaces(); }  catch (e) { console.error('[SCRAPER] Places failed:', e.message); }
-  try { total += await scrapeGoogleCSE(); }      catch (e) { console.error('[SCRAPER] CSE failed:', e.message); }
-  try { total += await scrapeDuckDuckGo(); }     catch (e) { console.error('[SCRAPER] DDG failed:', e.message); }
-  try { total += await scrapeViaSerpAPI(); }     catch (e) { console.error('[SCRAPER] SerpAPI BPO failed:', e.message); }
+  try { total += await scrapeGooglePlaces(); }       catch (e) { console.error('[SCRAPER] Places failed:', e.message); }
+  try { total += await scrapeGoogleCSE(); }           catch (e) { console.error('[SCRAPER] CSE failed:', e.message); }
+  try { total += await scrapeDuckDuckGo(); }          catch (e) { console.error('[SCRAPER] DDG failed:', e.message); }
+  try { total += await scrapeViaSerpAPI(); }          catch (e) { console.error('[SCRAPER] SerpAPI BPO failed:', e.message); }
+  try { total += await scrapeBing(); }                catch (e) { console.error('[SCRAPER] Bing failed:', e.message); }
+  try { total += await scrapeYouTube(); }             catch (e) { console.error('[SCRAPER] YouTube failed:', e.message); }
+  try { total += await scrapeFacebookViaSearch(); }   catch (e) { console.error('[SCRAPER] Facebook search failed:', e.message); }
+  try { total += await scrapeBusinessDirectories(); } catch (e) { console.error('[SCRAPER] Directories failed:', e.message); }
 
   console.log(`✅ [SCRAPER] Run complete — ${total} new contacts stored in scraped_contacts`);
   return total;
@@ -606,18 +937,26 @@ async function runAllScrapers() {
 // Build master flat list of ALL queries across every source
 function buildAllPairs() {
   const pairs = [];
-  // Google Places: 25 types × 25 cities = 625
+  // Google Places: types × cities
   for (const city of SEARCH_CITIES) {
     for (const type of BUSINESS_TYPES) {
       pairs.push({ source: 'google_places', query: `${type} ${city}`, type, city });
     }
   }
   // Google CSE
-  for (const q of CSE_QUERIES) pairs.push({ source: 'google_cse', query: q });
+  for (const q of CSE_QUERIES)       pairs.push({ source: 'google_cse',      query: q });
   // DuckDuckGo
-  for (const q of DDG_QUERIES) pairs.push({ source: 'duckduckgo', query: q });
+  for (const q of DDG_QUERIES)        pairs.push({ source: 'duckduckgo',       query: q });
   // SerpAPI BPO
-  for (const q of SERP_BPO_QUERIES) pairs.push({ source: 'serpapi_bpo', query: q });
+  for (const q of SERP_BPO_QUERIES)   pairs.push({ source: 'serpapi_bpo',      query: q });
+  // Bing
+  for (const q of BING_QUERIES)       pairs.push({ source: 'bing',             query: q });
+  // YouTube
+  for (const q of YOUTUBE_SEARCH_TERMS) pairs.push({ source: 'youtube_api',   query: q });
+  // Facebook via search
+  for (const q of FACEBOOK_QUERIES)   pairs.push({ source: 'facebook_search',  query: q });
+  // Business directories (each URL is a pair)
+  for (const t of DIRECTORY_TARGETS)  pairs.push({ source: t.source, query: t.url, url: t.url, label: t.label });
   return pairs;
 }
 
@@ -720,8 +1059,142 @@ async function runOnePair(pair) {
       }
       return await storeContacts(contacts);
     }
+
+    if (pair.source === 'bing') {
+      const res = await axios.get('https://www.bing.com/search', {
+        params: { q: pair.query, count: 20, mkt: 'en-US' },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 20000,
+      });
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+      $('#b_results .b_algo').each((_, el) => {
+        const link    = $(el).find('h2 a').attr('href') || '';
+        const title   = $(el).find('h2 a').text().trim();
+        const snippet = $(el).find('.b_caption p').text().trim();
+        const domain  = extractDomain(link);
+        if (!domain || domain.includes('bing') || domain.includes('microsoft') || domain.includes('linkedin')) return;
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({ company: title, website: link, domain, email, source: 'bing', query: pair.query, snippet: snippet || null });
+        }
+      });
+      return await storeContacts(contacts);
+    }
+
+    if (pair.source === 'youtube_api') {
+      if (!GOOGLE_API_KEY) return 0;
+      const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+      const SKIP = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com']);
+      const searchRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+        params: { key: GOOGLE_API_KEY, q: pair.query, type: 'channel', part: 'snippet', maxResults: 20, relevanceLanguage: 'en' },
+        timeout: 15000,
+      });
+      const channelIds = (searchRes.data.items || []).map(i => i.snippet?.channelId || i.id?.channelId).filter(Boolean);
+      if (channelIds.length === 0) return 0;
+      const detailsRes = await axios.get('https://www.googleapis.com/youtube/v3/channels', {
+        params: { key: GOOGLE_API_KEY, id: channelIds.join(','), part: 'snippet,brandingSettings' },
+        timeout: 15000,
+      });
+      const contacts = [];
+      for (const ch of (detailsRes.data.items || [])) {
+        const title = ch.snippet?.title || '';
+        const desc  = ch.snippet?.description || '';
+        const country = ch.snippet?.country || null;
+        const emails = (desc.match(EMAIL_RE) || []).filter(e => !SKIP.has(e.split('@')[1]));
+        for (const email of emails) {
+          contacts.push({ company: title, website: `https://www.youtube.com/channel/${ch.id}`, domain: email.split('@')[1], email, source: 'youtube_api', query: pair.query, snippet: desc.slice(0, 200), country });
+        }
+        const siteLink = ch.brandingSettings?.channel?.unsubscribedTrailer || null;
+        if (siteLink) {
+          const domain = extractDomain(siteLink);
+          if (domain && !SKIP.has(domain)) {
+            for (const email of buildEmailVariants(domain)) {
+              contacts.push({ company: title, website: siteLink, domain, email, source: 'youtube_api', query: pair.query, snippet: desc.slice(0, 200), country });
+            }
+          }
+        }
+      }
+      return await storeContacts(contacts);
+    }
+
+    if (pair.source === 'facebook_search') {
+      const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+      const SKIP = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'facebook.com', 'outlook.com']);
+      const res = await axios.get('https://html.duckduckgo.com/html/', {
+        params: { q: pair.query },
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 20000,
+      });
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+      $('.result').each((_, el) => {
+        const titleEl = $(el).find('.result__title a');
+        const snippet = $(el).find('.result__snippet').text().trim();
+        let link = titleEl.attr('href') || '';
+        if (link.includes('uddg=')) { try { link = decodeURIComponent(link.split('uddg=')[1].split('&')[0]); } catch {} }
+        const title = titleEl.text().trim();
+        const emails = (snippet.match(EMAIL_RE) || []).filter(e => !SKIP.has(e.split('@')[1]));
+        for (const email of emails) {
+          contacts.push({ company: title, website: link, domain: email.split('@')[1], email, source: 'facebook_search', query: pair.query, snippet: snippet || null });
+        }
+        const urlInSnippet = (snippet.match(/https?:\/\/[^\s]+/g) || []).find(u => !u.includes('facebook') && !u.includes('duckduckgo'));
+        if (emails.length === 0 && urlInSnippet) {
+          const domain = extractDomain(urlInSnippet);
+          if (domain && !SKIP.has(domain)) {
+            for (const email of buildEmailVariants(domain)) {
+              contacts.push({ company: title, website: urlInSnippet, domain, email, source: 'facebook_search', query: pair.query, snippet: snippet || null });
+            }
+          }
+        }
+      });
+      return await storeContacts(contacts);
+    }
+
+    if (['clutch', 'cylex', 'hotfrog_sa', 'bizcommunity', 'yellowpages_sa'].includes(pair.source)) {
+      const target = DIRECTORY_TARGETS.find(t => t.url === pair.url || t.url === pair.query);
+      if (!target) return 0;
+      const res = await axios.get(pair.url || pair.query, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        timeout: 25000,
+      });
+      const $ = cheerio.load(res.data);
+      const contacts = [];
+      const baseDomain = extractDomain(pair.url || pair.query) || '';
+      const seen = new Set();
+      $('a[href]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const text = $(el).text().trim();
+        if (!href.startsWith('http')) return;
+        const domain = extractDomain(href);
+        if (!domain || domain === baseDomain || domain.includes('google') || domain.includes('linkedin') || domain.includes('facebook')) return;
+        if (seen.has(domain)) return;
+        seen.add(domain);
+        for (const email of buildEmailVariants(domain)) {
+          contacts.push({ company: text || domain, website: href, domain, email, source: pair.source, query: pair.query, snippet: `Listed on ${target.label}` });
+        }
+      });
+      const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
+      const SKIP = new Set(['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', baseDomain]);
+      const found = ($.text().match(EMAIL_RE) || []).filter(e => !SKIP.has(e.split('@')[1]));
+      for (const email of found) {
+        if (!seen.has(email)) { seen.add(email); contacts.push({ company: email.split('@')[1], website: null, domain: email.split('@')[1], email, source: pair.source, query: pair.query, snippet: `Found on ${target.label}` }); }
+      }
+      return await storeContacts(contacts);
+    }
+
   } catch (err) {
-    if (err.response?.status === 429 || err.response?.status === 403) return -429; // rate limit signal
+    if (err.response?.status === 429 || err.response?.status === 403) return -429;
     return 0;
   }
   return 0;
@@ -744,24 +1217,48 @@ const _continuousStats = {
   queriesPerCycle: 0,       // total unique queries available (set at startup)
   recentQueries: [], // last 50 [{source, query, found, ts}]
   sourceStats: {     // cumulative per-source totals for this session
-    google_places: { queries: 0, found: 0 },
-    google_cse:    { queries: 0, found: 0 },
-    duckduckgo:    { queries: 0, found: 0 },
-    serpapi_bpo:   { queries: 0, found: 0 },
+    google_places:    { queries: 0, found: 0 },
+    google_cse:       { queries: 0, found: 0 },
+    duckduckgo:       { queries: 0, found: 0 },
+    serpapi_bpo:      { queries: 0, found: 0 },
+    bing:             { queries: 0, found: 0 },
+    youtube_api:      { queries: 0, found: 0 },
+    facebook_search:  { queries: 0, found: 0 },
+    clutch:           { queries: 0, found: 0 },
+    cylex:            { queries: 0, found: 0 },
+    hotfrog_sa:       { queries: 0, found: 0 },
+    bizcommunity:     { queries: 0, found: 0 },
+    yellowpages_sa:   { queries: 0, found: 0 },
   },
 };
 
 const SOURCE_LABELS = {
-  google_places: 'Google Places',
-  google_cse:    'Google CSE',
-  duckduckgo:    'DuckDuckGo',
-  serpapi_bpo:   'SerpAPI',
+  google_places:   'Google Places',
+  google_cse:      'Google CSE',
+  duckduckgo:      'DuckDuckGo',
+  serpapi_bpo:     'SerpAPI',
+  bing:            'Bing',
+  youtube_api:     'YouTube',
+  facebook_search: 'Facebook',
+  clutch:          'Clutch.co',
+  cylex:           'Cylex',
+  hotfrog_sa:      'Hotfrog SA',
+  bizcommunity:    'Bizcommunity',
+  yellowpages_sa:  'Yellow Pages SA',
 };
 const SOURCE_DELAYS = {
-  google_places: 1200,
-  google_cse:    2500,
-  duckduckgo:    3500,
-  serpapi_bpo:   1500,
+  google_places:   1200,
+  google_cse:      2500,
+  duckduckgo:      3500,
+  serpapi_bpo:     1500,
+  bing:            3500,
+  youtube_api:     2000,
+  facebook_search: 3500,
+  clutch:          4000,
+  cylex:           4000,
+  hotfrog_sa:      4000,
+  bizcommunity:    4000,
+  yellowpages_sa:  3500,
 };
 
 async function runContinuous(onUpdate) {
