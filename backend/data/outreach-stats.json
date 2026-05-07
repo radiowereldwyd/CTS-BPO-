@@ -1,10 +1,10 @@
 {
-  "sentToday": 1199,
+  "sentToday": 1285,
   "todayDate": "Thu May 07 2026",
-  "savedAt": "2026-05-07T12:50:40.020Z",
-  "provider": "brevo",
+  "savedAt": "2026-05-07T13:47:54.827Z",
+  "provider": "gmail",
   "gmail": {
-    "sentToday": 94,
+    "sentToday": 6,
     "todayDate": "Thu May 07 2026"
   },
   "mailjet": {
@@ -20,7 +20,7 @@
     "todayDate": "Fri May 01 2026"
   },
   "brevo": {
-    "sentToday": 183,
+    "sentToday": 263,
     "todayDate": "Thu May 07 2026"
   }
 }
