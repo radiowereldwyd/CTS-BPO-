@@ -2355,10 +2355,28 @@ if (require('fs').existsSync(buildDir)) {
   });
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const http = require('http');
+const WebSocket = require('ws');
+const callCentreSignaling = require('./modules/call-centre');
+
+const server = http.createServer(app);
+
+// ── WebSocket signaling for WebRTC call centre ────────────────────────────────
+const wss = new WebSocket.Server({ noServer: true });
+wss.on('connection', (ws, req) => callCentreSignaling.handleSignaling(ws, req));
+
+server.on('upgrade', (req, socket, head) => {
+  if (req.url && req.url.startsWith('/ws/call-signal')) {
+    wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
+  } else {
+    socket.destroy();
+  }
+});
+
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`CTS BPO Backend running on port ${PORT}`);
+  console.log(`📞 WebRTC signaling active at ws://0.0.0.0:${PORT}/ws/call-signal`);
   auditLogger.log('system.start', null, null, `Server started on port ${PORT}`, null, 'info');
-  // Start the autonomous AI agent
   autonomousAgent.startAgent().catch(err => {
     console.error('Autonomous agent failed to start:', err.message);
   });

@@ -24,6 +24,7 @@ import PriceNegotiator from './components/PriceNegotiator';
 import AIControlRoom from './components/AIControlRoom';
 import JobQueue from './components/JobQueue';
 import CallCentre from './components/CallCentre';
+import CallRoom from './components/CallRoom';
 import './App.css';
 
 function NavLink({ to, children }) {
@@ -179,6 +180,9 @@ function App() {
 
         {/* Client portal — public, accessed via token link from delivery email */}
         <Route path="/client/portal/:token" element={<ClientPortal />} />
+
+        {/* Call centre room — public, no login required for clients */}
+        <Route path="/call/room/:roomId" element={<CallRoom />} />
 
         {/* Subcontractor login — always public */}
         <Route path="/subcontractor/login" element={
