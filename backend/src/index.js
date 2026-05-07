@@ -1231,6 +1231,82 @@ app.get('/api/ai-agent/leads', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── CONTROL ROOM ─────────────────────────────────────────────────────────────
+// GET /api/control-room/status — live agent state + email stats + next run times
+app.get('/api/control-room/status', requireAuth, async (req, res) => {
+  try {
+    const status   = autonomousAgent.getStatus();
+    const circuit  = autonomousAgent.getCircuitState();
+    const emailStats = emailOutreach.getDailyStats ? emailOutreach.getDailyStats() : {};
+
+    // Calculate next run times from current time
+    const now = Date.now();
+    function nextCron(intervalMin, offsetMin = 0) {
+      const ms = intervalMin * 60 * 1000;
+      const elapsed = (now + offsetMin * 60000) % ms;
+      return new Date(now + ms - elapsed).toISOString();
+    }
+
+    res.json({
+      status,
+      circuit,
+      emailStats: {
+        sentToday: emailStats.sent     || 0,
+        cap:       emailStats.cap      || 500,
+        mode:      emailStats.mode     || 'unknown',
+        paused:    emailStats.paused   || false,
+        broken:    emailStats.broken   || [],
+      },
+      db: status.db || {},
+      nextRuns: {
+        inboxReply:  nextCron(15),
+        outreach:    nextCron(5,  2),
+        followup:    nextCron(120, 15),
+        aiJobs:      nextCron(15, 5),
+        contracts:   nextCron(60),
+        healthCheck: nextCron(15, 10),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/control-room/activity — recent ai_activity_log with optional filter
+app.get('/api/control-room/activity', requireAuth, async (req, res) => {
+  try {
+    const limit  = Math.min(parseInt(req.query.limit  || '80'), 200);
+    const filter = req.query.filter || 'all';
+
+    let whereClause = '';
+    if (filter === 'success')         whereClause = `WHERE status='success'`;
+    else if (filter === 'error')      whereClause = `WHERE status='error'`;
+    else if (filter !== 'all')        whereClause = `WHERE action_type=$2`;
+
+    const params  = filter !== 'all' && !['success','error'].includes(filter)
+      ? [limit, filter] : [limit];
+    const query   = `
+      SELECT id, action_type, description, target_entity, target_id, status, details, created_at
+      FROM ai_activity_log
+      ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT $1
+    `;
+
+    const [rows, countRow] = await Promise.all([
+      db.query(query, params),
+      db.query(`SELECT COUNT(*) AS total FROM ai_activity_log WHERE created_at >= CURRENT_DATE`),
+    ]);
+
+    res.json({
+      activity:   rows.rows,
+      totalToday: parseInt(countRow.rows[0]?.total || 0),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/ai-agent/trigger/:task — manually trigger any agent task
 app.post('/api/ai-agent/trigger/:task', requireAuth, requireAdmin, async (req, res) => {
   try {

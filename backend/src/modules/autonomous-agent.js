@@ -1654,6 +1654,23 @@ async function startAgent() {
   });
   setTimeout(() => runPaymentChase().catch(console.error), 25000);
 
+  // ── Inbox reply responder every 15 minutes — reads replies, auto-responds, onboards clients ──
+  cron.schedule('*/15 * * * *', () => {
+    gmailReader.processInboxReplies()
+      .then(result => {
+        if (result.updates?.length > 0) {
+          const onboarded = result.updates.filter(u => u.action === 'onboarded').length;
+          const answered  = result.updates.filter(u => u.action === 'ai_answered').length;
+          agentState.totalRepliesHandled  = (agentState.totalRepliesHandled  || 0) + result.updates.length;
+          agentState.totalClientsOnboarded = (agentState.totalClientsOnboarded || 0) + onboarded;
+          console.log(`📬 [INBOX] Processed ${result.updates.length} replies — ${onboarded} onboarded, ${answered} AI-answered`);
+        }
+      })
+      .catch(e => logActivity('inbox_reply', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+  // Run once 90s after boot so it doesn't clash with bounce check
+  setTimeout(() => gmailReader.processInboxReplies().catch(() => {}), 90_000);
+
   // Bounce processing every 20 minutes — detect bounces, blacklist, then auto-purge
   cron.schedule('*/20 * * * *', () => {
     gmailReader.processBounces()
@@ -1789,6 +1806,7 @@ async function triggerNow(task) {
     case 'contracts':         await assignContracts(); break;
     case 'ai_jobs':           await processAIJobs(); break;
     case 'payment_chase':     await runPaymentChase(); break;
+    case 'inbox_reply':       await gmailReader.processInboxReplies(); break;
     case 'bounce_check':      await gmailReader.processBounces(); await autoPurgeBounced(); break;
     case 'prospect_scan':     await runJobLeadScan(); break;
     case 'prospect_outreach': await runJobLeadOutreach(); break;
@@ -1798,6 +1816,7 @@ async function triggerNow(task) {
     case 'scrape_outreach':        await runScrapedContactsOutreach(); break;
     case 'scrape_followup':        await runScrapedContactsFollowUps(); break;
     case 'all':
+      await gmailReader.processInboxReplies();
       await gmailReader.processBounces();
       await runLeadSearch();
       await runJobLeadScan();

@@ -280,44 +280,205 @@ async function processBounces() {
 }
 
 /**
- * Analyse all unread non-bounce replies with NLP.
+ * Analyse all unread non-bounce replies with NLP, then auto-respond:
+ *  - interested    → create client record + send portal welcome email
+ *  - needs-info    → send AI-generated answer via Gemini
+ *  - rejected/unsub → mark do-not-contact
+ *  - out-of-office  → leave alone, mark read
  */
 async function processInboxReplies() {
   if (!isConfigured()) return { simulated: true, processed: 0, updates: [] };
 
-  // First handle bounces
   await processBounces().catch(e => console.error('[BOUNCE] Error:', e.message));
 
   const { emails } = await listUnreadEmails(20);
   const updates = [];
 
-  const intentColor = { interested: 'responded', 'needs-info': 'responded', rejected: 'rejected', 'out-of-office': 'contacted' };
+  // Lazy-load to avoid circular deps at module load time
+  const emailOutreach = require('./email-outreach');
+  const axios         = require('axios');
+  const crypto        = require('crypto');
+  const dbMod         = require('../db');
+  const APP_URL       = process.env.APP_URL || 'https://your-app.replit.app';
+  const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+
+  async function geminiReply(question, senderName) {
+    if (!GOOGLE_API_KEY) return null;
+    try {
+      const prompt = `You are Calvin Thomas from CTS BPO Solutions (South Africa). A prospect named "${senderName}" replied to a pricing proposal email with this question:\n\n"${question}"\n\nWrite a warm, concise reply (max 120 words) that answers their question and encourages them to try the free first task. Sign off as Calvin Thomas.`;
+      const res = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GOOGLE_API_KEY}`,
+        { contents: [{ parts: [{ text: prompt }] }] },
+        { timeout: 20000 }
+      );
+      return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    } catch { return null; }
+  }
+
+  async function onboardClient(fromEmail, fromName) {
+    // Check if already a client
+    const exists = await dbMod.query(
+      `SELECT id, portal_token FROM clients WHERE LOWER(email)=LOWER($1) LIMIT 1`,
+      [fromEmail]
+    ).catch(() => ({ rows: [] }));
+
+    if (exists.rows.length > 0) {
+      const token = exists.rows[0].portal_token;
+      const portalLink = `${APP_URL}/client/portal/${token}`;
+      return { alreadyClient: true, portalLink };
+    }
+
+    const token = crypto.randomBytes(24).toString('hex');
+    const name  = fromName || fromEmail.split('@')[0];
+
+    // Insert new client row (safe — only touches columns known to exist)
+    await dbMod.query(
+      `INSERT INTO clients (name, email, portal_token, status, created_at, updated_at)
+       VALUES ($1, $2, $3, 'active', NOW(), NOW())
+       ON CONFLICT (email) DO UPDATE SET portal_token=EXCLUDED.portal_token, updated_at=NOW()`,
+      [name, fromEmail, token]
+    ).catch(async () => {
+      // Fallback without status column if schema differs
+      await dbMod.query(
+        `INSERT INTO clients (name, email, portal_token, created_at, updated_at)
+         VALUES ($1, $2, $3, NOW(), NOW())
+         ON CONFLICT (email) DO UPDATE SET portal_token=EXCLUDED.portal_token, updated_at=NOW()`,
+        [name, fromEmail, token]
+      ).catch(() => {});
+    });
+
+    const portalLink = `${APP_URL}/client/portal/${token}`;
+    return { alreadyClient: false, portalLink, name, token };
+  }
 
   for (const email of emails) {
-    // Skip bounce notifications — already handled
     if (isBounceEmail(email.from, email.subject)) continue;
-    if (!email.body) continue;
+    if (!email.body) { await markAsRead(email.id).catch(() => {}); continue; }
 
     try {
-      const analysis = await nlp.analyseEmailReply(email.body);
-      const intent   = analysis.sentiment?.intent || 'unknown';
-      const newStatus = intentColor[intent] || 'responded';
+      const analysis  = await nlp.analyseEmailReply(email.body).catch(() => ({ sentiment: { intent: 'unknown' } }));
+      const intent    = analysis.sentiment?.intent || 'unknown';
+      const firstName = (email.name || email.from.split('@')[0] || 'there').split(' ')[0];
 
-      updates.push({
-        email:     email.from,
-        name:      email.name,
-        subject:   email.subject,
-        intent,
-        sentiment: analysis.sentiment?.label,
-        score:     analysis.sentiment?.score,
-        newStatus,
-        date:      email.date,
-      });
+      console.log(`📬 [INBOX] Reply from ${email.from} — intent: ${intent}`);
 
+      if (intent === 'interested') {
+        // ── Auto-onboard: create client + send portal welcome ────────────────
+        const { portalLink, alreadyClient, name } = await onboardClient(email.from, email.name);
+
+        const welcomeHtml = `
+          <div style="font-family:Arial,sans-serif;max-width:600px;color:#1e293b">
+            <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:28px 32px;border-radius:12px 12px 0 0;color:#fff">
+              <h2 style="margin:0 0 6px">Welcome to CTS BPO Solutions, ${firstName}! 🎉</h2>
+              <p style="margin:0;opacity:0.85;font-size:14px">Your free trial is ready to start</p>
+            </div>
+            <div style="background:#fff;padding:28px 32px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:none">
+              <p>Hi ${firstName},</p>
+              <p>Thank you for your interest — I've set up your personal client portal where you can upload your first task, track progress, and download completed work.</p>
+              <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:16px 20px;margin:20px 0;text-align:center">
+                <strong style="color:#16a34a;font-size:15px">🎁 Your first task is completely FREE</strong><br>
+                <span style="font-size:13px;color:#166534">No invoice until you approve the quality</span>
+              </div>
+              <div style="text-align:center;margin:24px 0">
+                <a href="${portalLink}" style="display:inline-block;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:14px 36px;border-radius:9px;font-weight:700;font-size:15px">Open My Client Portal →</a>
+              </div>
+              <p style="font-size:13px;color:#64748b">Or copy this link into your browser:<br><span style="color:#2563eb">${portalLink}</span></p>
+              <hr style="border-color:#f1f5f9;margin:20px 0">
+              <p><strong>Calvin Thomas</strong><br>CTS BPO Solutions<br>cts.bposolutions@gmail.com</p>
+            </div>
+          </div>`;
+
+        await emailOutreach.sendMail({
+          to: email.from,
+          subject: `Welcome to CTS BPO — Your portal is ready, ${firstName}!`,
+          html: welcomeHtml,
+          text: `Hi ${firstName},\n\nWelcome! I've set up your client portal at: ${portalLink}\n\nYour first task is completely free. Upload your files through the portal and we'll get started immediately.\n\nCalvin Thomas\nCTS BPO Solutions`,
+        }).catch(e => console.error('[INBOX] Welcome email failed:', e.message));
+
+        // Log to activity
+        await dbMod.query(
+          `INSERT INTO ai_activity_log (action_type, description, status, details)
+           VALUES ('client_onboarded', $1, 'success', $2)`,
+          [`New client onboarded from reply: ${email.from}${alreadyClient ? ' (returning)' : ''}`,
+           JSON.stringify({ email: email.from, name, portalLink })]
+        ).catch(() => {});
+
+        await dbMod.query(
+          `INSERT INTO ai_activity_log (action_type, description, status, details)
+           VALUES ('inbox_reply', $1, 'success', $2)`,
+          [`Interested reply → auto-onboarded: ${email.from}`,
+           JSON.stringify({ email: email.from, intent, action: 'onboarded' })]
+        ).catch(() => {});
+
+        updates.push({ email: email.from, intent, action: 'onboarded', portalLink });
+        console.log(`🎉 [INBOX] Client onboarded: ${email.from} → portal: ${portalLink}`);
+
+      } else if (intent === 'needs-info') {
+        // ── AI-generated answer via Gemini ───────────────────────────────────
+        const aiAnswer = await geminiReply(email.body.slice(0, 800), firstName);
+
+        if (aiAnswer) {
+          const replyText = `Hi ${firstName},\n\n${aiAnswer}\n\nCalvin Thomas\nCTS BPO Solutions\ncts.bposolutions@gmail.com`;
+          await emailOutreach.sendMail({
+            to: email.from,
+            subject: `Re: ${email.subject}`,
+            text:    replyText,
+            html:    `<div style="font-family:Arial,sans-serif;max-width:580px;color:#1e293b;line-height:1.7"><p>Hi ${firstName},</p><p>${aiAnswer.replace(/\n/g, '<br>')}</p><hr style="border-color:#f1f5f9;margin:20px 0"><p><strong>Calvin Thomas</strong><br>CTS BPO Solutions<br>cts.bposolutions@gmail.com</p></div>`,
+          }).catch(e => console.error('[INBOX] Info reply failed:', e.message));
+
+          await dbMod.query(
+            `INSERT INTO ai_activity_log (action_type, description, status, details)
+             VALUES ('auto_response', $1, 'success', $2)`,
+            [`AI answered query from ${email.from}`,
+             JSON.stringify({ email: email.from, intent, action: 'ai_answered' })]
+          ).catch(() => {});
+
+          await dbMod.query(
+            `INSERT INTO ai_activity_log (action_type, description, status, details)
+             VALUES ('inbox_reply', $1, 'success', $2)`,
+            [`Info request → AI replied: ${email.from}`,
+             JSON.stringify({ email: email.from, intent, action: 'ai_answered' })]
+          ).catch(() => {});
+
+          updates.push({ email: email.from, intent, action: 'ai_answered' });
+          console.log(`🤖 [INBOX] AI answered info request from ${email.from}`);
+        }
+
+      } else if (intent === 'rejected' || intent === 'unsubscribe') {
+        // ── Mark as do-not-contact ────────────────────────────────────────────
+        await blacklistEmail(email.from).catch(() => {});
+        await dbMod.query(
+          `UPDATE scraped_contacts SET status='rejected', updated_at=NOW() WHERE LOWER(email)=LOWER($1)`,
+          [email.from]
+        ).catch(() => {});
+        await dbMod.query(
+          `UPDATE ai_leads SET status='rejected', updated_at=NOW() WHERE LOWER(contact_email)=LOWER($1)`,
+          [email.from]
+        ).catch(() => {});
+        await dbMod.query(
+          `INSERT INTO ai_activity_log (action_type, description, status)
+           VALUES ('inbox_reply', $1, 'info')`,
+          [`Rejection/unsubscribe from ${email.from} — marked do-not-contact`]
+        ).catch(() => {});
+        updates.push({ email: email.from, intent, action: 'do-not-contact' });
+        console.log(`🚫 [INBOX] Do-not-contact: ${email.from}`);
+
+      } else {
+        // out-of-office or unknown — just log and mark read
+        await dbMod.query(
+          `INSERT INTO ai_activity_log (action_type, description, status)
+           VALUES ('inbox_reply', $1, 'info')`,
+          [`Reply from ${email.from} — intent: ${intent}, no action needed`]
+        ).catch(() => {});
+        updates.push({ email: email.from, intent, action: 'logged' });
+      }
+
+      await markAsRead(email.id).catch(() => {});
       await auditLogger.log('gmail.reply', 'job_lead', null,
-        `Reply from ${email.from}: intent=${intent} → status=${newStatus}`, null, 'info');
+        `Reply from ${email.from}: intent=${intent}`, null, 'info');
+
     } catch (err) {
-      console.error('NLP error on reply:', err.message);
+      console.error(`[INBOX] Error processing reply from ${email.from}:`, err.message);
     }
   }
 
