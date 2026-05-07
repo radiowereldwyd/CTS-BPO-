@@ -2380,9 +2380,21 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`CTS BPO Backend running on port ${PORT}`);
   console.log(`📞 WebRTC signaling active at ws://0.0.0.0:${PORT}/ws/call-signal`);
   auditLogger.log('system.start', null, null, `Server started on port ${PORT}`, null, 'info');
-  autonomousAgent.startAgent().catch(err => {
-    console.error('Autonomous agent failed to start:', err.message);
-  });
+  // Start agent with retry — DB connection may timeout on first boot
+  (async function startAgentWithRetry(attempts = 0) {
+    try {
+      await autonomousAgent.startAgent();
+    } catch (err) {
+      console.error(`Autonomous agent failed to start (attempt ${attempts + 1}):`, err.message);
+      if (attempts < 5) {
+        const delay = (attempts + 1) * 8000; // 8s, 16s, 24s, 32s, 40s
+        console.log(`🔄 Retrying agent start in ${delay / 1000}s...`);
+        setTimeout(() => startAgentWithRetry(attempts + 1), delay);
+      } else {
+        console.error('❌ Agent failed to start after 5 attempts — manual restart required.');
+      }
+    }
+  })();
 });
 
 module.exports = app;
