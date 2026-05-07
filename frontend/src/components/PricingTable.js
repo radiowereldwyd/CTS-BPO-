@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 
-/* ── Base prices in ZAR (source of truth) ──────────────────────────────────── */
-const BASE = { starter: 5000, growth: 15000, enterprise: 30000 };
+/* ── Base prices in USD (source of truth) ──────────────────────────────────── */
+const BASE_USD = { starter: 130, growth: 480, enterprise: 1620 };
 
 const CURRENCIES = [
-  { code: 'ZAR', symbol: 'R',    name: 'South African Rand',  flag: '🇿🇦', countries: ['ZA'] },
   { code: 'USD', symbol: '$',    name: 'US Dollar',           flag: '🇺🇸', countries: ['US'] },
+  { code: 'ZAR', symbol: 'R',   name: 'South African Rand',  flag: '🇿🇦', countries: ['ZA'] },
   { code: 'GBP', symbol: '£',   name: 'British Pound',       flag: '🇬🇧', countries: ['GB'] },
   { code: 'EUR', symbol: '€',   name: 'Euro',                flag: '🇪🇺', countries: ['DE','FR','NL','ES','IT','PT','BE','AT','IE'] },
   { code: 'AUD', symbol: 'A$',  name: 'Australian Dollar',   flag: '🇦🇺', countries: ['AU'] },
@@ -20,16 +20,17 @@ const CURRENCIES = [
   { code: 'NZD', symbol: 'NZ$', name: 'New Zealand Dollar',  flag: '🇳🇿', countries: ['NZ'] },
 ];
 
-const FALLBACK = {
-  ZAR: 1, USD: 0.054, GBP: 0.043, EUR: 0.050, AUD: 0.082, CAD: 0.073,
-  NGN: 87, KES: 7.0, GHS: 0.83, SGD: 0.072, AED: 0.198, INR: 4.5, NZD: 0.090,
+// Fallback rates from USD if live API is unavailable
+const FALLBACK_FROM_USD = {
+  USD: 1, ZAR: 18.5, GBP: 0.79, EUR: 0.92, AUD: 1.52, CAD: 1.36,
+  NGN: 1600, KES: 129, GHS: 15.4, SGD: 1.34, AED: 3.67, INR: 83.5, NZD: 1.66,
 };
 
 const TIERS = [
   {
     key: 'starter',
     name: 'Starter',
-    zarPrice: BASE.starter,
+    usdPrice: BASE_USD.starter,
     color: '#3b82f6',
     badge: null,
     features: [
@@ -44,7 +45,7 @@ const TIERS = [
   {
     key: 'growth',
     name: 'Growth',
-    zarPrice: BASE.growth,
+    usdPrice: BASE_USD.growth,
     color: '#22c55e',
     badge: 'Most Popular',
     features: [
@@ -61,7 +62,7 @@ const TIERS = [
   {
     key: 'enterprise',
     name: 'Enterprise',
-    zarPrice: BASE.enterprise,
+    usdPrice: BASE_USD.enterprise,
     color: '#a855f7',
     badge: null,
     features: [
@@ -78,11 +79,12 @@ const TIERS = [
   },
 ];
 
+// Projection rows in USD
 const PROJECTIONS = [
-  { tier: 'Starter',    clients: 10, zarMonth: 50000,  zarYear: 600000  },
-  { tier: 'Growth',     clients: 5,  zarMonth: 75000,  zarYear: 900000  },
-  { tier: 'Enterprise', clients: 2,  zarMonth: 100000, zarYear: 1200000 },
-  { tier: 'Total',      clients: 17, zarMonth: 225000, zarYear: 2700000, total: true },
+  { tier: 'Starter',    clients: 10, usdMonth: 1300,  usdYear: 15600  },
+  { tier: 'Growth',     clients: 5,  usdMonth: 2400,  usdYear: 28800  },
+  { tier: 'Enterprise', clients: 2,  usdMonth: 3240,  usdYear: 38880  },
+  { tier: 'Total',      clients: 17, usdMonth: 6940,  usdYear: 83280, total: true },
 ];
 
 function fmt(amount, symbol) {
@@ -96,7 +98,7 @@ function fmt(amount, symbol) {
 }
 
 function detectCurrencyCode(countryCode) {
-  if (!countryCode) return 'ZAR';
+  if (!countryCode) return 'USD';
   for (const c of CURRENCIES) {
     if (c.countries.includes(countryCode.toUpperCase())) return c.code;
   }
@@ -104,24 +106,26 @@ function detectCurrencyCode(countryCode) {
 }
 
 export default function PricingTable() {
-  const [rates, setRates]           = useState(FALLBACK);
-  const [currencyCode, setCurrency] = useState('ZAR');
+  const [rates, setRates]           = useState(FALLBACK_FROM_USD);
+  const [currencyCode, setCurrency] = useState('USD');
   const [detecting, setDetecting]   = useState(true);
   const [ratesLabel, setRatesLabel] = useState('');
 
   const curr = CURRENCIES.find(c => c.code === currencyCode) || CURRENCIES[0];
 
-  const convert = useCallback((zar) => {
-    const rate = rates[currencyCode] ?? FALLBACK[currencyCode] ?? 1;
-    return zar * rate;
+  // Convert a USD amount to the selected currency
+  const convert = useCallback((usd) => {
+    const rate = rates[currencyCode] ?? FALLBACK_FROM_USD[currencyCode] ?? 1;
+    return usd * rate;
   }, [rates, currencyCode]);
 
+  // Fetch live exchange rates FROM USD
   useEffect(() => {
-    fetch('https://open.er-api.com/v6/latest/ZAR')
+    fetch('https://open.er-api.com/v6/latest/USD')
       .then(r => r.json())
       .then(data => {
         if (data?.rates) {
-          setRates({ ZAR: 1, ...data.rates });
+          setRates({ USD: 1, ...data.rates });
           const d = new Date(data.time_last_update_utc || Date.now());
           setRatesLabel(`Live rates — updated ${d.toLocaleDateString()}`);
         }
@@ -129,6 +133,7 @@ export default function PricingTable() {
       .catch(() => setRatesLabel('Approximate rates (offline)'));
   }, []);
 
+  // Auto-detect visitor country via free IP geolocation
   useEffect(() => {
     fetch('https://ipapi.co/json/')
       .then(r => r.json())
@@ -149,35 +154,23 @@ export default function PricingTable() {
       padding: '18px 40px',
       borderBottom: '1px solid rgba(255,255,255,0.07)',
     },
-    hero: {
-      textAlign: 'center', padding: '64px 24px 40px',
-    },
+    hero: { textAlign: 'center', padding: '64px 24px 40px' },
     badge: {
       display: 'inline-flex', alignItems: 'center', gap: 8,
       background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.35)',
       borderRadius: 24, padding: '7px 20px', marginBottom: 20,
       color: '#a5b4fc', fontSize: 12, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase',
     },
-    h1: {
-      fontSize: 'clamp(28px,4vw,52px)', fontWeight: 900,
-      margin: '0 0 16px', color: '#fff', letterSpacing: -0.5,
-    },
-    sub: {
-      fontSize: 17, color: '#94a3b8', maxWidth: 620, margin: '0 auto 40px', lineHeight: 1.85,
-    },
-    currencyRow: {
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      gap: 12, marginBottom: 48, flexWrap: 'wrap',
-    },
+    h1: { fontSize: 'clamp(28px,4vw,52px)', fontWeight: 900, margin: '0 0 16px', color: '#fff', letterSpacing: -0.5 },
+    sub: { fontSize: 17, color: '#94a3b8', maxWidth: 620, margin: '0 auto 40px', lineHeight: 1.85 },
+    currencyRow: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 48, flexWrap: 'wrap' },
     select: {
       background: 'rgba(255,255,255,0.08)', color: '#f8fafc',
       border: '1px solid rgba(255,255,255,0.20)',
-      borderRadius: 10, padding: '10px 16px', fontSize: 15, cursor: 'pointer',
-      outline: 'none',
+      borderRadius: 10, padding: '10px 16px', fontSize: 15, cursor: 'pointer', outline: 'none',
     },
     cards: {
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
       gap: 24, maxWidth: 1100, margin: '0 auto', padding: '0 24px 60px',
     },
     card: (color, highlighted) => ({
@@ -188,56 +181,23 @@ export default function PricingTable() {
       borderTop: `4px solid ${color}`,
       borderRadius: 18, padding: '32px 28px',
       display: 'flex', flexDirection: 'column',
-      transition: 'transform 0.2s, box-shadow 0.2s',
     }),
-    cardName: (color) => ({
-      fontSize: 13, fontWeight: 800, textTransform: 'uppercase',
-      letterSpacing: 1.5, color, marginBottom: 4,
-    }),
-    price: {
-      fontSize: 'clamp(32px,4vw,44px)', fontWeight: 900, color: '#fff',
-      lineHeight: 1, margin: '8px 0 4px',
-    },
-    period: {
-      fontSize: 14, color: '#64748b', marginBottom: 20,
-    },
-    zarNote: {
-      fontSize: 12, color: '#475569', marginBottom: 16,
-    },
-    ul: {
-      listStyle: 'none', margin: '0 0 28px', padding: 0, flex: 1,
-    },
+    cardName: (color) => ({ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.5, color, marginBottom: 4 }),
+    price: { fontSize: 'clamp(32px,4vw,44px)', fontWeight: 900, color: '#fff', lineHeight: 1, margin: '8px 0 4px' },
+    period: { fontSize: 14, color: '#64748b', marginBottom: 20 },
+    usdNote: { fontSize: 12, color: '#475569', marginBottom: 16 },
+    ul: { listStyle: 'none', margin: '0 0 28px', padding: 0, flex: 1 },
     li: {
       fontSize: 14, color: '#cbd5e1', padding: '8px 0',
       borderBottom: '1px solid rgba(255,255,255,0.06)',
       display: 'flex', alignItems: 'flex-start', gap: 8, lineHeight: 1.5,
     },
     check: (color) => ({ color, flexShrink: 0, marginTop: 1 }),
-    btn: (color) => ({
-      background: `linear-gradient(135deg, ${color}, ${color}cc)`,
-      color: '#fff', border: 'none', borderRadius: 10,
-      padding: '14px 0', fontWeight: 800, fontSize: 16,
-      cursor: 'pointer', width: '100%', letterSpacing: 0.3,
-      boxShadow: `0 4px 20px ${color}44`,
-    }),
-    section: {
-      maxWidth: 1100, margin: '0 auto', padding: '0 24px 80px',
-    },
-    sectionTitle: {
-      fontSize: 22, fontWeight: 800, color: '#fff', marginBottom: 8, textAlign: 'center',
-    },
-    sectionSub: {
-      fontSize: 13, color: '#64748b', marginBottom: 24, textAlign: 'center',
-    },
-    table: {
-      width: '100%', borderCollapse: 'collapse',
-      background: 'rgba(255,255,255,0.03)', borderRadius: 14, overflow: 'hidden',
-    },
-    th: {
-      background: 'rgba(99,102,241,0.20)', color: '#a5b4fc',
-      padding: '14px 20px', textAlign: 'left', fontSize: 13, fontWeight: 700,
-      textTransform: 'uppercase', letterSpacing: 0.8,
-    },
+    section: { maxWidth: 1100, margin: '0 auto', padding: '0 24px 80px' },
+    sectionTitle: { fontSize: 22, fontWeight: 800, color: '#fff', marginBottom: 8, textAlign: 'center' },
+    sectionSub: { fontSize: 13, color: '#64748b', marginBottom: 24, textAlign: 'center' },
+    table: { width: '100%', borderCollapse: 'collapse', background: 'rgba(255,255,255,0.03)', borderRadius: 14, overflow: 'hidden' },
+    th: { background: 'rgba(99,102,241,0.20)', color: '#a5b4fc', padding: '14px 20px', textAlign: 'left', fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.8 },
     td: (total) => ({
       padding: '14px 20px', fontSize: 14,
       color: total ? '#fff' : '#cbd5e1',
@@ -245,11 +205,7 @@ export default function PricingTable() {
       borderTop: '1px solid rgba(255,255,255,0.06)',
       background: total ? 'rgba(99,102,241,0.12)' : 'transparent',
     }),
-    footer: {
-      textAlign: 'center', padding: '32px 24px',
-      borderTop: '1px solid rgba(255,255,255,0.07)',
-      color: '#475569', fontSize: 13,
-    },
+    footer: { textAlign: 'center', padding: '32px 24px', borderTop: '1px solid rgba(255,255,255,0.07)', color: '#475569', fontSize: 13 },
   };
 
   return (
@@ -280,20 +236,14 @@ export default function PricingTable() {
           <span style={{ color: '#94a3b8', fontSize: 14 }}>
             {detecting ? '🌍 Detecting your location…' : '🌍 Prices in:'}
           </span>
-          <select
-            value={currencyCode}
-            onChange={e => setCurrency(e.target.value)}
-            style={S.select}
-          >
+          <select value={currencyCode} onChange={e => setCurrency(e.target.value)} style={S.select}>
             {CURRENCIES.map(c => (
               <option key={c.code} value={c.code} style={{ background: '#0f172a' }}>
                 {c.flag} {c.code} — {c.name}
               </option>
             ))}
           </select>
-          {ratesLabel && (
-            <span style={{ color: '#475569', fontSize: 12 }}>{ratesLabel}</span>
-          )}
+          {ratesLabel && <span style={{ color: '#475569', fontSize: 12 }}>{ratesLabel}</span>}
         </div>
       </div>
 
@@ -307,10 +257,10 @@ export default function PricingTable() {
               </div>
             )}
             <div style={S.cardName(tier.color)}>{tier.name}</div>
-            <div style={S.price}>{fmt(convert(tier.zarPrice), curr.symbol)}</div>
+            <div style={S.price}>{fmt(convert(tier.usdPrice), curr.symbol)}</div>
             <div style={S.period}>/month</div>
-            {currencyCode !== 'ZAR' && (
-              <div style={S.zarNote}>≈ R{tier.zarPrice.toLocaleString()} ZAR</div>
+            {currencyCode !== 'USD' && (
+              <div style={S.usdNote}>≈ ${tier.usdPrice.toLocaleString()} USD</div>
             )}
             <ul style={S.ul}>
               {tier.features.map(f => (
@@ -322,7 +272,7 @@ export default function PricingTable() {
             </ul>
             <a
               href="mailto:cts.bposolutions@gmail.com"
-              style={{ ...S.btn(tier.color), display: 'block', textAlign: 'center', textDecoration: 'none', padding: '14px 0', lineHeight: 1.2 }}
+              style={{ background: `linear-gradient(135deg, ${tier.color}, ${tier.color}cc)`, color: '#fff', border: 'none', borderRadius: 10, padding: '14px 0', fontWeight: 800, fontSize: 16, cursor: 'pointer', width: '100%', display: 'block', textAlign: 'center', textDecoration: 'none', boxShadow: `0 4px 20px ${tier.color}44` }}
             >
               Get Started
             </a>
@@ -335,7 +285,7 @@ export default function PricingTable() {
         <h2 style={S.sectionTitle}>12-Month Revenue Projection</h2>
         <p style={S.sectionSub}>
           {curr.flag} {curr.name} ({currencyCode})
-          {currencyCode !== 'ZAR' ? ' — converted from ZAR at live rates' : ''}
+          {currencyCode !== 'USD' ? ' — converted from USD at live rates' : ''}
         </p>
         <table style={S.table}>
           <thead>
@@ -350,8 +300,8 @@ export default function PricingTable() {
               <tr key={row.tier}>
                 <td style={S.td(row.total)}>{row.tier}</td>
                 <td style={S.td(row.total)}>{row.clients}</td>
-                <td style={S.td(row.total)}>{fmt(convert(row.zarMonth), curr.symbol)}</td>
-                <td style={S.td(row.total)}>{fmt(convert(row.zarYear), curr.symbol)}</td>
+                <td style={S.td(row.total)}>{fmt(convert(row.usdMonth), curr.symbol)}</td>
+                <td style={S.td(row.total)}>{fmt(convert(row.usdYear), curr.symbol)}</td>
               </tr>
             ))}
           </tbody>
