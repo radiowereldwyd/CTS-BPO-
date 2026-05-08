@@ -2060,11 +2060,26 @@ async function startAgent() {
   setInterval(() => refreshDbStats().catch(() => {}), 15_000);
   setTimeout(() => refreshDbStats().catch(() => {}), 5_000); // initial refresh
 
-  // ── ALL OUTREACH CRONS DISABLED — admin approval required ──
-  // Scraped contacts outreach: PAUSED (was every 30 min)
-  // Scraped contacts follow-ups: PAUSED (was every 2 hours)
-  // Job seeker recruitment: PAUSED (was every 4 hours)
-  // Use Triggers tab in dashboard to manually fire if needed.
+  // ── OUTREACH CRONS — RE-ENABLED (multi-channel lead generation) ─────────────
+  // Fresh scraped contacts outreach — every 45 minutes, max 5 emails/run, 25/day cap
+  cron.schedule('*/45 * * * *', () => {
+    runScrapedContactsOutreach()
+      .catch(e => logActivity('scrape_outreach', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
+  // Scraped contacts follow-ups (day-3 and day-7) — every 2 hours
+  cron.schedule('0 */2 * * *', () => {
+    runScrapedContactsFollowUps()
+      .catch(e => logActivity('scrape_followup', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+
+  // AI leads follow-up sequence (day-3 and day-7) — every 6 hours
+  cron.schedule('30 */6 * * *', () => {
+    if (!isSerpApiCooling()) {
+      runFollowUpSequence()
+        .catch(e => logActivity('followup', `Cron error: ${e.message}`, null, null, 'error'));
+    }
+  });
 
   // Daily heartbeat log
   cron.schedule('0 8 * * *', () => {

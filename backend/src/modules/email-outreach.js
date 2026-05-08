@@ -206,8 +206,18 @@ async function sendMail({ to, subject, html, text, replyTo }) {
     return { skipped: true, reason: 'paused' };
   }
   if (dailyCapReached()) {
-    console.warn(`[EMAIL] 99% cap (${getStopAt()}/${getProviderCap()}) reached — skipping send to ${to}`);
-    return { skipped: true, reason: 'daily_cap' };
+    // Cap hit — mark current provider as broken for the day and try next provider
+    const cappedMode = getSenderMode();
+    if (cappedMode) {
+      markBroken(cappedMode);
+      console.warn(`[EMAIL] 99% cap hit on '${cappedMode}' (${dailySentCount}/${getProviderCap()}) — switching provider`);
+      dailySentCount = 0; // reset count for new provider
+    }
+    const nextMode = getSenderMode();
+    if (!nextMode) {
+      console.warn(`[EMAIL] All providers at daily cap — deferring send to ${to} until tomorrow`);
+      return { skipped: true, reason: 'all_providers_daily_cap' };
+    }
   }
 
   const mode = getSenderMode();
