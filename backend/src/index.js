@@ -1396,12 +1396,18 @@ app.get('/api/ai-agent/scraped-contacts', requireAuth, async (req, res) => {
 // GET /api/ai-agent/platform-jobs — Upwork / Freelancer / Guru live job board
 app.get('/api/ai-agent/platform-jobs', requireAuth, async (req, res) => {
   try {
-    const jobSearch = require('./modules/job-search');
+    const jobSearch  = require('./modules/job-search');
+    const agentMod   = require('./modules/autonomous-agent');
     const [stats, jobs] = await Promise.all([
       jobSearch.getPlatformStats(),
       jobSearch.getPlatformJobs({ limit: 300 }),
     ]);
-    res.json({ stats, jobs });
+    const agentStatus = agentMod.getStatus ? agentMod.getStatus() : {};
+    const serpCooling = agentStatus.serpApiCoolingUntil && new Date(agentStatus.serpApiCoolingUntil) > new Date();
+    const cooldownMinsLeft = serpCooling
+      ? Math.ceil((new Date(agentStatus.serpApiCoolingUntil) - Date.now()) / 60000)
+      : 0;
+    res.json({ stats, jobs, serpCooling, cooldownMinsLeft });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

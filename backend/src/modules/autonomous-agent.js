@@ -1884,6 +1884,10 @@ async function startAgent() {
   // Must run BEFORE any crons or queries reference these columns
   await webScraper.ensureTable().catch(e => console.warn('[AGENT] webScraper.ensureTable():', e.message));
 
+  // Ensure platform_jobs table and auto-bidder columns exist on every boot (sequential — columns depend on table)
+  await jobSearch.ensurePlatformTable().catch(e => console.warn('[AGENT] ensurePlatformTable:', e.message));
+  await require('./auto-bidder').ensureAutoBidColumns().catch(e => console.warn('[AGENT] ensureAutoBidColumns:', e.message));
+
   // Ensure email analytics tables exist (non-blocking)
   emailAnalytics.ensureTables().catch(e => console.warn('[ANALYTICS] Table init error:', e.message));
 

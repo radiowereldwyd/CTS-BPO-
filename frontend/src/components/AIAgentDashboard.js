@@ -892,7 +892,7 @@ function ProposalBlock({ proposal }) {
 function PlatformJobsPanel({ data, loading, token, onRefresh, onTriggerScan, onMarkBid }) {
   const [filterPlatform, setFilterPlatform] = useState('all');
   const [filterType, setFilterType]         = useState('all');
-  const [filterStatus, setFilterStatus]     = useState('bid_sent');
+  const [filterStatus, setFilterStatus]     = useState('all');
   const [scanning, setScanning]             = useState(false);
   const [autoBidding, setAutoBidding]       = useState(false);
   const [autoBidMsg, setAutoBidMsg]         = useState('');
@@ -965,6 +965,12 @@ function PlatformJobsPanel({ data, loading, token, onRefresh, onTriggerScan, onM
       {autoBidMsg && (
         <div style={{ background: autoBidMsg.startsWith('✅') ? '#ecfdf5' : '#fff7ed', border: `1px solid ${autoBidMsg.startsWith('✅') ? '#6ee7b7' : '#fcd34d'}`, borderRadius: 10, padding: '10px 16px', marginBottom: 14, fontWeight: 700, fontSize: 13, color: autoBidMsg.startsWith('✅') ? '#065f46' : '#92400e' }}>
           {autoBidMsg}
+        </div>
+      )}
+      {data?.serpCooling && (
+        <div style={{ background: '#fff7ed', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 16px', marginBottom: 14, fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>⏳</span>
+          <span><strong>Search engine cooling down</strong> — SerpAPI rate limit hit. Jobs will scan automatically in ~{data.cooldownMinsLeft} minute{data.cooldownMinsLeft !== 1 ? 's' : ''}. No action needed.</span>
         </div>
       )}
 

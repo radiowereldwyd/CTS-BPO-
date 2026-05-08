@@ -425,4 +425,4 @@ async function sendAdminDigest(items) {
   }
 }
 
-module.exports = { autoBidNewJobs, canAIHandle, generateProposal, extractEmail };
+module.exports = { autoBidNewJobs, canAIHandle, generateProposal, extractEmail, ensureAutoBidColumns };
