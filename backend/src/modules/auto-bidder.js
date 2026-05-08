@@ -59,6 +59,31 @@ const SKIP_KEYWORDS = [
   'recruiter','hr manager','business development','sales rep','cold calling',
   'telemarketing','accounting software','tax return','tax prep',
   'astrology','tarot','horoscope',
+  // E-commerce platform dev
+  'shopify','woocommerce','magento','opencart','prestashop','bigcommerce',
+  // CRM / ERP development
+  'crm development','crm develop','zoho develop','zoho one','salesforce develop',
+  'hubspot develop','erp develop','odoo',
+  // Article / content creation
+  'article creat','article writ','home decor article','write.*article','articles for',
+  'blog creat','content creat',
+  // Tutoring / teaching
+  'tutor','tutoring','teaching','instructor','trainer','coaching','mentor',
+  'online course','e-learning','elearning',
+  // Sales / outreach roles
+  'sales hunter','commission based','outreach executive','sales executive',
+  'business partner','hr partner','partnership developer','cold email',
+  'appointment setting','lead generation executive',
+  // Mapping / surveying / specialized technical
+  'lidar','mapping session','site survey','site verification field',
+  'compliance report','engineering report','technical report',
+  // Instagram / social lead gen
+  'instagram lead','facebook lead','social media lead','lead gen.*instagram',
+  'social media manager',
+  // Miscellaneous non-BPO
+  'nft','crypto','blockchain','defi','web3','dao ','smart contract',
+  'seo audit','seo specialist','sem ','ppc ','google ads','facebook ads',
+  'interior design','architecture','cad drawing','floor plan',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -303,16 +328,42 @@ function generateProposal(job, effectiveType) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Calculate bid amount from budget
+// Currency → USD conversion (approximate, updated monthly if needed)
+// ─────────────────────────────────────────────────────────────────────────────
+const CURRENCY_TO_USD = {
+  '$': 1, 'USD': 1,
+  '£': 1.27, 'GBP': 1.27,
+  '€': 1.09, 'EUR': 1.09,
+  '₹': 0.012, 'INR': 0.012,
+  'A$': 0.65, 'AUD': 0.65,
+  'C$': 0.74, 'CAD': 0.74,
+  'R': 0.055, 'ZAR': 0.055,
+  'S$': 0.74, 'SGD': 0.74,
+};
+
+function budgetToUSD(job) {
+  const budget = job.budget || '';
+  // Find currency symbol
+  let rate = 1;
+  for (const [sym, r] of Object.entries(CURRENCY_TO_USD)) {
+    if (budget.startsWith(sym) || budget.includes(sym)) { rate = r; break; }
+  }
+  const max = parseFloat(job.budget_max);
+  const min = parseFloat(job.budget_min);
+  const val = (!isNaN(max) && max > 0) ? max : (!isNaN(min) && min > 0) ? min : 0;
+  return Math.round(val * rate);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Calculate bid amount from budget — always in USD for the API
 // ─────────────────────────────────────────────────────────────────────────────
 function calcBidAmount(job) {
-  const min = parseFloat(job.budget_min);
-  const max = parseFloat(job.budget_max);
-  if (!isNaN(min) && min > 0) {
-    const target = !isNaN(max) ? Math.round((min + max) / 2 * 0.85) : Math.round(min * 1.1);
-    return Math.max(target, 15);
+  const usdMax = budgetToUSD(job);
+  if (usdMax > 0) {
+    const midpoint = Math.round(usdMax * 0.8); // bid at 80% of max budget
+    return Math.max(midpoint, 15);             // never bid below $15
   }
-  return 50; // default
+  return 50; // default if no budget info
 }
 
 function deliveryDays(type) {
@@ -322,6 +373,80 @@ function deliveryDays(type) {
     'virtual-assistant': 30, 'customer-support': 30, 'content-moderation': 30,
   };
   return map[type] || 7;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Monthly bid counter — how many API bids submitted this calendar month
+// ─────────────────────────────────────────────────────────────────────────────
+async function countBidsThisMonth() {
+  const { rows } = await db.query(`
+    SELECT COUNT(*) as c FROM platform_jobs
+    WHERE bid_method = 'api_submitted'
+    AND bid_sent_at >= date_trunc('month', NOW())
+  `);
+  return parseInt(rows[0].c, 10);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Submit top-N pending bids sorted by USD budget value (highest first)
+// Respects FREELANCER_MONTHLY_BID_LIMIT env var (default 8 for free account)
+// ─────────────────────────────────────────────────────────────────────────────
+async function submitPriorityBids() {
+  if (!FREELANCER_TOKEN) return { submitted: 0, reason: 'no_token' };
+
+  const MONTHLY_LIMIT = parseInt(process.env.FREELANCER_MONTHLY_BID_LIMIT || '8', 10);
+  const usedThisMonth = await countBidsThisMonth();
+  const slotsLeft = MONTHLY_LIMIT - usedThisMonth;
+
+  if (slotsLeft <= 0) {
+    console.log(`[PRIORITY-BID] Monthly limit reached (${usedThisMonth}/${MONTHLY_LIMIT}) — no slots left`);
+    return { submitted: 0, reason: 'monthly_limit_reached', usedThisMonth, MONTHLY_LIMIT };
+  }
+
+  // Fetch all bid_sent jobs with Freelancer project IDs that haven't been API-submitted
+  const { rows: candidates } = await db.query(`
+    SELECT * FROM platform_jobs
+    WHERE status = 'bid_sent'
+    AND bid_method = 'admin_notified'
+    AND freelancer_project_id IS NOT NULL
+    AND platform = 'Freelancer'
+    ORDER BY created_at DESC
+    LIMIT 200
+  `);
+
+  if (candidates.length === 0) return { submitted: 0, reason: 'no_candidates' };
+
+  // Sort by USD value (highest first) to use slots on best-paying jobs
+  const sorted = candidates
+    .map(j => ({ ...j, usdValue: budgetToUSD(j) }))
+    .sort((a, b) => b.usdValue - a.usdValue)
+    .slice(0, slotsLeft);
+
+  console.log(`[PRIORITY-BID] ${slotsLeft} slots available, submitting top ${sorted.length} jobs by USD value`);
+
+  let submitted = 0;
+  const results = [];
+
+  for (const job of sorted) {
+    const effectiveType = job.effective_job_type || classifyJob(job) || 'general';
+    const proposal = job.proposal_text || generateProposal(job, effectiveType);
+
+    const result = await submitFreelancerBid(job, proposal, effectiveType);
+    if (result.ok) {
+      await db.query(
+        `UPDATE platform_jobs SET bid_method='api_submitted', bid_amount=$1, freelancer_bid_id=$2, updated_at=NOW() WHERE id=$3`,
+        [result.amount, result.bidId, job.id]
+      );
+      submitted++;
+      results.push({ title: job.title, usdValue: job.usdValue, bidAmount: result.amount, status: 'ok' });
+    } else {
+      results.push({ title: job.title, usdValue: job.usdValue, status: 'failed', reason: result.reason });
+    }
+    await new Promise(r => setTimeout(r, 2000)); // 2s between bids
+  }
+
+  console.log(`✅ [PRIORITY-BID] Submitted ${submitted}/${sorted.length} bids (${usedThisMonth + submitted}/${MONTHLY_LIMIT} used this month)`);
+  return { submitted, slotsLeft, results, usedThisMonth: usedThisMonth + submitted, MONTHLY_LIMIT };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -553,4 +678,4 @@ async function sendAdminDigest(items, hasToken) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
-module.exports = { autoBidNewJobs, classifyJob, generateProposal, ensureAutoBidColumns };
+module.exports = { autoBidNewJobs, classifyJob, generateProposal, ensureAutoBidColumns, submitPriorityBids, countBidsThisMonth, budgetToUSD };

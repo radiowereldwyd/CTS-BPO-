@@ -1432,6 +1432,48 @@ app.post('/api/ai-agent/platform-jobs/auto-bid', requireAuth, requireAdmin, asyn
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/ai-agent/platform-jobs/priority-bid — submit top-N bids by USD value (respects monthly limit)
+app.post('/api/ai-agent/platform-jobs/priority-bid', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const autoBidder = require('./modules/auto-bidder');
+    const result = await autoBidder.submitPriorityBids();
+    res.json({ ok: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/ai-agent/platform-jobs/bid-status — monthly bid usage stats
+app.get('/api/ai-agent/platform-jobs/bid-status', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const autoBidder = require('./modules/auto-bidder');
+    const MONTHLY_LIMIT = parseInt(process.env.FREELANCER_MONTHLY_BID_LIMIT || '8', 10);
+    const usedThisMonth = await autoBidder.countBidsThisMonth();
+    const hasToken = !!process.env.FREELANCER_TOKEN;
+
+    const { rows: topJobs } = await db.query(`
+      SELECT id, title, effective_job_type, budget, budget_min, budget_max, freelancer_project_id, bid_method, status
+      FROM platform_jobs
+      WHERE status = 'bid_sent' AND bid_method = 'admin_notified'
+        AND freelancer_project_id IS NOT NULL AND platform = 'Freelancer'
+      ORDER BY COALESCE(budget_max, budget_min, 0) DESC NULLS LAST
+      LIMIT 20
+    `);
+
+    const topWithUSD = topJobs.map(j => ({
+      ...j,
+      usd_value: autoBidder.budgetToUSD(j),
+    })).sort((a, b) => b.usd_value - a.usd_value);
+
+    res.json({
+      ok: true,
+      has_token: hasToken,
+      monthly_limit: MONTHLY_LIMIT,
+      used_this_month: usedThisMonth,
+      slots_remaining: Math.max(0, MONTHLY_LIMIT - usedThisMonth),
+      top_candidates: topWithUSD,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/platform-jobs/approve/:id — one-click approve from email link (no login needed)
 app.get('/api/platform-jobs/approve/:id', async (req, res) => {
   const token = req.query.token;
