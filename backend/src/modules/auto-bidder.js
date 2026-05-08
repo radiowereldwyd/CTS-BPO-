@@ -84,6 +84,25 @@ const SKIP_KEYWORDS = [
   'nft','crypto','blockchain','defi','web3','dao ','smart contract',
   'seo audit','seo specialist','sem ','ppc ','google ads','facebook ads',
   'interior design','architecture','cad drawing','floor plan',
+  // Game dev / entertainment
+  'game develop','mobile game','simulation game','unity game','unreal game',
+  'game design','game asset','game level','rpg game','puzzle game',
+  // Video / promo creation (not moderation)
+  'promo video','promotional video','explainer video','product video',
+  'corporate video','intro video','outro video','video ad','video commercial',
+  'whiteboard video','2d animation','3d animation','motion video',
+  // Menu / restaurant design
+  'menu design','restaurant menu','food menu','bakery menu','cafe menu',
+  // Social media management / marketing
+  'social media marketing','social media strateg','social media content',
+  'instagram marketing','facebook marketing','tiktok marketing',
+  'influencer','brand awareness','community manag',
+  // Lead gen (sales role, not data collection)
+  'lead generation executive','lead gen executive','b2b lead gen',
+  'linkedin lead','linkedin outreach','sales lead','prospect list build',
+  // Platform development
+  'develop olx','develop platform','marketplace develop','ecommerce develop',
+  'develop website','build website','create website','website from scratch',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,7 +180,7 @@ We work on a per-record or per-project basis — no retainer required. Could you
 Best regards,
 Thandeka Mokoena
 CTS BPO — AI-Powered Business Process Outsourcing
-cts.cybersolutions@gmail.com | ${APP_URL}`.trim(),
+`.trim(),
 
   'transcription': (job) => `Hi,
 
@@ -182,7 +201,7 @@ Would a free sample work for you?
 Best regards,
 Thandeka Mokoena
 CTS BPO — AI-Powered Business Process Outsourcing
-cts.cybersolutions@gmail.com | ${APP_URL}`.trim(),
+`.trim(),
 
   'translation': (job) => `Hi,
 
@@ -201,7 +220,7 @@ Happy to provide a free sample translation of 200–300 words so you can evaluat
 Best regards,
 Thandeka Mokoena
 CTS BPO — AI-Powered Business Process Outsourcing
-cts.cybersolutions@gmail.com | ${APP_URL}`.trim(),
+`.trim(),
 
   'virtual-assistant': (job) => `Hi,
 
@@ -221,7 +240,7 @@ We can start on a trial basis (10–20 hours) so you can evaluate fit before com
 Best regards,
 Thandeka Mokoena
 CTS BPO — AI-Powered Business Process Outsourcing
-cts.cybersolutions@gmail.com | ${APP_URL}`.trim(),
+`.trim(),
 
   'customer-support': (job) => `Hi,
 
@@ -241,7 +260,7 @@ Happy to discuss your ticket volume and SLA requirements. What platforms are you
 Best regards,
 Thandeka Mokoena
 CTS BPO — AI-Powered Business Process Outsourcing
-cts.cybersolutions@gmail.com | ${APP_URL}`.trim(),
+`.trim(),
 
   'document-processing': (job) => `Hi,
 
@@ -260,7 +279,7 @@ We can process a batch of sample documents for free so you can see the accuracy 
 Best regards,
 Thandeka Mokoena
 CTS BPO — AI-Powered Business Process Outsourcing
-cts.cybersolutions@gmail.com | ${APP_URL}`.trim(),
+`.trim(),
 
   'finance-admin': (job) => `Hi,
 
@@ -280,7 +299,7 @@ Happy to discuss your specific requirements and provide a competitive quote.
 Best regards,
 Thandeka Mokoena
 CTS BPO — AI-Powered Business Process Outsourcing
-cts.cybersolutions@gmail.com | ${APP_URL}`.trim(),
+`.trim(),
 
   'content-moderation': (job) => `Hi,
 
@@ -300,7 +319,7 @@ Would you like to discuss volume, categories, and SLA requirements?
 Best regards,
 Thandeka Mokoena
 CTS BPO — AI-Powered Business Process Outsourcing
-cts.cybersolutions@gmail.com | ${APP_URL}`.trim(),
+`.trim(),
 
   'general': (job) => `Hi,
 
@@ -319,7 +338,7 @@ What are the key requirements for this role?
 Best regards,
 Thandeka Mokoena
 CTS BPO — AI-Powered Business Process Outsourcing
-cts.cybersolutions@gmail.com | ${APP_URL}`.trim(),
+`.trim(),
 };
 
 function generateProposal(job, effectiveType) {
@@ -391,10 +410,35 @@ async function countBidsThisMonth() {
 // Submit top-N pending bids sorted by USD budget value (highest first)
 // Respects FREELANCER_MONTHLY_BID_LIMIT env var (default 8 for free account)
 // ─────────────────────────────────────────────────────────────────────────────
+// Permanent error reasons — don't retry these jobs ever
+const PERMANENT_ERRORS = [
+  'deleted', 'awarded', 'closed', 'expired',
+  'ProjectExceptionCodes.PROJECT_NOT_FOUND',
+  'ProjectExceptionCodes.PROJECT_AWARDED',
+  'ProjectExceptionCodes.PROJECT_CLOSED',
+];
+
+// Account restriction errors — skip job but don't mark permanently bad
+const RESTRICTION_ERRORS = [
+  'Verified by Freelancer', 'at least 5 reviews', 'Plus, Professional',
+  'required skills', 'account balance', 'membership',
+];
+
+function classifyBidError(reason = '') {
+  const r = reason.toLowerCase();
+  if (PERMANENT_ERRORS.some(e => r.includes(e.toLowerCase()))) return 'expired';
+  if (reason.includes('Verified by Freelancer') || reason.includes('Plus, Professional') || reason.includes('at least 5 reviews')) return 'needs_verification';
+  if (reason.includes('required skills')) return 'needs_skills';
+  if (reason.includes('account balance')) return 'needs_balance';
+  return 'api_error';
+}
+
 async function submitPriorityBids() {
   if (!FREELANCER_TOKEN) return { submitted: 0, reason: 'no_token' };
 
   const MONTHLY_LIMIT = parseInt(process.env.FREELANCER_MONTHLY_BID_LIMIT || '8', 10);
+  // Unverified accounts cannot bid on projects over $2,499
+  const MAX_BUDGET_USD = parseInt(process.env.FREELANCER_MAX_BID_USD || '2499', 10);
   const usedThisMonth = await countBidsThisMonth();
   const slotsLeft = MONTHLY_LIMIT - usedThisMonth;
 
@@ -403,7 +447,7 @@ async function submitPriorityBids() {
     return { submitted: 0, reason: 'monthly_limit_reached', usedThisMonth, MONTHLY_LIMIT };
   }
 
-  // Fetch all bid_sent jobs with Freelancer project IDs that haven't been API-submitted
+  // Fetch a large pool of candidates — we'll try until we fill all slots
   const { rows: candidates } = await db.query(`
     SELECT * FROM platform_jobs
     WHERE status = 'bid_sent'
@@ -411,59 +455,100 @@ async function submitPriorityBids() {
     AND freelancer_project_id IS NOT NULL
     AND platform = 'Freelancer'
     ORDER BY created_at DESC
-    LIMIT 200
+    LIMIT 500
   `);
 
   if (candidates.length === 0) return { submitted: 0, reason: 'no_candidates' };
 
-  // Sort by USD value (highest first) to use slots on best-paying jobs
-  const sorted = candidates
+  // Enrich with USD value, filter out jobs beyond our account capabilities
+  const eligible = candidates
     .map(j => ({ ...j, usdValue: budgetToUSD(j) }))
-    .sort((a, b) => b.usdValue - a.usdValue)
-    .slice(0, slotsLeft);
+    .filter(j => j.usdValue <= MAX_BUDGET_USD || j.usdValue === 0) // skip high-budget jobs
+    .sort((a, b) => b.usdValue - a.usdValue); // highest value first
 
-  console.log(`[PRIORITY-BID] ${slotsLeft} slots available, submitting top ${sorted.length} jobs by USD value`);
+  console.log(`[PRIORITY-BID] ${slotsLeft} slots available, ${eligible.length} eligible candidates (budget ≤ $${MAX_BUDGET_USD})`);
 
   let submitted = 0;
+  let attempted = 0;
   const results = [];
 
-  for (const job of sorted) {
+  for (const job of eligible) {
+    if (submitted >= slotsLeft) break;
+    attempted++;
+
     const effectiveType = job.effective_job_type || classifyJob(job) || 'general';
     const proposal = job.proposal_text || generateProposal(job, effectiveType);
 
     const result = await submitFreelancerBid(job, proposal, effectiveType);
+
     if (result.ok) {
       await db.query(
         `UPDATE platform_jobs SET bid_method='api_submitted', bid_amount=$1, freelancer_bid_id=$2, updated_at=NOW() WHERE id=$3`,
         [result.amount, result.bidId, job.id]
       );
       submitted++;
-      results.push({ title: job.title, usdValue: job.usdValue, bidAmount: result.amount, status: 'ok' });
+      results.push({ title: job.title, usdValue: job.usdValue, bidAmount: result.amount, status: 'submitted' });
+      console.log(`✅ [PRIORITY-BID] Bid #${submitted} submitted — "${job.title}" $${result.amount}`);
     } else {
-      results.push({ title: job.title, usdValue: job.usdValue, status: 'failed', reason: result.reason });
+      const errorType = classifyBidError(result.reason);
+
+      // Mark permanently closed/deleted jobs so we don't try again
+      if (errorType === 'expired') {
+        await db.query(
+          `UPDATE platform_jobs SET status='expired', updated_at=NOW() WHERE id=$1`, [job.id]
+        );
+      } else if (errorType === 'needs_verification' || errorType === 'needs_skills') {
+        await db.query(
+          `UPDATE platform_jobs SET bid_method='ineligible', updated_at=NOW() WHERE id=$1`, [job.id]
+        );
+      }
+
+      results.push({ title: job.title, usdValue: job.usdValue, status: 'failed', reason: result.reason, errorType });
+      console.log(`⚠️ [PRIORITY-BID] Skipped "${job.title}" — ${errorType}: ${result.reason}`);
     }
-    await new Promise(r => setTimeout(r, 2000)); // 2s between bids
+
+    await new Promise(r => setTimeout(r, 2000)); // 2s between API calls
   }
 
-  console.log(`✅ [PRIORITY-BID] Submitted ${submitted}/${sorted.length} bids (${usedThisMonth + submitted}/${MONTHLY_LIMIT} used this month)`);
-  return { submitted, slotsLeft, results, usedThisMonth: usedThisMonth + submitted, MONTHLY_LIMIT };
+  console.log(`✅ [PRIORITY-BID] Done — ${submitted} submitted, ${attempted - submitted} skipped (${usedThisMonth + submitted}/${MONTHLY_LIMIT} used this month)`);
+  return { submitted, attempted, slotsLeft, results, usedThisMonth: usedThisMonth + submitted, MONTHLY_LIMIT };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Submit bid directly to Freelancer.com API
 // ─────────────────────────────────────────────────────────────────────────────
+// Cached freelancer user ID (fetched once per process)
+let _freelancerUserId = null;
+async function getFreelancerUserId() {
+  if (_freelancerUserId) return _freelancerUserId;
+  try {
+    const res = await axios.get('https://www.freelancer.com/api/users/0.1/self/', {
+      headers: { 'freelancer-oauth-v1': FREELANCER_TOKEN },
+      timeout: 10000,
+    });
+    _freelancerUserId = res.data?.result?.id;
+    console.log(`[AUTO-BID] Freelancer user ID resolved: ${_freelancerUserId}`);
+  } catch (e) {
+    console.warn(`[AUTO-BID] Could not resolve Freelancer user ID: ${e.message}`);
+  }
+  return _freelancerUserId;
+}
+
 async function submitFreelancerBid(job, proposal, effectiveType) {
   if (!FREELANCER_TOKEN) return { ok: false, reason: 'no_token' };
   if (!job.freelancer_project_id) return { ok: false, reason: 'no_project_id' };
 
   const amount = calcBidAmount(job);
   const period = deliveryDays(effectiveType);
+  const bidderId = await getFreelancerUserId();
+  if (!bidderId) return { ok: false, reason: 'could_not_resolve_bidder_id' };
 
   try {
     const res = await axios.post(
       'https://www.freelancer.com/api/projects/0.1/bids/',
       {
-        project_id:           job.freelancer_project_id,
+        project_id:           parseInt(job.freelancer_project_id, 10),
+        bidder_id:            bidderId,
         amount:               amount,
         period:               period,
         description:          proposal,
@@ -484,12 +569,13 @@ async function submitFreelancerBid(job, proposal, effectiveType) {
       return { ok: true, bidId, amount, period };
     }
 
-    const errCode = res.data?.error_code || 'unknown';
+    const errCode = res.data?.error_code || res.data?.message || 'unknown';
     console.warn(`[AUTO-BID] Freelancer bid rejected — project ${job.freelancer_project_id}: ${errCode}`);
     return { ok: false, reason: errCode };
   } catch (e) {
-    console.warn(`[AUTO-BID] Freelancer API error — project ${job.freelancer_project_id}: ${e.message}`);
-    return { ok: false, reason: e.message };
+    const apiErr = e.response?.data?.message || e.response?.data?.error_code || e.message;
+    console.warn(`[AUTO-BID] Freelancer API error — project ${job.freelancer_project_id}: ${apiErr}`);
+    return { ok: false, reason: apiErr };
   }
 }
 
