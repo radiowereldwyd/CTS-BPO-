@@ -103,6 +103,13 @@ const SKIP_KEYWORDS = [
   // Platform development
   'develop olx','develop platform','marketplace develop','ecommerce develop',
   'develop website','build website','create website','website from scratch',
+  // Local / physical presence jobs (can't do remotely)
+  'site verification','field verification','site visit','on-site','onsite',
+  'physical inspection','local job','within 150km','photography on location',
+  'in-person','in person visit',
+  // Non-English language jobs
+  'recherche','emploi','santé','français','francais','deutsch','español',
+  'italiano','português','vietnamese','bahasa','arabic job','mandarin job',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -374,15 +381,22 @@ function budgetToUSD(job) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Calculate bid amount from budget — always in USD for the API
+// Calculate bid amount in the project's NATIVE currency (not USD)
+// The Freelancer API expects the amount in whatever currency the project uses
 // ─────────────────────────────────────────────────────────────────────────────
 function calcBidAmount(job) {
-  const usdMax = budgetToUSD(job);
-  if (usdMax > 0) {
-    const midpoint = Math.round(usdMax * 0.8); // bid at 80% of max budget
-    return Math.max(midpoint, 15);             // never bid below $15
+  const max = parseFloat(job.budget_max);
+  const min = parseFloat(job.budget_min);
+
+  // Use native currency value (do NOT convert to USD — API expects project currency)
+  if (!isNaN(max) && max > 0) {
+    return Math.round(max * 0.8); // bid at 80% of max in project currency
   }
-  return 50; // default if no budget info
+  if (!isNaN(min) && min > 0) {
+    return Math.round(min * 1.1); // bid slightly above min
+  }
+  // Default fallback in USD (for jobs with no budget info)
+  return 50;
 }
 
 function deliveryDays(type) {
