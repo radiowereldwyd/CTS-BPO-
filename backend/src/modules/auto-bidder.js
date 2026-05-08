@@ -365,9 +365,20 @@ CTS BPO — AI-Powered Business Process Outsourcing
 `.trim(),
 };
 
+const FL_PROPOSAL_MAX = 1480; // Freelancer hard limit is 1500 — leave 20 chars safety margin
+
 function generateProposal(job, effectiveType) {
   const fn = PROPOSALS[effectiveType] || PROPOSALS['general'];
-  return fn(job);
+  let text = fn(job);
+  // Hard cap — truncate at last full sentence before the limit
+  if (text.length > FL_PROPOSAL_MAX) {
+    text = text.substring(0, FL_PROPOSAL_MAX);
+    // Cut back to the last sentence boundary
+    const lastPeriod = Math.max(text.lastIndexOf('.'), text.lastIndexOf('?'), text.lastIndexOf('!'));
+    if (lastPeriod > FL_PROPOSAL_MAX * 0.6) text = text.substring(0, lastPeriod + 1);
+    else text = text.substring(0, FL_PROPOSAL_MAX).trimEnd();
+  }
+  return text;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
