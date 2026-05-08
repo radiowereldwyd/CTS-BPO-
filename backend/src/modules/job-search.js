@@ -437,7 +437,7 @@ async function scrapeFreelancerAPI() {
         const budget    = budgetMin ? `${currency}${budgetMin}${budgetMax ? `–${currency}${budgetMax}` : ''}` : null;
         const url       = p.seo_url ? `https://www.freelancer.com/projects/${p.seo_url}` : `https://www.freelancer.com/projects/${p.id}`;
         const desc      = (p.description || '').slice(0, 400);
-        found.push({ platform: 'Freelancer', type, title: p.title.slice(0, 200), url, snippet: desc, budget, q });
+        found.push({ platform: 'Freelancer', type, title: p.title.slice(0, 200), url, snippet: desc, budget, q, projectId: p.id, budgetMin, budgetMax });
       }
       await new Promise(r => setTimeout(r, 1200));
     } catch { /* continue */ }
@@ -515,9 +515,10 @@ async function runPlatformJobScanDDG() {
     const cleanTitle = (job.title || '').replace(/\s*[|\-–].*$/, '').trim().slice(0, 200);
     try {
       const ins = await db.query(
-        `INSERT INTO platform_jobs (platform, job_type, title, snippet, job_url, budget, search_query)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (job_url) DO NOTHING RETURNING id`,
-        [job.platform, job.type, cleanTitle, (job.snippet || '').slice(0, 500), job.url, job.budget, job.q]
+        `INSERT INTO platform_jobs (platform, job_type, title, snippet, job_url, budget, search_query, freelancer_project_id, budget_min, budget_max)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (job_url) DO NOTHING RETURNING id`,
+        [job.platform, job.type, cleanTitle, (job.snippet || '').slice(0, 500), job.url, job.budget, job.q,
+         job.projectId || null, job.budgetMin || null, job.budgetMax || null]
       );
       if (ins.rows[0]) found++;
     } catch { /* skip duplicate or error */ }
@@ -530,20 +531,23 @@ async function runPlatformJobScanDDG() {
 async function ensurePlatformTable() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS platform_jobs (
-      id           SERIAL PRIMARY KEY,
-      platform     TEXT NOT NULL,
-      job_type     TEXT DEFAULT 'general',
-      title        TEXT NOT NULL,
-      snippet      TEXT,
-      job_url      TEXT UNIQUE NOT NULL,
-      budget       TEXT,
-      status       TEXT DEFAULT 'new',
-      bid_sent_at  TIMESTAMPTZ,
-      search_query TEXT,
-      created_at   TIMESTAMPTZ DEFAULT NOW(),
-      updated_at   TIMESTAMPTZ DEFAULT NOW()
+      id                    SERIAL PRIMARY KEY,
+      platform              TEXT NOT NULL,
+      job_type              TEXT DEFAULT 'general',
+      title                 TEXT NOT NULL,
+      snippet               TEXT,
+      job_url               TEXT UNIQUE NOT NULL,
+      budget                TEXT,
+      status                TEXT DEFAULT 'new',
+      bid_sent_at           TIMESTAMPTZ,
+      search_query          TEXT,
+      created_at            TIMESTAMPTZ DEFAULT NOW(),
+      updated_at            TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await db.query(`ALTER TABLE platform_jobs ADD COLUMN IF NOT EXISTS freelancer_project_id BIGINT`);
+  await db.query(`ALTER TABLE platform_jobs ADD COLUMN IF NOT EXISTS budget_min NUMERIC`);
+  await db.query(`ALTER TABLE platform_jobs ADD COLUMN IF NOT EXISTS budget_max NUMERIC`);
 }
 
 async function runPlatformJobScan() {
