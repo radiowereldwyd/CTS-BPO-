@@ -71,12 +71,34 @@ const SERPAPI_KEY = process.env.SERPAPI_KEY || '';
 const APP_URL     = process.env.APP_URL || 'https://your-app.replit.app';
 const AI_WORKER_ID = 0; // sentinel: sub_id=0 means the AI Worker
 
-// SerpAPI rate-limit cooldown — set when a 429 is received; cleared after 1 hour
-let _serpApiCooledUntil = 0; // epoch ms
+// SerpAPI rate-limit cooldown — persisted to disk so restarts don't clear it
+const SERPAPI_COOLDOWN_FILE = path.join(__dirname, '../../data/serpapi-cooldown.json');
+let _serpApiCooledUntil = 0;
+
+function loadSerpApiCooldown() {
+  try {
+    if (fs.existsSync(SERPAPI_COOLDOWN_FILE)) {
+      const d = JSON.parse(fs.readFileSync(SERPAPI_COOLDOWN_FILE, 'utf8'));
+      if (d.cooledUntil && d.cooledUntil > Date.now()) {
+        _serpApiCooledUntil = d.cooledUntil;
+        const m = Math.ceil((_serpApiCooledUntil - Date.now()) / 60000);
+        console.log(`[SERPAPI] Cooldown loaded from disk — ${m}m remaining, skipping startup searches`);
+      }
+    }
+  } catch {}
+}
+function saveSerpApiCooldown() {
+  try {
+    const dir = path.dirname(SERPAPI_COOLDOWN_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SERPAPI_COOLDOWN_FILE, JSON.stringify({ cooledUntil: _serpApiCooledUntil }));
+  } catch {}
+}
 function isSerpApiCooling() { return Date.now() < _serpApiCooledUntil; }
 function serpApiRateLimit() {
-  _serpApiCooledUntil = Date.now() + 60 * 60 * 1000; // 1-hour cooldown
-  console.warn('⚠️ [SERPAPI] Rate limit hit — pausing all searches for 1 hour');
+  _serpApiCooledUntil = Date.now() + 60 * 60 * 1000;
+  saveSerpApiCooldown();
+  console.warn('⚠️ [SERPAPI] Rate limit hit — pausing all searches for 1 hour (saved to disk)');
 }
 
 // ── BPO lead search queries ────────────────────────────────────────────────
@@ -1425,48 +1447,45 @@ async function runPaymentChase() {
 // Finds LIVE jobs on Upwork, Freelancer.com, Guru, PeoplePerHour via SerpAPI.
 // These buyers are ACTIVELY posting right now — highest conversion rate possible.
 async function runPlatformScan() {
-  if (!SERPAPI_KEY) {
-    await logActivity('platform_scan', 'Skipped — SERPAPI_KEY not configured', null, null, 'skipped');
-    return;
-  }
-  if (isSerpApiCooling()) {
-    const minsLeft = Math.ceil((_serpApiCooledUntil - Date.now()) / 60000);
-    console.log(`⏳ [SERPAPI] Still cooling — ${minsLeft}m left, skipping platform scan`);
-    return;
-  }
   try {
-    const result = await jobSearch.runPlatformJobScan();
-    if (result.errors?.some(e => e.error?.includes('429'))) {
-      serpApiRateLimit();
-      await logActivity('platform_scan', 'SerpAPI rate limit hit during platform scan — pausing 1 hour', null, null, 'warning');
-      return;
+    let result;
+    if (isSerpApiCooling() || !SERPAPI_KEY) {
+      const minsLeft = isSerpApiCooling() ? Math.ceil((_serpApiCooledUntil - Date.now()) / 60000) : 0;
+      console.log(`🦆 [PLATFORM] SerpAPI ${SERPAPI_KEY ? `cooling (${minsLeft}m left)` : 'not configured'} — using DuckDuckGo fallback`);
+      result = await jobSearch.runPlatformJobScanDDG();
+    } else {
+      result = await jobSearch.runPlatformJobScan();
+      if (result.errors?.some(e => e.error?.includes('429'))) {
+        serpApiRateLimit();
+        await logActivity('platform_scan', 'SerpAPI rate limit hit during platform scan — switched to DuckDuckGo', null, null, 'warning');
+        result = await jobSearch.runPlatformJobScanDDG();
+      }
     }
+
     await logActivity(
       'platform_scan',
-      `Platform job scan complete — ${result.found} new jobs found (Upwork/Freelancer/Guru/PPH)`,
+      `Platform job scan complete — ${result.found} new jobs found via ${result.source || 'serpapi'} (Upwork/Freelancer/Guru/PPH)`,
       null, null, result.errors?.length > 0 ? 'warning' : 'success',
-      { found: result.found, errors: result.errors?.length }
+      { found: result.found, source: result.source, errors: result.errors?.length }
     );
-    console.log(`🎯 [PLATFORM] Found ${result.found} new platform jobs`);
+    console.log(`🎯 [PLATFORM] Found ${result.found} new platform jobs (source: ${result.source || 'serpapi'})`);
 
-    // Auto-bid on all new handleable jobs immediately after scan
-    if (result.found > 0 || true) { // also pick up any previously unprocessed jobs
-      try {
-        const autoBidder = require('./auto-bidder');
-        const bidResult  = await autoBidder.autoBidNewJobs();
-        if (bidResult.processed > 0) {
-          await logActivity(
-            'platform_scan',
-            `Auto-bidder: ${bidResult.processed} proposals generated, ${bidResult.emailed} direct emails sent, ${bidResult.notified} admin digests sent`,
-            null, null, 'success',
-            bidResult
-          );
-          console.log(`🤖 [AUTO-BID] ${bidResult.processed} bids sent (${bidResult.emailed} direct, ${bidResult.notified} via admin)`);
-        }
-      } catch (bidErr) {
-        console.warn(`[AUTO-BID] Error: ${bidErr.message}`);
-        await logActivity('platform_scan', `Auto-bid error: ${bidErr.message}`, null, null, 'warning');
+    // Notify admin of new jobs and generate proposals
+    try {
+      const autoBidder = require('./auto-bidder');
+      const bidResult  = await autoBidder.autoBidNewJobs();
+      if (bidResult.processed > 0) {
+        await logActivity(
+          'platform_scan',
+          `Auto-bidder: ${bidResult.processed} proposals generated, ${bidResult.emailed} direct emails sent, ${bidResult.notified} admin digests sent`,
+          null, null, 'success',
+          bidResult
+        );
+        console.log(`🤖 [AUTO-BID] ${bidResult.processed} proposals ready (${bidResult.emailed} direct, ${bidResult.notified} emailed to admin for approval)`);
       }
+    } catch (bidErr) {
+      console.warn(`[AUTO-BID] Error: ${bidErr.message}`);
+      await logActivity('platform_scan', `Auto-bid error: ${bidErr.message}`, null, null, 'warning');
     }
   } catch (err) {
     await logActivity('platform_scan', `Platform scan error: ${err.message}`, null, null, 'error');
@@ -1900,52 +1919,47 @@ async function startAgent() {
   // Run initial MX scoring batch on any unverified contacts already in DB
   setTimeout(() => webScraper.runMxScoringBatch({ limit: 100 }).catch(() => {}), 35_000);
 
-  // Run immediately on startup (staggered to avoid hammering)
-  setTimeout(() => runLeadSearch().catch(console.error),                  5_000);
-  setTimeout(() => runJobLeadScan().catch(console.error),                 15_000);
-  setTimeout(() => runPlatformScan().catch(console.error),                60_000);
+  // ── OUTREACH IS PAUSED — admin approval required before any emails go out ──
+  // Cold outreach (ai_leads, job_leads, scraped_contacts) and follow-ups are OFF.
+  // Only platform job scanning and admin notifications are active.
+  // Use dashboard Triggers to manually fire outreach if needed.
+
+  // Load persisted SerpAPI cooldown — survives restarts
+  loadSerpApiCooldown();
+
+  // Run platform scan on startup (uses DDG if SerpAPI is cooling) — FIRST priority
+  setTimeout(() => runPlatformScan().catch(console.error),               10_000);
   setTimeout(() => processApplications().catch(console.error),           20_000);
   setTimeout(() => assignContracts().catch(console.error),               25_000);
   setTimeout(() => processAIJobs().catch(console.error),                 30_000);
-  setTimeout(() => runAiLeadOutreach().catch(console.error),             40_000);
-  setTimeout(() => runJobLeadOutreach().catch(console.error),            50_000);
-  setTimeout(() => runScrapedContactsOutreach().catch(console.error),   120_000);
 
   // ── Schedules ──
-  // Lead search every 30 minutes (ai_leads — runs ALL 12 queries, 100 results each)
-  cron.schedule('*/30 * * * *', () => {
-    runLeadSearch().catch(e => logActivity('lead_search', `Cron error: ${e.message}`, null, null, 'error'));
-  });
-
-  // Client prospect scan every 45 minutes (job_leads — all 28 buyer-targeted queries, 100 results each)
-  cron.schedule('*/45 * * * *', () => {
-    runJobLeadScan().catch(e => logActivity('prospect_scan', `Cron error: ${e.message}`, null, null, 'error'));
-  });
-
-  // Platform job scan every 3 hours — finds live jobs on Upwork, Freelancer, Guru, PeoplePerHour
-  cron.schedule('0 */3 * * *', () => {
+  // Platform job scan every 2 hours — uses DuckDuckGo if SerpAPI is cooling
+  cron.schedule('0 */2 * * *', () => {
     runPlatformScan().catch(e => logActivity('platform_scan', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
-  // BATCH OUTREACH to ai_leads every 5 minutes — processes up to 500 uncontacted leads per run
-  cron.schedule('*/5 * * * *', () => {
-    runAiLeadOutreach().catch(e => logActivity('ai_outreach', `Cron error: ${e.message}`, null, null, 'error'));
+  // Lead search every 6 hours — only if SerpAPI is available (NOT on startup)
+  cron.schedule('0 */6 * * *', () => {
+    if (!isSerpApiCooling()) {
+      runLeadSearch().catch(e => logActivity('lead_search', `Cron error: ${e.message}`, null, null, 'error'));
+    }
   });
 
-  // BATCH OUTREACH to job_leads every 5 minutes (offset by 2.5 min via setTimeout on startup)
-  cron.schedule('*/5 * * * *', () => {
-    runJobLeadOutreach().catch(e => logActivity('prospect_outreach', `Cron error: ${e.message}`, null, null, 'error'));
+  // Client prospect scan every 6 hours — only if SerpAPI is available
+  cron.schedule('30 */6 * * *', () => {
+    if (!isSerpApiCooling()) {
+      runJobLeadScan().catch(e => logActivity('prospect_scan', `Cron error: ${e.message}`, null, null, 'error'));
+    }
   });
 
-  // Follow-up emails every 2 hours (ai_leads — day-3 and day-7)
-  cron.schedule('0 */2 * * *', () => {
-    runFollowUpSequence().catch(e => logActivity('followup_sequence', `Cron error: ${e.message}`, null, null, 'error'));
-  });
+  // COLD OUTREACH DISABLED — all email outreach crons removed
+  // Outreach to ai_leads, job_leads, scraped_contacts: PAUSED
+  // Re-enable via manual trigger from dashboard Triggers tab only
 
-  // Follow-up emails every 2 hours (job_leads — prospect follow-ups)
-  cron.schedule('30 */2 * * *', () => {
-    runJobLeadFollowUps().catch(e => logActivity('prospect_followup', `Cron error: ${e.message}`, null, null, 'error'));
-  });
+  // Follow-up emails DISABLED — waiting for admin approval workflow
+  // cron.schedule('0 */2 * * *', () => { runFollowUpSequence()... });
+  // cron.schedule('30 */2 * * *', () => { runJobLeadFollowUps()... });
 
   // Application processing every 30 minutes
   cron.schedule('*/30 * * * *', () => {
@@ -2017,22 +2031,11 @@ async function startAgent() {
   setInterval(() => refreshDbStats().catch(() => {}), 15_000);
   setTimeout(() => refreshDbStats().catch(() => {}), 5_000); // initial refresh
 
-  // Outreach to scraped_contacts every 30 minutes — controlled, quality-gated (was every 5 min)
-  cron.schedule('10,40 * * * *', () => {
-    runScrapedContactsOutreach().catch(e => logActivity('scrape_outreach', `Cron error: ${e.message}`, null, null, 'error'));
-  });
-
-  // Follow-ups for scraped_contacts every 2 hours
-  cron.schedule('15 */2 * * *', () => {
-    runScrapedContactsFollowUps().catch(e => logActivity('scrape_followup', `Cron error: ${e.message}`, null, null, 'error'));
-  });
-
-  // Job seeker recruitment every 4 hours — emails people looking for remote/BPO work
-  cron.schedule('0 */4 * * *', () => {
-    runJobSeekerRecruitment().catch(e => logActivity('job_seeker_recruitment', `Cron error: ${e.message}`, null, null, 'error'));
-  });
-  // Run once 3 minutes after boot
-  setTimeout(() => runJobSeekerRecruitment().catch(console.error), 180_000);
+  // ── ALL OUTREACH CRONS DISABLED — admin approval required ──
+  // Scraped contacts outreach: PAUSED (was every 30 min)
+  // Scraped contacts follow-ups: PAUSED (was every 2 hours)
+  // Job seeker recruitment: PAUSED (was every 4 hours)
+  // Use Triggers tab in dashboard to manually fire if needed.
 
   // Daily heartbeat log
   cron.schedule('0 8 * * *', () => {

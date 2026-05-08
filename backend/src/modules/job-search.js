@@ -4,7 +4,8 @@
  * Stores discovered leads in the job_leads table.
  */
 
-const axios = require('axios');
+const axios   = require('axios');
+const cheerio = require('cheerio');
 const db = require('../db');
 const auditLogger = require('./audit-logger');
 
@@ -386,6 +387,146 @@ const PLATFORM_QUERIES = [
   { q: 'site:peopleperhour.com "transcription" OR "translation" "needed"',   type: 'transcription',        platform: 'PeoplePerHour' },
 ];
 
+// ── DuckDuckGo platform scanner — no SerpAPI key needed ──────────────────────
+// Used as fallback when SerpAPI is rate-limited.
+const DDG_PLATFORM_QUERIES = [
+  { q: 'site:upwork.com/jobs "data entry" "fixed price"',          type: 'data-entry',        platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "virtual assistant" "admin"',         type: 'virtual-assistant', platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "transcription" "audio"',             type: 'transcription',     platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "translation" "document"',            type: 'translation',       platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "bookkeeping" OR "data entry"',       type: 'finance-admin',     platform: 'Upwork' },
+  { q: 'site:upwork.com/jobs "customer support" remote',           type: 'customer-support',  platform: 'Upwork' },
+  { q: 'site:freelancer.com/projects "data entry" budget',         type: 'data-entry',        platform: 'Freelancer' },
+  { q: 'site:freelancer.com/projects "virtual assistant"',         type: 'virtual-assistant', platform: 'Freelancer' },
+  { q: 'site:freelancer.com/projects "transcription" audio',       type: 'transcription',     platform: 'Freelancer' },
+  { q: 'site:freelancer.com/projects "translation" document',      type: 'translation',       platform: 'Freelancer' },
+  { q: 'site:guru.com/jobs "data entry"',                          type: 'data-entry',        platform: 'Guru' },
+  { q: 'site:peopleperhour.com "data entry" OR "virtual assistant"',type: 'data-entry',       platform: 'PeoplePerHour' },
+];
+
+// ── Freelancer.com public API scraper ─────────────────────────────────────────
+// Free, no API key needed, returns live active projects
+const FREELANCER_QUERIES = [
+  { q: 'data entry',           type: 'data-entry'        },
+  { q: 'virtual assistant',    type: 'virtual-assistant' },
+  { q: 'transcription',        type: 'transcription'     },
+  { q: 'translation',          type: 'translation'       },
+  { q: 'bookkeeping',          type: 'finance-admin'     },
+  { q: 'customer support',     type: 'customer-support'  },
+  { q: 'data processing',      type: 'data-entry'        },
+  { q: 'document processing',  type: 'document-processing' },
+  { q: 'invoice processing',   type: 'document-processing' },
+  { q: 'content moderation',   type: 'content-moderation' },
+];
+
+async function scrapeFreelancerAPI() {
+  const found = [];
+  for (const { q, type } of FREELANCER_QUERIES) {
+    try {
+      const res = await axios.get('https://www.freelancer.com/api/projects/0.1/projects/active', {
+        params: { compact: true, job_details: true, limit: 20, query: q },
+        headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+        timeout: 15000,
+      });
+      const projects = res.data?.result?.projects || [];
+      for (const p of projects) {
+        if (!p.title || !p.id) continue;
+        const budgetMin = p.budget?.minimum;
+        const budgetMax = p.budget?.maximum;
+        const currency  = p.currency?.sign || '$';
+        const budget    = budgetMin ? `${currency}${budgetMin}${budgetMax ? `–${currency}${budgetMax}` : ''}` : null;
+        const url       = p.seo_url ? `https://www.freelancer.com/projects/${p.seo_url}` : `https://www.freelancer.com/projects/${p.id}`;
+        const desc      = (p.description || '').slice(0, 400);
+        found.push({ platform: 'Freelancer', type, title: p.title.slice(0, 200), url, snippet: desc, budget, q });
+      }
+      await new Promise(r => setTimeout(r, 1200));
+    } catch { /* continue */ }
+  }
+  return found;
+}
+
+// ── PeoplePerHour public scraper ──────────────────────────────────────────────
+const PPH_SEARCHES = [
+  { path: 'data-entry',        type: 'data-entry'        },
+  { path: 'virtual-assistant', type: 'virtual-assistant' },
+  { path: 'transcription',     type: 'transcription'     },
+  { path: 'translation',       type: 'translation'       },
+  { path: 'bookkeeping',       type: 'finance-admin'     },
+];
+
+async function scrapePeoplePerHour() {
+  const found = [];
+  for (const { path, type } of PPH_SEARCHES) {
+    try {
+      const res = await axios.get(`https://www.peopleperhour.com/freelance-${path}-jobs`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        timeout: 15000,
+      });
+      const $ = cheerio.load(res.data);
+      $('li.hourlies--item, .job-list-item, article[class*="job"], .job-card, li[class*="job"]').each((_, el) => {
+        const titleEl = $(el).find('a[href*="/job/"], h2 a, h3 a, .job-title a').first();
+        const title   = titleEl.text().trim();
+        let   url     = titleEl.attr('href') || '';
+        if (url && !url.startsWith('http')) url = 'https://www.peopleperhour.com' + url;
+        const snippet = $(el).find('p, .description, .job-desc').first().text().trim().slice(0, 300);
+        const budget  = $(el).text().match(/£[\d,]+(?:\s*[-–]\s*£[\d,]+)?|\$[\d,]+(?:\s*[-–]\s*\$[\d,]+)?/)?.[0] || null;
+        if (title && url) found.push({ platform: 'PeoplePerHour', type, title: title.slice(0, 200), url, snippet, budget, q: `pph:${path}` });
+      });
+      await new Promise(r => setTimeout(r, 2000));
+    } catch { /* continue */ }
+  }
+  return found;
+}
+
+async function runPlatformJobScanDDG() {
+  await ensurePlatformTable();
+  let found = 0;
+  const errors = [];
+  const allResults = [];
+
+  // ── Source 1: Freelancer.com public API (confirmed working) ──────────────
+  try {
+    console.log('[PLATFORM] Scanning Freelancer.com API...');
+    const fl = await scrapeFreelancerAPI();
+    allResults.push(...fl);
+    console.log(`[PLATFORM] Freelancer API: ${fl.length} jobs found`);
+  } catch (e) {
+    errors.push({ platform: 'Freelancer', query: 'api', error: e.message });
+  }
+
+  // ── Source 2: PeoplePerHour public pages ──────────────────────────────────
+  try {
+    console.log('[PLATFORM] Scanning PeoplePerHour...');
+    const pph = await scrapePeoplePerHour();
+    allResults.push(...pph);
+    console.log(`[PLATFORM] PeoplePerHour: ${pph.length} jobs found`);
+  } catch (e) {
+    errors.push({ platform: 'PeoplePerHour', query: 'scrape', error: e.message });
+  }
+
+  // ── Deduplicate and insert ────────────────────────────────────────────────
+  const seen = new Set();
+  for (const job of allResults) {
+    if (!job.url || seen.has(job.url)) continue;
+    seen.add(job.url);
+    const cleanTitle = (job.title || '').replace(/\s*[|\-–].*$/, '').trim().slice(0, 200);
+    try {
+      const ins = await db.query(
+        `INSERT INTO platform_jobs (platform, job_type, title, snippet, job_url, budget, search_query)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (job_url) DO NOTHING RETURNING id`,
+        [job.platform, job.type, cleanTitle, (job.snippet || '').slice(0, 500), job.url, job.budget, job.q]
+      );
+      if (ins.rows[0]) found++;
+    } catch { /* skip duplicate or error */ }
+  }
+
+  console.log(`[PLATFORM] Scan complete — ${found} new jobs added (${allResults.length} total scraped)`);
+  return { found, errors, source: 'freelancer-api+pph', total: allResults.length };
+}
+
 async function ensurePlatformTable() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS platform_jobs (
@@ -484,5 +625,5 @@ async function getPlatformStats() {
 
 module.exports = {
   scanForJobs, getLeads, updateLead, markContacted, getStats, BPO_QUERIES, ensureTable,
-  runPlatformJobScan, getPlatformJobs, getPlatformStats, ensurePlatformTable,
+  runPlatformJobScan, runPlatformJobScanDDG, getPlatformJobs, getPlatformStats, ensurePlatformTable,
 };

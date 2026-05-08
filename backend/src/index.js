@@ -1432,6 +1432,41 @@ app.post('/api/ai-agent/platform-jobs/auto-bid', requireAuth, requireAdmin, asyn
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/platform-jobs/approve/:id — one-click approve from email link (no login needed)
+app.get('/api/platform-jobs/approve/:id', async (req, res) => {
+  const token = req.query.token;
+  if (token !== 'admin2026') {
+    return res.status(403).send('<h2>Invalid approval token.</h2>');
+  }
+  try {
+    const db = require('./db');
+    const { rows } = await db.query(
+      `UPDATE platform_jobs SET status='approved', updated_at=NOW() WHERE id=$1 RETURNING *`,
+      [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).send('<h2>Job not found.</h2>');
+    const job = rows[0];
+    res.send(`
+      <!DOCTYPE html><html><head><meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>Job Approved — CTS BPO</title>
+      <style>body{font-family:Arial,sans-serif;max-width:600px;margin:60px auto;padding:20px;color:#1e293b}
+      .card{background:#f0fdf4;border:2px solid #86efac;border-radius:12px;padding:24px}
+      h1{color:#059669}a{color:#1e3a5f;font-weight:bold}</style></head><body>
+      <div class="card">
+        <h1>✅ Job Approved!</h1>
+        <p><strong>${job.title}</strong> on <strong>${job.platform}</strong> has been marked as approved.</p>
+        <p>Next step: Go to the job URL, paste in your proposal, and submit the bid.</p>
+        ${job.job_url ? `<p><a href="${job.job_url}" target="_blank">🔗 Open job on ${job.platform} →</a></p>` : ''}
+        <p style="margin-top:20px"><a href="${process.env.APP_URL || 'https://cts-bpo.replit.app'}/ai-agent">📊 Back to Dashboard</a></p>
+      </div>
+      </body></html>
+    `);
+  } catch (err) {
+    res.status(500).send(`<h2>Error: ${err.message}</h2>`);
+  }
+});
+
 // ── Targeted Scrape ─────────────────────────────────────────────────────────
 // Multer — store PDF in memory (max 20 MB)
 const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });

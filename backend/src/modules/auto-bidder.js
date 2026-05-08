@@ -383,32 +383,45 @@ async function autoBidNewJobs() {
 async function sendAdminDigest(items) {
   if (items.length === 0) return;
 
+  const APP_URL_LOCAL = process.env.APP_URL || 'https://cts-bpo.replit.app';
   const jobCards = items.map(({ job, proposal }) => `
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:20px">
+    <div style="background:#fff;border:2px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:24px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <span style="font-weight:900;font-size:15px;color:#1e293b">${job.title}</span>
         <span style="background:#6366f1;color:#fff;border-radius:20px;padding:3px 12px;font-size:11px;font-weight:700">${job.platform}</span>
       </div>
-      ${job.budget ? `<div style="color:#059669;font-weight:700;font-size:13px;margin-bottom:8px">💵 Budget: ${job.budget}</div>` : ''}
-      <a href="${job.job_url}" style="background:#1e3a5f;color:#fff;padding:8px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;display:inline-block;margin-bottom:16px">🔗 Open Job on ${job.platform} →</a>
+      ${job.budget ? `<div style="color:#059669;font-weight:700;font-size:13px;margin-bottom:10px">💵 Budget: ${job.budget}</div>` : ''}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <a href="${job.job_url}" style="background:#1e3a5f;color:#fff;padding:9px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;display:inline-block">🔗 Open Job on ${job.platform}</a>
+        <a href="${APP_URL_LOCAL}/api/platform-jobs/approve/${job.id}?token=admin2026" style="background:#059669;color:#fff;padding:9px 18px;border-radius:8px;text-decoration:none;font-weight:700;font-size:13px;display:inline-block">✅ Approve — Submit This Bid</a>
+      </div>
       <div style="background:#f8fafc;border-left:4px solid #6366f1;padding:14px 16px;border-radius:0 8px 8px 0;font-size:13px;line-height:1.7;white-space:pre-wrap;font-family:monospace">${proposal}</div>
+      <div style="margin-top:10px;font-size:12px;color:#64748b">Copy the proposal text above → paste it into the bid box on ${job.platform}</div>
     </div>
   `).join('');
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:700px;color:#1e293b">
       <div style="background:linear-gradient(135deg,#1e3a5f,#0f5499);padding:20px 28px;border-radius:12px 12px 0 0">
-        <div style="color:#fff;font-weight:900;font-size:20px">🤖 CTS BPO Auto-Bidder — ${items.length} Proposal${items.length > 1 ? 's' : ''} Ready</div>
+        <div style="color:#fff;font-weight:900;font-size:20px">🎯 CTS BPO — ${items.length} New Job${items.length > 1 ? 's' : ''} Found — Your Approval Needed</div>
         <div style="color:#93c5fd;font-size:13px;margin-top:6px">
-          Your AI scanned freelance platforms and generated tailored proposals. Copy each proposal text and paste it directly into the job posting to submit your bid.
+          AI scanned Upwork, Freelancer, Guru &amp; PeoplePerHour and found live jobs. Review each one below, then approve to proceed.
         </div>
       </div>
-      <div style="background:#f0f4ff;padding:12px 28px;border:1px solid #c7d2fe">
-        <strong>⚡ Action needed:</strong> Click "Open Job" for each listing below, then paste the proposal text into the bid/proposal field. First-to-respond wins most jobs.
+      <div style="background:#fef3c7;padding:12px 28px;border:1px solid #fbbf24;border-left:4px solid #f59e0b">
+        <strong>⚡ How this works:</strong><br>
+        1. Review the job below &amp; read the AI-written proposal<br>
+        2. Click <strong>"Open Job"</strong> to view it on the platform<br>
+        3. Click <strong>"✅ Approve — Submit This Bid"</strong> to mark it approved and submit the proposal<br>
+        4. Paste the proposal text into the platform's bid/proposal box and send
       </div>
       <div style="padding:24px 0">${jobCards}</div>
+      <div style="background:#f0fdf4;border:1px solid #86efac;padding:16px 28px;border-radius:8px;margin:0 0 16px;font-size:13px">
+        <strong>📋 All jobs are also visible in your dashboard:</strong><br>
+        <a href="${APP_URL}/ai-agent" style="color:#059669;font-weight:700">Click here → Platform Jobs tab</a>
+      </div>
       <div style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:16px 28px;font-size:12px;color:#64748b;text-align:center">
-        <a href="${APP_URL}/ai-agent" style="color:#6366f1;font-weight:700">View all jobs in dashboard →</a>
+        CTS BPO Autonomous AI — jobs found, proposals written, waiting for your go-ahead.
       </div>
     </div>`;
 
