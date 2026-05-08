@@ -1951,6 +1951,12 @@ async function startAgent() {
     }).catch(e => console.warn(`[AUTO-BID CRON] Error: ${e.message}`));
   });
 
+  // Freelancer inbox sync — every 5 minutes, auto-replies to employer messages
+  cron.schedule('*/5 * * * *', () => {
+    require('./freelancer-inbox').syncInbox()
+      .catch(e => console.warn(`[FL-INBOX CRON] ${e.message}`));
+  });
+
   // Lead search every 6 hours — only if SerpAPI is available (NOT on startup)
   cron.schedule('0 */6 * * *', () => {
     if (!isSerpApiCooling()) {

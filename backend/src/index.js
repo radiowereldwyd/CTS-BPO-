@@ -2618,6 +2618,57 @@ const callCentreSignaling = require('./modules/call-centre');
 
 const server = http.createServer(app);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FREELANCER INBOX
+// ─────────────────────────────────────────────────────────────────────────────
+const flInbox = require('./modules/freelancer-inbox');
+
+// GET /api/freelancer/inbox — all threads
+app.get('/api/freelancer/inbox', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const threads = await flInbox.getInboxData();
+    res.json({ ok: true, threads });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /api/freelancer/inbox/sync — force re-poll from Freelancer API
+app.post('/api/freelancer/inbox/sync', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await flInbox.syncInbox();
+    const threads = await flInbox.getInboxData();
+    res.json({ ok: true, threads });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// GET /api/freelancer/inbox/:threadId — conversation in one thread
+app.get('/api/freelancer/inbox/:threadId', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const data = await flInbox.getThreadConversation(req.params.threadId);
+    res.json({ ok: true, ...data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// POST /api/freelancer/inbox/:threadId/reply — send a manual reply
+app.post('/api/freelancer/inbox/:threadId/reply', requireAuth, requireAdmin, async (req, res) => {
+  const { message } = req.body;
+  if (!message?.trim()) return res.status(400).json({ ok: false, error: 'message required' });
+  try {
+    // Try real API send
+    const result = await flInbox.sendReply(req.params.threadId, message.trim());
+    // Also refresh the thread from the live API
+    await flInbox.syncInbox();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ── WebSocket signaling for WebRTC call centre ────────────────────────────────
 const wss = new WebSocket.Server({ noServer: true });
 wss.on('connection', (ws, req) => callCentreSignaling.handleSignaling(ws, req));
