@@ -120,20 +120,36 @@ function isRelevant(snippet, query, businessType) {
 // ── Target industries × cities ─────────────────────────────────────────────
 // Only high-value BPO prospect industries — NOT generic consumer businesses
 const BUSINESS_TYPES = [
-  'law firm',
-  'medical clinic',
-  'dental practice',
-  'accounting firm',
-  'insurance company',
-  'logistics company',
-  'management consulting firm',
-  'HR consulting firm',
-  'financial services company',
-  'pharmaceutical company',
-  'recruitment agency',
-  'IT services company',
-  'healthcare company',
-  'property management company',
+  // Legal
+  'law firm', 'solicitor firm', 'attorney office', 'legal practice', 'barrister chambers',
+  // Medical & Health
+  'medical clinic', 'dental practice', 'dental office', 'optometry practice', 'physiotherapy clinic',
+  'chiropractic clinic', 'veterinary clinic', 'specialist medical practice', 'private hospital',
+  'pharmacy', 'radiology clinic', 'pathology lab', 'mental health clinic', 'GP practice',
+  // Finance & Accounting
+  'accounting firm', 'chartered accountant', 'bookkeeping firm', 'tax preparation company',
+  'financial advisory firm', 'mortgage broker', 'investment firm', 'insurance broker',
+  'financial planning firm', 'payroll services company', 'audit firm',
+  // Real Estate & Property
+  'real estate agency', 'property management company', 'real estate developer',
+  'estate agent', 'commercial property company', 'property investment firm',
+  // Business Services
+  'management consulting firm', 'HR consulting firm', 'recruitment agency', 'staffing agency',
+  'training company', 'business coaching firm', 'IT services company', 'managed IT services',
+  // E-commerce & Retail
+  'e-commerce company', 'online retailer', 'retail chain', 'wholesale distributor',
+  // Logistics & Supply Chain
+  'logistics company', 'freight forwarding company', 'courier service', 'supply chain company',
+  'warehousing company', 'shipping company',
+  // Healthcare Administration
+  'healthcare company', 'pharmaceutical company', 'medical billing company',
+  'home care agency', 'disability services company',
+  // Professional Services
+  'engineering firm', 'architecture firm', 'marketing agency', 'advertising agency',
+  'PR firm', 'event management company', 'travel agency', 'hospitality company',
+  // Other High-Outsource Sectors
+  'construction company', 'manufacturing company', 'non-profit organization',
+  'education company', 'financial services company', 'insurance company',
 ];
 
 const SEARCH_CITIES = [
