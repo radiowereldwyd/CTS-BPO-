@@ -110,6 +110,23 @@ const SKIP_KEYWORDS = [
   // Non-English language jobs
   'recherche','emploi','santé','français','francais','deutsch','español',
   'italiano','português','vietnamese','bahasa','arabic job','mandarin job',
+  // Biography / creative / storytelling (not BPO)
+  'biography','biograph','autobiography','memoir','life story',
+  'ghostwrit','ghost writ','ghostwrite',
+  'storytelling','narrative writing','personal story',
+  // Regional Indian / Asian languages (creative/translation work we can't do)
+  'kannada','telugu','marathi','gujarati','punjabi','bengali','tamil',
+  'malayalam','odia','assamese','urdu translat','hindi translat',
+  'arabic translat','arabic legal','arabic court',
+  // Legal / certified translation (requires accreditation)
+  'legal translat','certified translat','sworn translat','notariz',
+  'court translat','official translat','legal document translat',
+  // Academic / research writing
+  'dissertation','thesis writing','research paper','academic paper',
+  'literature review','term paper','assignment help','homework help',
+  // Specialized writing
+  'grant writing','press release','speech writing','cover letter writ',
+  'resume writing','cv writing','linkedin profile writ',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
