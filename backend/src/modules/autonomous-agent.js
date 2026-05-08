@@ -694,9 +694,32 @@ async function runScrapedContactsOutreach() {
 
   if (rows.rows.length === 0) return;
 
+  // ── Daily cap: never send more than 25 scraped-contact emails per day ────
+  const todaySentRes = await db.query(`
+    SELECT COUNT(*) AS n FROM ai_activity_log
+    WHERE action_type='scrape_outreach' AND status='success'
+      AND created_at >= CURRENT_DATE
+  `).catch(() => ({ rows: [{ n: 0 }] }));
+  const todaySent = parseInt(todaySentRes.rows[0]?.n || 0);
+  if (todaySent >= 25) {
+    console.log(`[OUTREACH] Daily cap reached (${todaySent}/25) — skipping scraped_contacts run`);
+    return;
+  }
+
   let sent = 0;
   for (const c of rows.rows) {
+    if (sent >= 5) break;  // max 5 per run (was 20)
     try {
+      // ── BPO provider filter — NEVER email competitors ─────────────────────
+      if (isAgentBpoProvider(c.domain)) {
+        await db.query(
+          `UPDATE scraped_contacts SET status='irrelevant', updated_at=NOW() WHERE domain=$1`,
+          [c.domain]
+        ).catch(() => {});
+        console.log(`⏭️  [OUTREACH] Skipping ${c.domain} — BPO provider (competitor)`);
+        continue;
+      }
+
       // Relevance gate — skip companies with no BPO need signals
       if (!isContactRelevant(c)) {
         // Mark ALL emails for this domain as irrelevant so we skip them next time
@@ -1990,8 +2013,8 @@ async function startAgent() {
   setInterval(() => refreshDbStats().catch(() => {}), 15_000);
   setTimeout(() => refreshDbStats().catch(() => {}), 5_000); // initial refresh
 
-  // Outreach to scraped_contacts every 5 minutes (offset by ~2.5 min from ai/job crons)
-  cron.schedule('2-57/5 * * * *', () => {
+  // Outreach to scraped_contacts every 30 minutes — controlled, quality-gated (was every 5 min)
+  cron.schedule('10,40 * * * *', () => {
     runScrapedContactsOutreach().catch(e => logActivity('scrape_outreach', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
