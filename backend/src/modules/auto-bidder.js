@@ -23,19 +23,42 @@ const FREELANCER_TOKEN   = process.env.FREELANCER_TOKEN   || '';
 // Keywords that disqualify a job — things CTS BPO CANNOT do
 // ─────────────────────────────────────────────────────────────────────────────
 const SKIP_KEYWORDS = [
+  // Design
   'graphic design','logo design','logo designer','illustrat','photoshop','indesign',
   'figma','sketch app','adobe xd','ui/ux','ux design','ui design','web design',
-  'website design','web developer','web development','wordpress','woocommerce',
-  'shopify developer','react developer','angular','vue','node developer',
-  'mobile app','android app','ios app','flutter','react native','swift','kotlin',
-  'python developer','django','machine learning','ai model','deep learning',
+  'website design','poster design','banner design','flyer design','brochure','infographic',
+  'slide deck design','powerpoint design','presentation design','photo edit','photo retouching',
+  'product photo','brand identity','brand design','visual identity','typography',
+  // Development
+  'web developer','web development','wordpress','woocommerce','shopify developer',
+  'react developer','angular developer','vue developer','node developer','node.js developer',
+  'mobile app','android app','ios app','flutter','react native','swift developer','kotlin',
+  'python developer','django','laravel','php developer','ruby on rails','java developer',
+  'software developer','software engineer','full stack','frontend developer','backend developer',
+  'api developer','api integration developer','app development','website development',
+  'website builder','landing page build','landing page develop','build a website',
+  'build an app','create a website','create an app','develop a website','develop an app',
+  // AI / ML
+  'machine learning','ai model','deep learning','neural network','nlp model',
+  'llm','gpt','chatbot develop','chatbot build','ai chatbot','ai agent build',
+  'ai assistant build','train a model','fine.tun',
+  // Server / IT
+  'vps','server admin','server setup','server config','linux admin','devops',
+  'hestia','cpanel','plesk','aws setup','cloud setup','docker','kubernetes',
+  'database admin','dba ','sql developer','mysql setup','network admin',
+  // Video / Animation
   'video edit','video production','animation','motion graphic','after effects',
   'premiere pro','3d model','autocad','solidworks','blender','unity','unreal',
+  'video creat','youtube video','tiktok video','reels',
+  // Writing / Content
   'copywriting','blog post','article writing','creative writing','ghostwrit',
-  'social media post','instagram post','tiktok','youtube channel',
-  'poster design','banner design','flyer design','brochure','infographic',
-  'slide deck design','powerpoint design','presentation design',
-  'photo edit','photo retouching','product photo',
+  'content writing','seo writing','social media post','instagram post','tiktok post',
+  'youtube channel','podcast','script writing','proofreading','academic writing',
+  'essay writing','research paper','grant writing',
+  // Other non-BPO
+  'recruiter','hr manager','business development','sales rep','cold calling',
+  'telemarketing','accounting software','tax return','tax prep',
+  'astrology','tarot','horoscope',
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────

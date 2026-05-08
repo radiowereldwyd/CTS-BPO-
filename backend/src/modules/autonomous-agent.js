@@ -1939,6 +1939,18 @@ async function startAgent() {
     runPlatformScan().catch(e => logActivity('platform_scan', `Cron error: ${e.message}`, null, null, 'error'));
   });
 
+  // Standalone auto-bidder — runs every 30 min to catch any pending/backlog jobs
+  // independent of the platform scan so new jobs are bid on quickly
+  cron.schedule('*/30 * * * *', () => {
+    const autoBidder = require('./auto-bidder');
+    autoBidder.autoBidNewJobs().then(r => {
+      if (r.processed > 0) {
+        console.log(`🤖 [AUTO-BID CRON] ${r.processed} processed, ${r.submitted} auto-submitted, ${r.skipped} skipped`);
+        logActivity('platform_scan', `Auto-bid cron: ${r.processed} proposals, ${r.submitted} submitted, ${r.skipped} skipped`, null, null, 'info');
+      }
+    }).catch(e => console.warn(`[AUTO-BID CRON] Error: ${e.message}`));
+  });
+
   // Lead search every 6 hours — only if SerpAPI is available (NOT on startup)
   cron.schedule('0 */6 * * *', () => {
     if (!isSerpApiCooling()) {
