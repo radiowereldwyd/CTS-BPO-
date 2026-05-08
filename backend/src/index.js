@@ -1467,6 +1467,144 @@ app.get('/api/platform-jobs/approve/:id', async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// JOB PIPELINE — end-to-end automated BPO job lifecycle
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/pipeline/jobs — list all pipeline jobs (admin)
+app.get('/api/pipeline/jobs', requireAuth, async (req, res) => {
+  try {
+    const pipeline = require('./modules/job-pipeline');
+    const { status, limit } = req.query;
+    const jobs  = await pipeline.getPipelineJobs({ status, limit: limit || 200 });
+    const stats = await pipeline.getPipelineStats();
+    res.json({ jobs, stats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/pipeline/jobs/:id — single job detail
+app.get('/api/pipeline/jobs/:id', requireAuth, async (req, res) => {
+  try {
+    const db = require('./db');
+    const { rows } = await db.query(
+      `SELECT * FROM bpo_pipeline_jobs WHERE id=$1`, [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Job not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/pipeline/jobs/:id/process — manually trigger AI processing (admin)
+app.post('/api/pipeline/jobs/:id/process', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const db = require('./db');
+    const pipeline = require('./modules/job-pipeline');
+    const { rows } = await db.query(`SELECT * FROM bpo_pipeline_jobs WHERE id=$1`, [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Job not found' });
+    const job = rows[0];
+    await db.query(`UPDATE bpo_pipeline_jobs SET status='processing', accepted_at=NOW(), updated_at=NOW() WHERE id=$1`, [job.id]);
+    setImmediate(() => pipeline.runJobAndDeliver ? pipeline.runJobAndDeliver(job, job.client_email, '', null).catch(console.error) : null);
+    res.json({ ok: true, message: `Job #${job.id} processing started` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/pipeline/jobs/:id/complete — one-click payment confirm from email (no login needed)
+app.get('/api/pipeline/jobs/:id/complete', async (req, res) => {
+  const { token } = req.query;
+  if (token !== 'admin2026') return res.status(403).send('<h2>Invalid token.</h2>');
+  try {
+    const pipeline = require('./modules/job-pipeline');
+    const job = await pipeline.markJobComplete(parseInt(req.params.id), req.query.ref || 'email-confirm');
+    if (!job) return res.status(404).send('<h2>Job not found.</h2>');
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>Payment Confirmed — CTS BPO</title>
+      <style>body{font-family:Arial,sans-serif;max-width:600px;margin:60px auto;padding:20px;color:#1e293b}
+      .card{background:#f0fdf4;border:2px solid #22c55e;border-radius:12px;padding:28px}
+      h1{color:#059669;margin:0 0 12px}a{color:#2563eb;font-weight:bold}</style></head><body>
+      <div class="card">
+        <h1>✅ Payment Confirmed!</h1>
+        <p>Job <strong>${job.invoice_ref}</strong> for <strong>${job.client_email}</strong> has been marked as <strong>COMPLETE</strong>.</p>
+        <p><strong>Amount:</strong> R ${parseFloat(job.quote_amount).toLocaleString()}</p>
+        <p>A thank-you email has been sent to the client automatically.</p>
+        <p style="margin-top:20px"><a href="${process.env.APP_URL || 'https://cts-bpo.replit.app'}/ai-agent">📊 Back to Dashboard</a></p>
+      </div></body></html>`);
+  } catch (err) {
+    res.status(500).send(`<h2>Error: ${err.message}</h2>`);
+  }
+});
+
+// PATCH /api/pipeline/jobs/:id/complete — mark job paid/complete via dashboard (admin)
+app.patch('/api/pipeline/jobs/:id/complete', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pipeline = require('./modules/job-pipeline');
+    const job = await pipeline.markJobComplete(parseInt(req.params.id), req.body.paymentRef || 'manual-confirm');
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json({ ok: true, job });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/pipeline/jobs/:id/payment-confirm — client-side payment confirm link (no login)
+app.get('/api/pipeline/jobs/:id/payment-confirm', async (req, res) => {
+  const { token } = req.query;
+  try {
+    const db = require('./db');
+    const { rows } = await db.query(`SELECT * FROM bpo_pipeline_jobs WHERE id=$1`, [req.params.id]);
+    if (!rows[0]) return res.status(404).send('<h2>Job not found.</h2>');
+    const job = rows[0];
+    if (token !== job.invoice_ref) return res.status(403).send('<h2>Invalid link.</h2>');
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>Confirm Receipt — CTS BPO</title>
+      <style>body{font-family:Arial,sans-serif;max-width:600px;margin:60px auto;padding:20px;color:#1e293b}
+      .card{background:#eff6ff;border:2px solid #3b82f6;border-radius:12px;padding:28px}
+      h2{color:#1d4ed8;margin:0 0 12px}
+      .btn{display:inline-block;background:#059669;color:#fff;padding:14px 32px;border-radius:9px;text-decoration:none;font-weight:700;font-size:15px;margin-top:16px}</style></head><body>
+      <div class="card">
+        <h2>Confirm Receipt of Completed Work</h2>
+        <p>Please confirm you have received the completed work for job <strong>${job.invoice_ref}</strong>.</p>
+        <p><strong>Amount due:</strong> R ${parseFloat(job.quote_amount).toLocaleString()}</p>
+        <p>After confirming, please send payment via EFT or PayPal to <strong>cts.cybersolutions@gmail.com</strong> using <strong>${job.invoice_ref}</strong> as reference, then email your proof of payment.</p>
+        <a class="btn" href="/api/pipeline/jobs/${job.id}/complete?token=admin2026">✅ I Confirm — Work Received</a>
+      </div></body></html>`);
+  } catch (err) {
+    res.status(500).send(`<h2>Error: ${err.message}</h2>`);
+  }
+});
+
+// POST /api/pipeline/scan-payments — manually trigger payment scan (admin)
+app.post('/api/pipeline/scan-payments', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pipeline = require('./modules/job-pipeline');
+    const result = await pipeline.scanForPayments();
+    res.json({ ok: true, found: result.found });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/pipeline/test-quote — test quote detection on pasted email text
+app.post('/api/pipeline/test-quote', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const pipeline = require('./modules/job-pipeline');
+    const { body, subject } = req.body;
+    const jobType   = pipeline.detectServiceRequest(body, subject);
+    const isAccept  = pipeline.detectAcceptance(body, subject);
+    const isPay     = pipeline.detectPayment(body, subject);
+    res.json({ jobType, isAccept, isPay, detected: !!(jobType || isAccept || isPay) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Targeted Scrape ─────────────────────────────────────────────────────────
 // Multer — store PDF in memory (max 20 MB)
 const pdfUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });

@@ -351,11 +351,41 @@ async function processInboxReplies() {
     return { alreadyClient: false, portalLink, name, token };
   }
 
+  // Lazy-load pipeline (avoid circular dep at module load)
+  const jobPipeline = require('./job-pipeline');
+
   for (const email of emails) {
     if (isBounceEmail(email.from, email.subject)) continue;
     if (!email.body) { await markAsRead(email.id).catch(() => {}); continue; }
 
     try {
+      // ── Pipeline: check if this is a service request or quote acceptance ──
+      const isAcceptance = jobPipeline.detectAcceptance(email.body, email.subject);
+      if (isAcceptance) {
+        console.log(`💼 [PIPELINE] Quote acceptance from ${email.from} — triggering job processing`);
+        await jobPipeline.processAcceptedQuote(email.from, email.body, null)
+          .catch(e => console.error('[PIPELINE] Accept error:', e.message));
+        await markAsRead(email.id).catch(() => {});
+        updates.push({ email: email.from, intent: 'quote_accepted', action: 'job_processing_started' });
+        continue; // handled by pipeline, skip NLP routing
+      }
+
+      const jobType = jobPipeline.detectServiceRequest(email.body, email.subject);
+      if (jobType) {
+        console.log(`📋 [PIPELINE] Service request detected from ${email.from} — type: ${jobType}`);
+        await jobPipeline.sendQuote({
+          clientEmail:   email.from,
+          clientName:    email.name || '',
+          jobType,
+          description:   email.body.slice(0, 1000),
+          emailSubject:  email.subject,
+          rawBody:       email.body,
+        }).catch(e => console.error('[PIPELINE] Quote send error:', e.message));
+        await markAsRead(email.id).catch(() => {});
+        updates.push({ email: email.from, intent: 'service_request', action: 'quote_sent', jobType });
+        continue; // pipeline handled it
+      }
+
       const analysis  = await nlp.analyseEmailReply(email.body).catch(() => ({ sentiment: { intent: 'unknown' } }));
       const intent    = analysis.sentiment?.intent || 'unknown';
       const firstName = (email.name || email.from.split('@')[0] || 'there').split(' ')[0];

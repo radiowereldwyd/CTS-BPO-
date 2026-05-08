@@ -164,6 +164,8 @@ export default function AIAgentDashboard({ token }) {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [platformData, setPlatformData] = useState(null);
   const [platformLoading, setPlatformLoading] = useState(false);
+  const [pipelineData, setPipelineData]   = useState(null);
+  const [pipelineLoading, setPipelineLoading] = useState(false);
   const feedRef  = useRef(null);
   const tokenRef = useRef(token);
   useEffect(() => { tokenRef.current = token; }, [token]);
@@ -207,6 +209,14 @@ export default function AIAgentDashboard({ token }) {
       setPlatformData(data);
     } catch {} finally { setPlatformLoading(false); }
   };
+  const doFetchPipeline = async () => {
+    setPipelineLoading(true);
+    try {
+      const h = { Authorization: `Bearer ${tokenRef.current}` };
+      const data = await fetch(`${API}/api/pipeline/jobs`, { headers: h }).then(r => r.json());
+      setPipelineData(data);
+    } catch {} finally { setPipelineLoading(false); }
+  };
 
   // Store latest versions in refs so the interval callbacks always call the current function
   const liveRef          = useRef(doFetchLive);
@@ -214,11 +224,13 @@ export default function AIAgentDashboard({ token }) {
   const emailStatsRef    = useRef(doFetchEmailStats);
   const analyticsRef     = useRef(doFetchEmailAnalytics);
   const platformRef      = useRef(doFetchPlatformJobs);
+  const pipelineRef      = useRef(doFetchPipeline);
   liveRef.current          = doFetchLive;
   activityRef.current      = doFetchActivity;
   emailStatsRef.current    = doFetchEmailStats;
   analyticsRef.current     = doFetchEmailAnalytics;
   platformRef.current      = doFetchPlatformJobs;
+  pipelineRef.current      = doFetchPipeline;
 
   // Set up intervals ONCE on mount — never cleared until unmount
   useEffect(() => {
@@ -358,6 +370,7 @@ export default function AIAgentDashboard({ token }) {
         <button className={`tab-btn${activeTab==='triggers'?' active':''}`} onClick={()=>setActiveTab('triggers')}>🎮 Triggers</button>
         <button className={`tab-btn${activeTab==='contacts'?' active':''}`} onClick={()=>setActiveTab('contacts')}>🕷️ Scraped Contacts</button>
         <button className={`tab-btn${activeTab==='platform'?' active':''}`} onClick={()=>{setActiveTab('platform');platformRef.current();}}>🎯 Platform Jobs</button>
+        <button className={`tab-btn${activeTab==='pipeline'?' active':''}`} onClick={()=>{setActiveTab('pipeline');pipelineRef.current();}}>⚙️ Job Pipeline</button>
         <button className={`tab-btn${activeTab==='analytics'?' active':''}`} onClick={()=>{setActiveTab('analytics');analyticsRef.current();}}>📈 Email Analytics</button>
       </div>
 
@@ -835,10 +848,241 @@ export default function AIAgentDashboard({ token }) {
         />
       )}
 
+      {/* ══════════════════ JOB PIPELINE TAB ════════════════════════════════ */}
+      {activeTab === 'pipeline' && (
+        <PipelineJobsPanel
+          data={pipelineData}
+          loading={pipelineLoading}
+          token={token}
+          onRefresh={() => pipelineRef.current()}
+          API={API}
+        />
+      )}
+
       {/* ══════════════════ EMAIL ANALYTICS TAB ══════════════════════════════ */}
       {activeTab === 'analytics' && (
         <EmailAnalyticsPanel data={emailAnalytics} />
       )}
+    </div>
+  );
+}
+
+// ── Pipeline Jobs Panel ───────────────────────────────────────────────────────
+const STATUS_META = {
+  quoted:           { color: '#0ea5e9', bg: '#e0f2fe', label: '💬 Quoted',          desc: 'Quote sent, awaiting client reply' },
+  processing:       { color: '#8b5cf6', bg: '#ede9fe', label: '🤖 Processing',       desc: 'AI is doing the work right now' },
+  delivered:        { color: '#f59e0b', bg: '#fef3c7', label: '📦 Delivered',        desc: 'Work sent, waiting for payment' },
+  payment_detected: { color: '#f97316', bg: '#fff7ed', label: '💰 Payment Detected', desc: 'Payment email received — confirm in your bank' },
+  complete:         { color: '#10b981', bg: '#d1fae5', label: '✅ Complete',          desc: 'Paid and closed' },
+  error:            { color: '#ef4444', bg: '#fee2e2', label: '❌ Error',             desc: 'Processing failed — manual review needed' },
+};
+
+function PipelineJobsPanel({ data, loading, token, onRefresh, API }) {
+  const [confirming, setConfirming] = useState(null);
+  const [payRef, setPayRef]         = useState('');
+  const [scanning, setScanning]     = useState(false);
+  const [scanMsg, setScanMsg]       = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+
+  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  const scanPayments = async () => {
+    setScanning(true); setScanMsg('');
+    try {
+      const r = await fetch(`${API}/api/pipeline/scan-payments`, { method: 'POST', headers: h }).then(x => x.json());
+      setScanMsg(r.found > 0 ? `✅ ${r.found} payment(s) detected — admin notified!` : '📭 No new payments found in inbox.');
+    } catch { setScanMsg('❌ Scan failed.'); }
+    setScanning(false);
+    setTimeout(() => setScanMsg(''), 5000);
+    onRefresh();
+  };
+
+  const confirmPayment = async (jobId) => {
+    try {
+      await fetch(`${API}/api/pipeline/jobs/${jobId}/complete`, {
+        method: 'PATCH', headers: h, body: JSON.stringify({ paymentRef: payRef || 'manual-confirm' })
+      });
+      setConfirming(null); setPayRef('');
+      onRefresh();
+    } catch {}
+  };
+
+  const processJob = async (jobId) => {
+    try {
+      await fetch(`${API}/api/pipeline/jobs/${jobId}/process`, { method: 'POST', headers: h });
+      onRefresh();
+    } catch {}
+  };
+
+  if (loading && !data) return (
+    <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8' }}>
+      <div style={{ fontSize: 36, marginBottom: 10 }}>⚙️</div>
+      <div style={{ fontWeight: 600 }}>Loading pipeline jobs...</div>
+    </div>
+  );
+
+  const jobs  = (data?.jobs  || []).filter(j => filterStatus === 'all' || j.status === filterStatus);
+  const stats = data?.stats || {};
+  const fmt   = n => parseInt(n || 0).toLocaleString();
+  const fmtR  = n => `R ${parseFloat(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`;
+  const fmtDate = d => d ? new Date(d).toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+
+  return (
+    <div>
+      {/* ── Stats strip ── */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        {[
+          { l: 'Total Jobs',      v: fmt(stats.total),          c: '#7c3aed' },
+          { l: 'Quoted',          v: fmt(stats.quoted),          c: '#0ea5e9' },
+          { l: 'Processing',      v: fmt(stats.processing),      c: '#8b5cf6' },
+          { l: 'Delivered',       v: fmt(stats.delivered),       c: '#f59e0b' },
+          { l: 'Pmt Detected',    v: fmt(stats.payment_detected),c: '#f97316' },
+          { l: 'Complete',        v: fmt(stats.complete),        c: '#10b981' },
+          { l: 'Revenue',         v: fmtR(stats.total_revenue),  c: '#059669', wide: true },
+          { l: 'Pipeline Value',  v: fmtR(stats.pipeline_value), c: '#2563eb', wide: true },
+        ].map(k => (
+          <div key={k.l} style={{ textAlign: 'center', padding: '8px 16px', background: '#fff', borderRadius: 10, border: `1px solid ${k.c}30`, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', minWidth: k.wide ? 120 : 80 }}>
+            <div style={{ fontSize: k.wide ? 15 : 22, fontWeight: 900, color: k.c, fontVariantNumeric: 'tabular-nums' }}>{k.v}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>{k.l}</div>
+          </div>
+        ))}
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button onClick={scanPayments} disabled={scanning} style={{ background: scanning ? '#e2e8f0' : 'linear-gradient(135deg,#059669,#10b981)', color: scanning ? '#94a3b8' : '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: scanning ? 'default' : 'pointer', fontWeight: 700, fontSize: 12 }}>
+            {scanning ? '🔍 Scanning...' : '🔍 Scan for Payments'}
+          </button>
+          <button onClick={onRefresh} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', cursor: 'pointer', fontWeight: 700, fontSize: 12, color: '#475569' }}>↻ Refresh</button>
+        </div>
+      </div>
+
+      {scanMsg && (
+        <div style={{ background: scanMsg.startsWith('✅') ? '#f0fdf4' : '#fef3c7', border: `1px solid ${scanMsg.startsWith('✅') ? '#22c55e' : '#f59e0b'}`, borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: 13, fontWeight: 600 }}>{scanMsg}</div>
+      )}
+
+      {/* ── How it works ── */}
+      {(data?.jobs || []).length === 0 && (
+        <div style={{ background: 'linear-gradient(135deg,#eff6ff,#f0fdf4)', border: '1px solid #93c5fd', borderRadius: 14, padding: 28, marginBottom: 20 }}>
+          <div style={{ fontSize: 28, marginBottom: 10 }}>⚙️ Automated Job Pipeline — How It Works</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 }}>
+            {[
+              { icon: '📧', step: '1. Email In',      desc: 'Someone emails asking for BPO help (data entry, transcription, translation, VA, etc.)' },
+              { icon: '💬', step: '2. AI Quotes',     desc: 'AI analyses the request, calculates a price, and sends a professional quote automatically' },
+              { icon: '✅', step: '3. Client Accepts', desc: 'Client replies "YES" → AI immediately processes the job using Google Cloud APIs' },
+              { icon: '📦', step: '4. AI Delivers',   desc: 'Completed work + branded PDF invoice emailed to client with payment instructions' },
+              { icon: '💰', step: '5. Payment Scanned', desc: 'Inbox scanned every 10 min for proof of payment — you get notified instantly' },
+              { icon: '🏆', step: '6. Mark Complete', desc: 'You confirm payment in dashboard → client gets thank-you → job closed' },
+            ].map(s => (
+              <div key={s.step} style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' }}>
+                <div style={{ fontSize: 22, marginBottom: 6 }}>{s.icon}</div>
+                <div style={{ fontWeight: 800, fontSize: 12, color: '#1e3a5f', marginBottom: 4 }}>{s.step}</div>
+                <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>{s.desc}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 16, fontSize: 13, color: '#64748b' }}>
+            The pipeline activates automatically when someone emails <strong>cts.cybersolutions@gmail.com</strong> with a service request. It also handles client replies from your outreach campaigns.
+          </div>
+        </div>
+      )}
+
+      {/* ── Filter ── */}
+      {(data?.jobs || []).length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          {['all', 'quoted', 'processing', 'delivered', 'payment_detected', 'complete', 'error'].map(s => (
+            <button key={s} onClick={() => setFilterStatus(s)}
+              style={{ padding: '5px 14px', borderRadius: 20, border: `1px solid ${filterStatus === s ? '#6366f1' : '#e2e8f0'}`,
+                background: filterStatus === s ? '#6366f1' : '#fff', color: filterStatus === s ? '#fff' : '#64748b',
+                cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+              {s === 'all' ? 'All' : (STATUS_META[s]?.label || s)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Jobs table ── */}
+      {jobs.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>{filterStatus !== 'all' ? `No ${filterStatus} jobs` : 'No pipeline jobs yet'}</div>
+          <div style={{ fontSize: 13 }}>Jobs appear here automatically when clients email service requests. The inbox is scanned every 15 minutes.</div>
+        </div>
+      ) : jobs.map(job => {
+        const sm = STATUS_META[job.status] || { color: '#94a3b8', bg: '#f1f5f9', label: job.status };
+        return (
+          <div key={job.id} style={{ background: '#fff', borderRadius: 12, boxShadow: '0 2px 10px rgba(0,0,0,0.07)', border: `1px solid ${sm.color}30`, marginBottom: 12, overflow: 'hidden' }}>
+            {/* Header bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', background: sm.bg, borderBottom: `1px solid ${sm.color}25`, flexWrap: 'wrap' }}>
+              <span style={{ background: sm.color, color: '#fff', padding: '3px 12px', borderRadius: 20, fontSize: 11, fontWeight: 800 }}>{sm.label}</span>
+              <span style={{ fontWeight: 800, fontSize: 14, color: '#0f172a' }}>{job.job_type?.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'BPO Job'}</span>
+              <span style={{ fontSize: 12, color: '#64748b' }}>#{job.id}</span>
+              <span style={{ marginLeft: 'auto', fontWeight: 900, fontSize: 16, color: '#059669' }}>R {parseFloat(job.quote_amount || 0).toLocaleString()}</span>
+              <span style={{ fontSize: 11, background: '#fff', padding: '2px 10px', borderRadius: 20, border: '1px solid #e2e8f0', color: '#475569', fontFamily: 'monospace' }}>{job.invoice_ref}</span>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '14px 18px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12, fontSize: 13 }}>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3 }}>Client</div>
+                <div style={{ fontWeight: 600, color: '#1e293b' }}>{job.client_name || '—'}</div>
+                <div style={{ color: '#64748b', fontSize: 12 }}>{job.client_email}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3 }}>Subject</div>
+                <div style={{ color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.source_email_subject || '—'}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 3 }}>Timeline</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>
+                  {job.quote_sent_at   && <div>💬 Quoted: {fmtDate(job.quote_sent_at)}</div>}
+                  {job.accepted_at     && <div>✅ Accepted: {fmtDate(job.accepted_at)}</div>}
+                  {job.delivered_at    && <div>📦 Delivered: {fmtDate(job.delivered_at)}</div>}
+                  {job.completed_at    && <div>🏆 Complete: {fmtDate(job.completed_at)}</div>}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'flex-end' }}>
+                {job.status === 'quoted' && (
+                  <button onClick={() => processJob(job.id)}
+                    style={{ background: '#8b5cf6', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+                    🤖 Force Process
+                  </button>
+                )}
+                {(job.status === 'delivered' || job.status === 'payment_detected') && (
+                  confirming === job.id ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input value={payRef} onChange={e => setPayRef(e.target.value)} placeholder="Payment ref (optional)"
+                        style={{ flex: 1, border: '1px solid #e2e8f0', borderRadius: 7, padding: '6px 10px', fontSize: 12 }} />
+                      <button onClick={() => confirmPayment(job.id)}
+                        style={{ background: '#059669', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 12px', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                        ✅ Confirm
+                      </button>
+                      <button onClick={() => setConfirming(null)}
+                        style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 7, padding: '7px 10px', cursor: 'pointer', fontSize: 12 }}>
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setConfirming(job.id)}
+                      style={{ background: 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 14px', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+                      💰 Confirm Payment
+                    </button>
+                  )
+                )}
+                {job.status === 'complete' && (
+                  <span style={{ fontSize: 12, color: '#059669', fontWeight: 700 }}>🏆 Paid & Complete</span>
+                )}
+              </div>
+            </div>
+
+            {/* Payment detected banner */}
+            {job.status === 'payment_detected' && (
+              <div style={{ background: 'linear-gradient(135deg,#fef3c7,#fff7ed)', borderTop: '1px solid #f59e0b', padding: '10px 18px', fontSize: 13, fontWeight: 600, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8 }}>
+                ⚠️ Payment email detected from this client — verify in your bank/PayPal, then click "Confirm Payment" above.
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

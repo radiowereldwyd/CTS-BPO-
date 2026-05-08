@@ -1999,6 +1999,17 @@ async function startAgent() {
   // Run once 90s after boot so it doesn't clash with bounce check
   setTimeout(() => gmailReader.processInboxReplies().catch(() => {}), 90_000);
 
+  // ── Pipeline: payment scan every 10 minutes — checks inbox for POF notifications ──
+  const jobPipeline = require('./job-pipeline');
+  cron.schedule('*/10 * * * *', () => {
+    jobPipeline.scanForPayments()
+      .then(r => { if (r.found > 0) console.log(`💰 [PIPELINE] Payment scan: ${r.found} payment(s) detected`); })
+      .catch(e => logActivity('payment_scan', `Cron error: ${e.message}`, null, null, 'error'));
+  });
+  // Ensure pipeline table exists on startup
+  jobPipeline.ensureTable().catch(e => console.error('[PIPELINE] Table setup error:', e.message));
+  console.log('✅ [PIPELINE] Job pipeline active — scanning inbox for requests + payments every 10 min');
+
   // Bounce processing every 20 minutes — detect bounces, blacklist, then auto-purge
   cron.schedule('*/20 * * * *', () => {
     gmailReader.processBounces()
