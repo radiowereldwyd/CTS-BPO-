@@ -17,8 +17,8 @@ const DEV_USERS = [
     id: 1,
     name: 'CTS Admin',
     email: 'admin@ctsbpo.com',
-    // bcrypt hash of "Admin1234!"
-    password_hash: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
+    // bcrypt hash of "CTS@Admin2026"
+    password_hash: '$2a$10$7yMr.7wChcsU5awatEU9dOkF6.FDCL9Utxuw/CL1oYYX1bXIJM05a',
     role: 'admin',
   },
 ];

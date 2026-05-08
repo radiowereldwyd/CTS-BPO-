@@ -354,9 +354,29 @@ async function processInboxReplies() {
   // Lazy-load pipeline (avoid circular dep at module load)
   const jobPipeline = require('./job-pipeline');
 
+  // Our own sending addresses — never process emails from ourselves
+  const OWN_ADDRESSES = [
+    (process.env.GMAIL_USER || 'cts.cybersolutions@gmail.com').toLowerCase(),
+    'cts.bposolutions@gmail.com',
+    'info@ctsbpo.com',
+    'admin@ctsbpo.com',
+    'noreply@brevo.com',
+    'no-reply@',
+    'noreply@',
+    'notifications@',
+    'mailer@',
+  ];
+
   for (const email of emails) {
     if (isBounceEmail(email.from, email.subject)) continue;
     if (!email.body) { await markAsRead(email.id).catch(() => {}); continue; }
+
+    // ── CRITICAL: Skip our own emails — never process outgoing mail as client replies ──
+    const fromLower = (email.from || '').toLowerCase();
+    if (OWN_ADDRESSES.some(own => fromLower.includes(own))) {
+      await markAsRead(email.id).catch(() => {});
+      continue;
+    }
 
     try {
       // ── Pipeline: check if this is a service request or quote acceptance ──
