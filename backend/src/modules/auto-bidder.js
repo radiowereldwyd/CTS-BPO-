@@ -80,6 +80,16 @@ const SKIP_KEYWORDS = [
   // Instagram / social lead gen
   'instagram lead','facebook lead','social media lead','lead gen.*instagram',
   'social media manager',
+  // Tools / software that flag design/dev jobs
+  'canva','photoshop','illustrator','indesign','premiere','after effect',
+  'lightroom','capcut','camtasia','davinci',
+  // Sales / referral / commission roles
+  'referral partner','referral program','credit card referral','sales partner',
+  'commission based','revenue share','outreach caller','cold caller',
+  'phone sales','sales executive','business development manager',
+  // Citizenship / residency requirements
+  'us citizen','u.s. citizen','american citizen','uk citizen','resident only',
+  'local candidate','must be based in','physically located',
   // Miscellaneous non-BPO
   'nft','crypto','blockchain','defi','web3','dao ','smart contract',
   'seo audit','seo specialist','sem ','ppc ','google ads','facebook ads',
@@ -144,27 +154,110 @@ const BPO_PATTERNS = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Classify a job from its title + snippet — returns type or null if should skip
+// Freelancer URL category → BLOCKED (not BPO work)
+// The URL always contains the project category — most reliable signal available
+// ─────────────────────────────────────────────────────────────────────────────
+const BLOCKED_URL_CATEGORIES = new Set([
+  // Design
+  'adobe-photoshop','canva','graphic-design','logo-design','photo-editing',
+  'illustration','drawing','art','typography','ui-design','ux-design',
+  'web-design','website-design','banner-design','poster-design','flyer-design',
+  'brochure','infographic','product-design','brand-design','visual-design',
+  'adobe-illustrator','adobe-indesign','figma','sketch','procreate',
+  'print-design','packaging-design','icon-design','3d-design','t-shirt-design',
+  // Development
+  'python','java','php','javascript','react-native','android','ios','flutter',
+  'swift','kotlin','ruby-on-rails','django','laravel','node-js','vue-js',
+  'react-js','angular-js','typescript','html','css','bootstrap',
+  'software-development','web-development','app-development','mobile-development',
+  'ios-development','android-development','wordpress','shopify','woocommerce',
+  'magento','opencart','prestashop','drupal','joomla','squarespace','webflow',
+  'api-development','backend-development','frontend-development','full-stack',
+  'database-development','sql','mysql','postgresql','mongodb','firebase',
+  'cloud-computing','aws','azure','devops','docker','kubernetes','linux',
+  // AI / ML / Data Science
+  'machine-learning','deep-learning','artificial-intelligence','computer-vision',
+  'natural-language-processing','data-science','neural-networks','tensorflow',
+  'pytorch','opencv','chatgpt','llm','nlp',
+  // Video & Media
+  'video-editing','video-production','animation','motion-graphics','after-effects',
+  'premiere-pro','final-cut-pro','davinci-resolve','3d-animation','3d-modelling',
+  'videography','youtube','tiktok','reels','podcast-production','audio-production',
+  'sound-design','music-production','voice-acting','video-ads',
+  // Writing & Content (non-BPO)
+  'writing','article-writing','content-writing','copywriting','creative-writing',
+  'ghostwriting','blog-writing','seo-writing','technical-writing','editing',
+  'proofreading','screenwriting','script-writing','grant-writing','proposal-writing',
+  'proposal-bid-writing','academic-writing','research-writing',
+  // Marketing & Sales
+  'sales','telemarketing','marketing','digital-marketing','social-media-marketing',
+  'content-marketing','email-marketing','seo','sem','ppc','google-ads',
+  'facebook-ads','instagram-marketing','influencer-marketing','affiliate-marketing',
+  'lead-generation','appointment-setting','cold-calling','business-development',
+  // Engineering / Technical
+  'control-system-design','circuit-design','electrical-engineering',
+  'mechanical-engineering','civil-engineering','industrial-design','autocad',
+  'solidworks','matlab','pcb-design','embedded-systems','iot','robotics',
+  'automation','financial-modeling','excel-macros','vba',
+  // Games
+  'game-development','unity','unreal','game-design','3d-game',
+  // Blockchain / Crypto
+  'blockchain','cryptocurrency','nft','web3','defi','smart-contracts',
+  // Other non-remote / non-BPO
+  'photography','architecture','interior-design','fashion-design',
+  'product-sourcing','buyer-sourcing','procurement','freelance','hiring',
+  'surveying','field-research','on-site','local-job',
+]);
+
+// Freelancer URL categories that ARE allowed (BPO work)
+const ALLOWED_URL_CATEGORIES = new Set([
+  'data-entry','data-collection','data-management','data-processing',
+  'customer-service','customer-support','virtual-assistant','transcription',
+  'translation','excel','google-sheets','microsoft-office','word-processing',
+  'crm','bookkeeping','accounting','email-handling','internet-research',
+  'research','web-research','online-research','data-analysis','reporting',
+  'form-filling','pdf','document-management','administrative-support',
+  'project-management', // only with positive title keywords
+]);
+
+// Minimum budget in USD — don't waste a bid slot on sub-$30 jobs
+const MIN_BUDGET_USD = parseInt(process.env.MIN_BID_BUDGET_USD || '30', 10);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Classify a job from its URL category + title + snippet
+// Returns BPO type string, or null if should skip
 // ─────────────────────────────────────────────────────────────────────────────
 function classifyJob(job) {
-  const text = `${job.title || ''} ${job.snippet || ''}`.toLowerCase();
+  // 1. ── URL category check (most reliable signal) ─────────────────────────
+  const urlCategory = (job.job_url || '').split('/projects/')[1]?.split('/')[0]?.toLowerCase() || '';
+  if (urlCategory && BLOCKED_URL_CATEGORIES.has(urlCategory)) {
+    return null; // definitively not BPO — skip immediately
+  }
 
-  // Hard skip if it matches anything we can't do
+  // 2. ── Budget floor — don't waste a slot on $10-25 micro-jobs ────────────
+  const budget = parseFloat(job.budget_min || job.budget_max || 0);
+  if (budget > 0 && budget < MIN_BUDGET_USD) return null;
+
+  // 3. ── Title / snippet keyword hard-skip ─────────────────────────────────
+  const text = `${job.title || ''} ${job.snippet || ''}`.toLowerCase();
   for (const kw of SKIP_KEYWORDS) {
     if (text.includes(kw)) return null;
   }
 
-  // Find best BPO match
+  // 4. ── Positive BPO pattern match (required for api_submitted) ───────────
   for (const { type, keywords } of BPO_PATTERNS) {
     if (keywords.some(kw => text.includes(kw))) return type;
   }
 
-  // Only keep it as 'general' if the stored query type is a BPO type
-  const BPO_TYPES = new Set(['data-entry','transcription','translation','virtual-assistant',
-    'customer-support','document-processing','finance-admin','content-moderation']);
-  if (BPO_TYPES.has(job.job_type)) return job.job_type;
+  // 5. ── URL in allowed list + no skip keywords = cautious BPO pass ────────
+  //    Only accept if Freelancer itself categorised it as a BPO type
+  if (urlCategory && ALLOWED_URL_CATEGORIES.has(urlCategory)) {
+    const BPO_TYPES = new Set(['data-entry','transcription','translation','virtual-assistant',
+      'customer-support','document-processing','finance-admin','content-moderation']);
+    if (BPO_TYPES.has(job.job_type)) return job.job_type;
+  }
 
-  return null; // skip — unclear or not BPO
+  return null; // no positive BPO signal — skip
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
