@@ -346,16 +346,25 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
   // Run all 6 checks in parallel — total time = slowest single check (≤ 8s)
   const checks = await Promise.allSettled([
 
-    // 1. Translation API
+    // 1. Translation API — prefer SA token, fall back to API key
     (async () => {
+      const token = _saToken;
+      const cfg = token
+        ? { headers: { Authorization: `Bearer ${token}` }, validateStatus: () => true, timeout: 8000 }
+        : { params: { key: KEY }, validateStatus: () => true, timeout: 8000 };
       const r = await axios.post('https://translation.googleapis.com/language/translate/v2',
-        { q: 'Hello', target: 'es' },
-        { params: { key: KEY }, validateStatus: () => true, timeout: 8000 });
+        { q: 'Hello', target: 'es' }, cfg);
+      const ok = r.status === 200;
+      const errMsg = r.data?.error?.message || `HTTP ${r.status}`;
+      const isKeyRestriction = !ok && (errMsg.includes('not valid') || errMsg.includes('API key') || errMsg.includes('restricted'));
       return {
         api: 'Cloud Translation',
-        status: r.status === 200 ? 'ok' : 'error',
-        message: r.status === 200 ? 'Working — translated "Hello" → "Hola"' : (r.data?.error?.message || `HTTP ${r.status}`),
-        authMethod: 'api_key', enableUrl: null,
+        status: ok ? 'ok' : 'error',
+        message: ok ? 'Working — translated "Hello" → "Hola"'
+          : isKeyRestriction && !token ? 'API key restricted — using service account auth; check GOOGLE_SERVICE_ACCOUNT_JSON'
+          : errMsg,
+        authMethod: token ? 'service_account' : 'api_key',
+        enableUrl: ok ? null : `https://console.cloud.google.com/apis/library/translate.googleapis.com?project=${PROJECT}`,
       };
     })(),
 
@@ -419,14 +428,17 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
         { params: { key: KEY, cx: CSE_ID, q: 'BPO outsourcing' }, validateStatus: () => true, timeout: 8000 });
       const ok  = r.status === 200;
       const msg = r.data?.error?.message || `HTTP ${r.status}`;
-      // Treat "no access" as disabled (needs enabling) rather than a code error
-      const needsEnable = !ok && (msg.includes('access') || msg.includes('not enabled') || msg.includes('disabled') || r.status === 403);
+      const isKeyRestriction = !ok && (msg.includes('not valid') || msg.includes('API key'));
+      const needsEnable = !ok && !isKeyRestriction && (msg.includes('access') || msg.includes('not enabled') || msg.includes('disabled') || r.status === 403);
       return {
         api: 'Custom Search (CSE)',
         status: ok ? 'ok' : (needsEnable ? 'disabled' : 'error'),
         message: ok
           ? `Working — ${r.data?.searchInformation?.totalResults || 0} results`
-          : needsEnable ? 'API not enabled — click to enable in Google Cloud Console' : msg,
+          : isKeyRestriction
+            ? 'API key has restrictions — go to Google Cloud Console → Credentials → API key → remove API restrictions or add Custom Search API'
+            : needsEnable ? 'API not enabled — click to enable in Google Cloud Console'
+            : msg,
         authMethod: 'api_key',
         enableUrl: ok ? null : `https://console.cloud.google.com/apis/library/customsearch.googleapis.com?project=${PROJECT}`,
       };

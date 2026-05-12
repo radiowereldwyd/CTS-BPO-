@@ -1,32 +1,65 @@
 /**
  * Google Cloud Translation API
  * Performs translation jobs for clients — one of CTS BPO's core services.
- * Uses REST API with Google API Key.
+ * Prefers Service Account auth (Bearer token); falls back to API key.
  */
 const axios = require('axios');
+const { GoogleAuth } = require('google-auth-library');
 const auditLogger = require('./audit-logger');
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
+const SA_JSON        = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
 const BASE = 'https://translation.googleapis.com/language/translate/v2';
 
-function isConfigured() { return !!GOOGLE_API_KEY; }
+let _saToken = null;
+let _saTokenExpiry = 0;
 
-/**
- * Translate text into a target language.
- * @param {string} text  - The text to translate
- * @param {string} targetLang - ISO 639-1 code e.g. 'fr', 'de', 'es', 'zh', 'af'
- * @param {string} sourceLang - Optional. Auto-detected if not provided.
- * @returns {{ translatedText, detectedSourceLanguage, characters }}
- */
+async function getSaToken() {
+  if (_saToken && Date.now() < _saTokenExpiry) return _saToken;
+  if (!SA_JSON) return null;
+  try {
+    const auth = new GoogleAuth({
+      credentials: JSON.parse(SA_JSON),
+      scopes: ['https://www.googleapis.com/auth/cloud-translation'],
+    });
+    const client = await auth.getClient();
+    const t = await client.getAccessToken();
+    _saToken = t.token;
+    _saTokenExpiry = Date.now() + 55 * 60 * 1000; // refresh 5min before expiry
+    return _saToken;
+  } catch { return null; }
+}
+
+function isConfigured() { return !!(SA_JSON || GOOGLE_API_KEY); }
+
+async function makeRequest(method, path, body, extraParams = {}) {
+  const token = await getSaToken();
+  if (token) {
+    const cfg = {
+      headers: { Authorization: `Bearer ${token}` },
+      validateStatus: () => true,
+      timeout: 15000,
+    };
+    const res = method === 'post'
+      ? await axios.post(`${BASE}${path}`, body, cfg)
+      : await axios.get(`${BASE}${path}`, { ...cfg, params: extraParams });
+    if (res.status === 200) return res;
+  }
+  // Fallback: API key
+  const cfg = { params: { key: GOOGLE_API_KEY, ...extraParams }, timeout: 15000 };
+  return method === 'post'
+    ? await axios.post(`${BASE}${path}`, body, cfg)
+    : await axios.get(`${BASE}${path}`, cfg);
+}
+
 async function translateText(text, targetLang = 'en', sourceLang = null) {
   if (!isConfigured()) {
     return { simulated: true, translatedText: `[TRANSLATION SIMULATED] ${text}`, targetLang };
   }
-  const params = { key: GOOGLE_API_KEY };
   const body = { q: text, target: targetLang, format: 'text' };
   if (sourceLang) body.source = sourceLang;
 
-  const res = await axios.post(BASE, body, { params, timeout: 15000 });
+  const res = await makeRequest('post', '', body);
   const result = res.data.data.translations[0];
 
   await auditLogger.log('ai.translate', null, null,
@@ -40,26 +73,16 @@ async function translateText(text, targetLang = 'en', sourceLang = null) {
   };
 }
 
-/**
- * Get list of supported languages.
- */
 async function getSupportedLanguages() {
   if (!isConfigured()) return { simulated: true, languages: [] };
-  const res = await axios.get(`${BASE}/languages`, {
-    params: { key: GOOGLE_API_KEY, target: 'en' }, timeout: 10000
-  });
+  const res = await makeRequest('get', '/languages', null, { target: 'en' });
   return res.data.data.languages;
 }
 
-/**
- * Detect the language of a text.
- */
 async function detectLanguage(text) {
   if (!isConfigured()) return { simulated: true, language: 'unknown', confidence: 0 };
-  const res = await axios.post(`${BASE}/detect`, { q: text }, {
-    params: { key: GOOGLE_API_KEY }, timeout: 10000
-  });
+  const res = await makeRequest('post', '/detect', { q: text });
   return res.data.data.detections[0][0];
 }
 
-module.exports = { translateText, getSupportedLanguages, detectLanguage, isConfigured };
+module.exports = { translateText, getSupportedLanguages, detectLanguage, isConfigured, getSaToken };
