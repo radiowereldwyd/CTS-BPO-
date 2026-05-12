@@ -31,76 +31,138 @@ import AdCreatives from './components/AdCreatives';
 import FreelancerInbox from './components/FreelancerInbox';
 import './App.css';
 
-function NavLink({ to, children }) {
+const NAV_ITEMS = [
+  { to: '/operations',       icon: '📊', label: 'Operations'  },
+  { to: '/job-search',       icon: '🎯', label: 'Leads'       },
+  { to: '/job-queue',        icon: '💼', label: 'Job Queue'   },
+  { to: '/subcontractors',   icon: '🤝', label: 'Team'        },
+  { to: '/payments',         icon: '💰', label: 'Finance'     },
+  { to: '/email-templates',  icon: '📧', label: 'Outreach'    },
+  { to: '/freelancer-inbox', icon: '💬', label: 'Freelancer'  },
+  { to: '/status',           icon: '⚙️',  label: 'System'     },
+];
+
+function Sidebar({ user, onLogout, open, onClose }) {
   const location = useLocation();
-  const isActive = location.pathname === to;
   return (
-    <Link to={to} className={isActive ? 'active' : ''}>
-      {children}
-    </Link>
+    <>
+      {/* Overlay for mobile */}
+      {open && <div className="sidebar-overlay" onClick={onClose} />}
+
+      <aside className={`sidebar${open ? ' sidebar-open' : ''}`}>
+        {/* Logo */}
+        <div className="sidebar-logo">
+          <Link to="/operations" onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+            <CTSLogo size="sm" />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: '#fff', letterSpacing: 0.5 }}>CTS BPO</div>
+              <div style={{ fontSize: 9, color: '#00c8ff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.5 }}>AI Platform</div>
+            </div>
+          </Link>
+        </div>
+
+        {/* Nav label */}
+        <div className="sidebar-section-label">Main Menu</div>
+
+        {/* Nav items */}
+        <nav className="sidebar-nav">
+          {NAV_ITEMS.map(({ to, icon, label }) => {
+            const active = location.pathname === to;
+            return (
+              <Link
+                key={to}
+                to={to}
+                onClick={onClose}
+                className={`sidebar-link${active ? ' sidebar-link-active' : ''}`}
+              >
+                <span className="sidebar-link-icon">{icon}</span>
+                <span className="sidebar-link-label">{label}</span>
+                {active && <span className="sidebar-link-pip" />}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Public site link */}
+        <div className="sidebar-section-label">Account</div>
+        <Link to="/" className="sidebar-link" style={{ marginBottom: 4 }}>
+          <span className="sidebar-link-icon">🌐</span>
+          <span className="sidebar-link-label">Public Site</span>
+        </Link>
+
+        {/* User block */}
+        <div className="sidebar-user">
+          <div className="sidebar-user-avatar">
+            {(user.name || 'A')[0].toUpperCase()}
+          </div>
+          <div className="sidebar-user-info">
+            <div className="sidebar-user-name">{user.name}</div>
+            <div className={`sidebar-user-role role-${user.role}`}>{user.role}</div>
+          </div>
+          <button className="sidebar-logout" onClick={onLogout} title="Sign out">
+            ⏏
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }
 
 function AdminShell({ user, token, onLogout }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   return (
-    <div className="app">
-      <header className="app-header">
-        <Link to="/operations" className="header-brand-link">
-          <CTSLogo size="md" className="header-brand-logo" />
-          <CTSLogo size="sm" className="header-brand-logo-sm" />
-        </Link>
-        <nav className="header-nav">
-          <NavLink to="/operations">📊 Operations</NavLink>
-          <NavLink to="/job-search">🎯 Leads</NavLink>
-          <NavLink to="/job-queue">💼 Job Queue</NavLink>
-          <NavLink to="/subcontractors">🤝 Team</NavLink>
-          <NavLink to="/payments">💰 Finance</NavLink>
-          <NavLink to="/email-templates">📧 Outreach</NavLink>
-          <NavLink to="/freelancer-inbox">💬 Freelancer</NavLink>
-          <NavLink to="/status">⚙️ System</NavLink>
-        </nav>
-        <div className="header-user">
-          <Link to="/" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none', marginRight: 12 }}>← Public Site</Link>
-          <span className="user-name">{user.name}</span>
-          <span className={`user-role role-${user.role}`}>{user.role}</span>
-          <button className="btn-logout" onClick={onLogout}>Sign Out</button>
-        </div>
-      </header>
+    <div className="app-shell">
+      {/* Mobile top bar */}
+      <div className="mobile-topbar">
+        <button className="hamburger" onClick={() => setSidebarOpen(o => !o)}>
+          <span /><span /><span />
+        </button>
+        <CTSLogo size="sm" />
+        <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>CTS BPO</div>
+      </div>
 
-      <main className="app-main">
-        <Routes>
-          {/* ── Primary nav ── */}
-          <Route path="/operations"       element={<OperationsDashboard token={token} />} />
-          <Route path="/job-search"       element={<JobSearch />} />
-          <Route path="/job-queue"        element={<JobQueue token={token} />} />
-          <Route path="/subcontractors"   element={<SubcontractorHub token={token} />} />
-          <Route path="/payments"         element={<Payments />} />
-          <Route path="/email-templates"  element={<EmailTemplates />} />
-          <Route path="/freelancer-inbox" element={<FreelancerInbox token={token} />} />
-          <Route path="/status"           element={<StatusPanel token={token} />} />
+      <Sidebar user={user} onLogout={onLogout} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-          {/* ── Legacy / direct-access routes (not in main nav) ── */}
-          <Route path="/dashboard"        element={<Dashboard token={token} />} />
-          <Route path="/ai-agent"         element={<AIAgentDashboard token={token} />} />
-          <Route path="/control-room"     element={<AIControlRoom token={token} />} />
-          <Route path="/analytics"        element={<AnalyticsDashboard token={token} />} />
-          <Route path="/targeted-scraper" element={<TargetedScraper token={token} />} />
-          <Route path="/ai-services"      element={<AIServices />} />
-          <Route path="/failed-contracts" element={<FailedContracts token={token} />} />
-          <Route path="/price-negotiator" element={<PriceNegotiator token={token} />} />
-          <Route path="/call-centre"      element={<CallCentre token={token} user={user} />} />
-          <Route path="/linkedin-outreach" element={<LinkedInOutreach token={token} user={user} />} />
-          <Route path="/ad-creatives"     element={<AdCreatives />} />
+      <div className="app-content">
+        <main className="app-main">
+          <Routes>
+            {/* ── Primary nav ── */}
+            <Route path="/operations"       element={<OperationsDashboard token={token} />} />
+            <Route path="/job-search"       element={<JobSearch />} />
+            <Route path="/job-queue"        element={<JobQueue token={token} />} />
+            <Route path="/subcontractors"   element={<SubcontractorHub token={token} />} />
+            <Route path="/payments"         element={<Payments />} />
+            <Route path="/email-templates"  element={<EmailTemplates />} />
+            <Route path="/freelancer-inbox" element={<FreelancerInbox token={token} />} />
+            <Route path="/status"           element={<StatusPanel token={token} />} />
 
-          {/* ── Redirects ── */}
-          <Route path="/login"  element={<Navigate to="/operations" replace />} />
-          <Route path="*"       element={<Navigate to="/operations" replace />} />
-        </Routes>
-      </main>
+            {/* ── Legacy / direct-access routes (not in main nav) ── */}
+            <Route path="/dashboard"         element={<Dashboard token={token} />} />
+            <Route path="/ai-agent"          element={<AIAgentDashboard token={token} />} />
+            <Route path="/control-room"      element={<AIControlRoom token={token} />} />
+            <Route path="/analytics"         element={<AnalyticsDashboard token={token} />} />
+            <Route path="/targeted-scraper"  element={<TargetedScraper token={token} />} />
+            <Route path="/ai-services"       element={<AIServices />} />
+            <Route path="/failed-contracts"  element={<FailedContracts token={token} />} />
+            <Route path="/price-negotiator"  element={<PriceNegotiator token={token} />} />
+            <Route path="/call-centre"       element={<CallCentre token={token} user={user} />} />
+            <Route path="/linkedin-outreach" element={<LinkedInOutreach token={token} user={user} />} />
+            <Route path="/ad-creatives"      element={<AdCreatives />} />
 
-      <footer className="app-footer">
-        <p>&copy; {new Date().getFullYear()} CTS BPO – AI Business Process Outsourcing</p>
-      </footer>
+            {/* ── Redirects ── */}
+            <Route path="/login" element={<Navigate to="/operations" replace />} />
+            <Route path="*"      element={<Navigate to="/operations" replace />} />
+          </Routes>
+        </main>
+
+        <footer className="app-footer">
+          <p>&copy; {new Date().getFullYear()} CTS BPO – AI Business Process Outsourcing</p>
+        </footer>
+      </div>
     </div>
   );
 }
