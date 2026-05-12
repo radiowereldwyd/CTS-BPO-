@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
+import OperationsDashboard from './components/OperationsDashboard';
 import Dashboard from './components/Dashboard';
 import StatusPanel from './components/StatusPanel';
 import FailedContracts from './components/FailedContracts';
@@ -44,29 +45,19 @@ function AdminShell({ user, token, onLogout }) {
   return (
     <div className="app">
       <header className="app-header">
-        <Link to="/dashboard" className="header-brand-link">
+        <Link to="/operations" className="header-brand-link">
           <CTSLogo size="md" className="header-brand-logo" />
           <CTSLogo size="sm" className="header-brand-logo-sm" />
         </Link>
         <nav className="header-nav">
-          <NavLink to="/dashboard">Dashboard</NavLink>
-          <NavLink to="/status">Status</NavLink>
-          <NavLink to="/failed-contracts">Failed Contracts</NavLink>
-          <NavLink to="/email-templates">Email Templates</NavLink>
-          <NavLink to="/payments">Payments</NavLink>
-          <NavLink to="/job-search">🌐 Client Prospector</NavLink>
-          <NavLink to="/ai-services">🤖 AI Services</NavLink>
-          <NavLink to="/subcontractors">🤝 Subcontractors</NavLink>
-          <NavLink to="/ai-agent">🧠 AI Agent</NavLink>
-          <NavLink to="/analytics">📊 Analytics</NavLink>
-          <NavLink to="/targeted-scraper">🎯 Targeted</NavLink>
-          <NavLink to="/price-negotiator">💰 Pricing</NavLink>
-          <NavLink to="/control-room">🖥️ Control Room</NavLink>
-          <NavLink to="/job-queue">📋 Job Queue</NavLink>
-          <NavLink to="/call-centre">📞 Call Centre</NavLink>
-          <NavLink to="/linkedin-outreach">🔗 LinkedIn</NavLink>
-          <NavLink to="/ad-creatives">📣 Ads</NavLink>
-          <NavLink to="/freelancer-inbox">💬 FL Inbox</NavLink>
+          <NavLink to="/operations">📊 Operations</NavLink>
+          <NavLink to="/job-search">🎯 Leads</NavLink>
+          <NavLink to="/job-queue">💼 Job Queue</NavLink>
+          <NavLink to="/subcontractors">🤝 Team</NavLink>
+          <NavLink to="/payments">💰 Finance</NavLink>
+          <NavLink to="/email-templates">📧 Outreach</NavLink>
+          <NavLink to="/freelancer-inbox">💬 Freelancer</NavLink>
+          <NavLink to="/status">⚙️ System</NavLink>
         </nav>
         <div className="header-user">
           <Link to="/" style={{ fontSize: 12, color: '#94a3b8', textDecoration: 'none', marginRight: 12 }}>← Public Site</Link>
@@ -78,26 +69,32 @@ function AdminShell({ user, token, onLogout }) {
 
       <main className="app-main">
         <Routes>
-          <Route path="/dashboard" element={<Dashboard token={token} />} />
-          <Route path="/status" element={<StatusPanel token={token} />} />
-          <Route path="/failed-contracts" element={<FailedContracts token={token} />} />
-          <Route path="/email-templates" element={<EmailTemplates />} />
-          <Route path="/payments" element={<Payments />} />
-          <Route path="/job-search" element={<JobSearch />} />
-          <Route path="/ai-services" element={<AIServices />} />
-          <Route path="/subcontractors" element={<SubcontractorHub token={token} />} />
-          <Route path="/ai-agent" element={<AIAgentDashboard token={token} />} />
-          <Route path="/analytics" element={<AnalyticsDashboard token={token} />} />
-          <Route path="/targeted-scraper" element={<TargetedScraper token={token} />} />
-          <Route path="/price-negotiator" element={<PriceNegotiator token={token} />} />
-          <Route path="/control-room" element={<AIControlRoom token={token} />} />
-          <Route path="/job-queue" element={<JobQueue token={token} />} />
-          <Route path="/call-centre" element={<CallCentre token={token} user={user} />} />
-          <Route path="/linkedin-outreach" element={<LinkedInOutreach token={token} user={user} />} />
-          <Route path="/ad-creatives" element={<AdCreatives />} />
+          {/* ── Primary nav ── */}
+          <Route path="/operations"       element={<OperationsDashboard token={token} />} />
+          <Route path="/job-search"       element={<JobSearch />} />
+          <Route path="/job-queue"        element={<JobQueue token={token} />} />
+          <Route path="/subcontractors"   element={<SubcontractorHub token={token} />} />
+          <Route path="/payments"         element={<Payments />} />
+          <Route path="/email-templates"  element={<EmailTemplates />} />
           <Route path="/freelancer-inbox" element={<FreelancerInbox token={token} />} />
-          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/status"           element={<StatusPanel token={token} />} />
+
+          {/* ── Legacy / direct-access routes (not in main nav) ── */}
+          <Route path="/dashboard"        element={<Dashboard token={token} />} />
+          <Route path="/ai-agent"         element={<AIAgentDashboard token={token} />} />
+          <Route path="/control-room"     element={<AIControlRoom token={token} />} />
+          <Route path="/analytics"        element={<AnalyticsDashboard token={token} />} />
+          <Route path="/targeted-scraper" element={<TargetedScraper token={token} />} />
+          <Route path="/ai-services"      element={<AIServices />} />
+          <Route path="/failed-contracts" element={<FailedContracts token={token} />} />
+          <Route path="/price-negotiator" element={<PriceNegotiator token={token} />} />
+          <Route path="/call-centre"      element={<CallCentre token={token} user={user} />} />
+          <Route path="/linkedin-outreach" element={<LinkedInOutreach token={token} user={user} />} />
+          <Route path="/ad-creatives"     element={<AdCreatives />} />
+
+          {/* ── Redirects ── */}
+          <Route path="/login"  element={<Navigate to="/operations" replace />} />
+          <Route path="*"       element={<Navigate to="/operations" replace />} />
         </Routes>
       </main>
 

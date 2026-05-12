@@ -421,26 +421,44 @@ const FREELANCER_QUERIES = [
 
 async function scrapeFreelancerAPI() {
   const found = [];
-  for (const { q, type } of FREELANCER_QUERIES) {
-    try {
-      const res = await axios.get('https://www.freelancer.com/api/projects/0.1/projects/active', {
-        params: { compact: true, job_details: true, limit: 20, query: q },
-        headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
-        timeout: 15000,
-      });
-      const projects = res.data?.result?.projects || [];
-      for (const p of projects) {
-        if (!p.title || !p.id) continue;
-        const budgetMin = p.budget?.minimum;
-        const budgetMax = p.budget?.maximum;
-        const currency  = p.currency?.sign || '$';
-        const budget    = budgetMin ? `${currency}${budgetMin}${budgetMax ? `–${currency}${budgetMax}` : ''}` : null;
-        const url       = p.seo_url ? `https://www.freelancer.com/projects/${p.seo_url}` : `https://www.freelancer.com/projects/${p.id}`;
-        const desc      = (p.description || '').slice(0, 400);
-        found.push({ platform: 'Freelancer', type, title: p.title.slice(0, 200), url, snippet: desc, budget, q, projectId: p.id, budgetMin, budgetMax });
-      }
-      await new Promise(r => setTimeout(r, 1200));
-    } catch { /* continue */ }
+  // Scan both hourly AND fixed-price — hourly means recurring/ongoing BPO work
+  const PROJECT_TYPES = ['hourly', 'fixed'];
+  for (const projectType of PROJECT_TYPES) {
+    for (const { q, type } of FREELANCER_QUERIES) {
+      try {
+        const res = await axios.get('https://www.freelancer.com/api/projects/0.1/projects/active', {
+          params: {
+            compact:           true,
+            job_details:       true,
+            limit:             20,
+            query:             q,
+            'project_types[]': projectType,
+          },
+          headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+          timeout: 15000,
+        });
+        const projects = res.data?.result?.projects || [];
+        for (const p of projects) {
+          if (!p.title || !p.id) continue;
+          const isHourly  = projectType === 'hourly';
+          const budgetMin = isHourly ? p.hourly_project_info?.hourly_rate_min : p.budget?.minimum;
+          const budgetMax = isHourly ? p.hourly_project_info?.hourly_rate_max : p.budget?.maximum;
+          const currency  = p.currency?.sign || '$';
+          const budget    = budgetMin
+            ? `${isHourly ? '⏱ ' : ''}${currency}${budgetMin}${budgetMax ? `–${currency}${budgetMax}` : ''}${isHourly ? '/hr' : ''}`
+            : null;
+          const url  = p.seo_url ? `https://www.freelancer.com/projects/${p.seo_url}` : `https://www.freelancer.com/projects/${p.id}`;
+          const desc = (p.description || '').slice(0, 400);
+          found.push({
+            platform: 'Freelancer', type,
+            title: p.title.slice(0, 200), url, snippet: desc,
+            budget, q, projectId: p.id, budgetMin, budgetMax,
+            jobType: isHourly ? 'hourly' : 'fixed',
+          });
+        }
+        await new Promise(r => setTimeout(r, 800));
+      } catch { /* continue */ }
+    }
   }
   return found;
 }
