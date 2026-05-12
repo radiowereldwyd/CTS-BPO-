@@ -10,7 +10,12 @@
 const db   = require('../db');
 const { v4: uuidv4 } = require('uuid');
 
-const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
+// Auto-detect the public URL — works in dev and production without manual config
+const _rawAppUrl = process.env.APP_URL
+  || (process.env.REPLIT_DOMAINS   ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`   : '')
+  || (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : '');
+const APP_URL = _rawAppUrl.replace(/\/$/, '');
+if (APP_URL) console.log(`[EMAIL-ANALYTICS] Tracking URL base: ${APP_URL}`);
 
 // ── Ensure DB tables ─────────────────────────────────────────────────────────
 async function ensureTables() {

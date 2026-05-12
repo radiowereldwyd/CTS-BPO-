@@ -389,11 +389,7 @@ const EMAIL_PREFIXES = ['info', 'contact'];
 // These are companies that SELL BPO services — NOT potential clients.
 // Emailing them is a complete waste and hurts sender reputation.
 const AGENT_BPO_DOMAINS = new Set([
-  'wow24-7.com','wowcustomersupport.com','wishup.co','wervas.com','waywithwords.net',
-  'vservesolution.com','voicescript.ai','vitalitybss.com','virtualeases.com',
-  'velan-virtualassistants.com','workstaff360.com','wizscribe.com',
-  'zenius.co','zeni.ai','ziloservices.com','zydoc.com','yourccsteam.com',
-  'transcriptionhub.com','vocal.media','vitalrecordscontrol.com',
+  // Big BPO / outsourcing giants
   'accenture.com','teleperformance.com','concentrix.com','genpact.com','wipro.com',
   'cognizant.com','infosys.com','tcs.com','capgemini.com','ibm.com','atos.net',
   'sitel.com','taskus.com','supportninja.com','helpware.com','influx.com',
@@ -403,14 +399,50 @@ const AGENT_BPO_DOMAINS = new Set([
   'ttec.com','conduent.com','invensis.net','myoutdesk.com','belay.com',
   'uassist.me','ossisto.com','iworker.com','delegated.com','prialto.com',
   'woodbows.com','timeetc.com','getfriday.com','24task.com','1840andco.com',
+  // Virtual assistant / transcription / translation competitors
+  'wow24-7.com','wowcustomersupport.com','wishup.co','wervas.com','waywithwords.net',
+  'vservesolution.com','voicescript.ai','vitalitybss.com','virtualeases.com',
+  'velan-virtualassistants.com','workstaff360.com','wizscribe.com',
+  'zenius.co','zeni.ai','ziloservices.com','zydoc.com','yourccsteam.com',
+  'transcriptionhub.com','vocal.media','vitalrecordscontrol.com',
+  'espressotranslations.com','translateplus.com','languageline.com','transperfect.com',
+  'lionbridge.com','moravia.com','sdl.com','thebigword.com','kwintessential.co.uk',
+  'rev.com','otter.ai','trint.com','sonix.ai','verbit.ai','scribie.com',
+  // BPO directories — we list ON these, don't sell TO them
+  'clutch.co','goodfirms.co','trustpilot.com','bark.com','yell.com','freeindex.co.uk',
+  'approvedbusiness.co.uk','expertise.com','thomasnet.com','kompass.com',
+  'superpages.com','manta.com','cylex.us.com','hotfrog.co.za','bizcommunity.com',
+  'yellowpages.co.za','yellowpages.com','whitepages.com','411.com',
+  'sortlist.com','designrush.com','upcity.com','toptal.com','upwork.com',
+  'freelancer.com','fiverr.com','guru.com','peopleperhour.com','truelancer.com',
+  // HR / payroll / staffing platforms (not BPO buyers)
+  'nativeteams.com','payspace.com','sage.com','workday.com','adp.com',
+  'bamboohr.com','rippling.com','gusto.com','zenefits.com','paychex.com',
+  'hirequotient.com','superstaff.com','slash.com','simplycontact.com',
+  'sourcefit.com','syte.co.za','roicallcentersolutions.com','cloudcampaign.com',
+  'vivetic-group.com','paro.ai','smetoolkit.co.za','nuecf.co.za','signatureza.com',
+  'chekkee.com','ricoh.com','pfu-us.ricoh.com',
+  // Social media & large platforms
   'youtube.com','facebook.com','twitter.com','instagram.com','linkedin.com',
-  'google.com','yelp.com','yellowpages.com','reddit.com','wikipedia.org',
+  'google.com','yelp.com','reddit.com','wikipedia.org','tiktok.com','pinterest.com',
+  'microsoft.com','apple.com','amazon.com','netflix.com','spotify.com',
 ]);
 
 const AGENT_BPO_KEYWORDS = [
-  'outsourc','bpo','callcenter','callcentre','virtual-assistant','virtualassist',
-  'remoteteam','staffoutsourc','transcription-service','translation-service',
-  'dataentry-service','offshoring','nearshore','officebeacon','backoffice-service',
+  // Core BPO / outsourcing terms
+  'outsourc','bpo','callcenter','callcentre','contactcenter','contactcentre',
+  'virtual-assistant','virtualassist','remoteteam','offshoring','nearshore',
+  'backoffice-service','officebeacon','staffoutsourc',
+  // Transcription / translation (competitors, not buyers)
+  'transcription','transcribe','translat','interpret',
+  // Data services competitors
+  'dataentry-service','data-entry-service',
+  // Business directories (we list on these, don't pitch to them)
+  'clutch','goodfirms','sortlist','designrush','upcity','expertise.com',
+  // Staffing platforms
+  'staffing-platform','remotework','remotejobs',
+  // Support / helpdesk software (not buyers of our services)
+  'helpdesk-software','supportapp','zendesk','freshdesk','intercom',
 ];
 
 function isAgentBpoProvider(domain) {
@@ -652,12 +684,19 @@ const HIGH_VALUE_TYPES = new Set([
 ]);
 
 function isContactRelevant(c) {
-  // CSE / DDG / SerpAPI queries are already BPO-targeted — always eligible
-  if (['google_cse', 'duckduckgo', 'serpapi_bpo'].includes(c.source)) return true;
-  // Google Places: check snippet/query or high-value type
+  // BPO provider check runs first — always block competitors regardless of source
+  if (isAgentBpoProvider(c.domain)) return false;
+
+  // Google Places high-value business types — always eligible (these are the buyers)
+  if (HIGH_VALUE_TYPES.has((c.business_type||'').toLowerCase())) return true;
+
+  // Check snippet/query for BPO service need signals
   const haystack = `${c.snippet||''} ${c.query_used||''} ${c.business_type||''}`;
   if (BPO_RELEVANCE_RE.test(haystack)) return true;
-  if (HIGH_VALUE_TYPES.has((c.business_type||'').toLowerCase())) return true;
+
+  // CSE / DDG / SerpAPI queries are BPO-targeted but STILL need the haystack check above.
+  // They should NOT auto-pass because they can pick up BPO companies and directories.
+  // Reaching here means none of the above matched — skip this contact.
   return false;
 }
 
