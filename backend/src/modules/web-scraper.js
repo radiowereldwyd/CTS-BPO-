@@ -123,7 +123,7 @@ async function getPlacesHeaders() {
 
 const PLACES_QUERIES_PER_RUN = parseInt(process.env.PLACES_QUERIES_PER_RUN || '15', 10);
 const CSE_QUERIES_PER_RUN    = parseInt(process.env.CSE_QUERIES_PER_RUN    || '10', 10);
-const DDG_QUERIES_PER_RUN    = parseInt(process.env.DDG_QUERIES_PER_RUN    || '12', 10);
+const DDG_QUERIES_PER_RUN    = parseInt(process.env.DDG_QUERIES_PER_RUN    || '20', 10);
 const BING_QUERIES_PER_RUN   = parseInt(process.env.BING_QUERIES_PER_RUN   || '10', 10);
 const YT_QUERIES_PER_RUN     = parseInt(process.env.YT_QUERIES_PER_RUN     || '8',  10);
 const FB_QUERIES_PER_RUN     = parseInt(process.env.FB_QUERIES_PER_RUN     || '6',  10);
@@ -638,6 +638,10 @@ async function scrapeGoogleCSE() {
     } catch (err) {
       if (err.response?.status === 429) {
         console.warn('⚠️  [SCRAPER] CSE daily quota hit — stopping CSE for this run');
+        break;
+      }
+      if (err.response?.status === 403) {
+        console.warn('⚠️  [SCRAPER] CSE access denied (account mismatch) — skipping CSE source');
         break;
       }
       console.error(`❌ [SCRAPER] CSE error:`, err.response?.data?.error?.message || err.message);
@@ -1790,20 +1794,25 @@ async function runOnePair(pair) {
 
     if (pair.source === 'google_cse') {
       if (!GOOGLE_API_KEY || !GOOGLE_CSE_ID) return 0;
-      const res = await axios.get('https://www.googleapis.com/customsearch/v1', {
-        params: { key: GOOGLE_API_KEY, cx: GOOGLE_CSE_ID, q: pair.query, num: 10 },
-        timeout: 15000,
-      });
-      const items = res.data.items || [];
-      const contacts = [];
-      for (const item of items) {
-        const domain = extractDomain(item.link);
-        if (!domain) continue;
-        for (const email of buildEmailVariants(domain)) {
-          contacts.push({ company: item.title || domain, website: item.link, domain, email, source: 'google_cse', query: pair.query, snippet: item.snippet || null });
+      try {
+        const res = await axios.get('https://www.googleapis.com/customsearch/v1', {
+          params: { key: GOOGLE_API_KEY, cx: GOOGLE_CSE_ID, q: pair.query, num: 10 },
+          timeout: 15000,
+        });
+        const items = res.data.items || [];
+        const contacts = [];
+        for (const item of items) {
+          const domain = extractDomain(item.link);
+          if (!domain) continue;
+          for (const email of buildEmailVariants(domain)) {
+            contacts.push({ company: item.title || domain, website: item.link, domain, email, source: 'google_cse', query: pair.query, snippet: item.snippet || null });
+          }
         }
+        return await storeContacts(contacts);
+      } catch (err) {
+        if (err.response?.status === 403) return 0;
+        throw err;
       }
-      return await storeContacts(contacts);
     }
 
     if (pair.source === 'duckduckgo') {
