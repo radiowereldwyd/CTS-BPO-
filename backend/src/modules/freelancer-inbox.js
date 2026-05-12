@@ -245,7 +245,7 @@ async function syncInbox() {
         console.warn(`[FL-INBOX] Could not fetch messages for thread ${thread.thread_id}:`, msgErr.message);
       }
 
-      // 3) Check for unread incoming messages that haven't been auto-replied to
+      // 3) Check for unread incoming messages — AI negotiator handles all replies
       const unhandled = await db.query(`
         SELECT m.msg_id, m.message FROM fl_messages m
         WHERE m.thread_id=$1 AND m.direction='received' AND m.auto_replied=FALSE
@@ -253,14 +253,52 @@ async function syncInbox() {
       `, [thread.thread_id]);
 
       for (const row of unhandled.rows) {
-        const reply = buildAutoReply(row.message, thread.project_title);
-        if (reply) {
-          const sent = await sendReply(thread.thread_id, reply);
-          if (sent.ok) {
+        try {
+          // Use AI negotiator to understand and reply to the message
+          const negotiator = require('./ai-negotiator');
+          const contactRef = `fl_${thread.project_id || thread.thread_id}`;
+          const result = await negotiator.handleClientMessage({
+            platform:     'freelancer',
+            contactRef,
+            clientMessage: row.message,
+            clientName:   thread.other_name,
+            projectTitle: thread.project_title,
+          });
+
+          // If rejection — mark do-not-contact, don't reply
+          if (result.intent === 'rejection') {
+            await db.query(`UPDATE fl_messages SET auto_replied=TRUE WHERE msg_id=$1`, [row.msg_id]);
+            console.log(`[FL-INBOX] ❌ Rejection from ${thread.other_name} — marked, no reply sent`);
+            continue;
+          }
+
+          // Mark scout project as replied if we have it
+          if (thread.project_id) {
+            await db.query(`UPDATE fl_scout_sent SET replied=TRUE WHERE project_id=$1`, [thread.project_id]).catch(() => {});
+          }
+
+          if (result.reply) {
+            const sent = await sendReply(thread.thread_id, result.reply);
+            if (sent.ok) {
+              await db.query(`UPDATE fl_messages SET auto_replied=TRUE WHERE msg_id=$1`, [row.msg_id]);
+              console.log(`[FL-INBOX] 🤖 AI negotiator replied to ${thread.other_name} (intent: ${result.intent}, service: ${result.serviceType || 'general'})`);
+            } else {
+              console.warn(`[FL-INBOX] Reply send failed (${sent.status}): ${sent.error}`);
+            }
+          } else {
+            // No reply needed (e.g. rejection already handled)
             await db.query(`UPDATE fl_messages SET auto_replied=TRUE WHERE msg_id=$1`, [row.msg_id]);
           }
-        } else {
-          await db.query(`UPDATE fl_messages SET auto_replied=TRUE WHERE msg_id=$1`, [row.msg_id]);
+        } catch (negoErr) {
+          // Fallback to keyword-based reply if AI fails
+          const reply = buildAutoReply(row.message, thread.project_title);
+          if (reply) {
+            const sent = await sendReply(thread.thread_id, reply);
+            if (sent.ok) await db.query(`UPDATE fl_messages SET auto_replied=TRUE WHERE msg_id=$1`, [row.msg_id]);
+          } else {
+            await db.query(`UPDATE fl_messages SET auto_replied=TRUE WHERE msg_id=$1`, [row.msg_id]);
+          }
+          console.warn(`[FL-INBOX] AI negotiator error, used fallback: ${negoErr.message}`);
         }
       }
     }

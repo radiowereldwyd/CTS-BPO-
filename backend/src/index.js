@@ -1639,6 +1639,51 @@ app.get('/api/ai-agent/platform-jobs/bid-status', requireAuth, requireAdmin, asy
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── AI Negotiations API ───────────────────────────────────────────────────────
+// GET /api/negotiations/stats — market intelligence + negotiation summary
+app.get('/api/negotiations/stats', requireAuth, async (req, res) => {
+  try {
+    const negotiator = require('./modules/ai-negotiator');
+    const flScout    = require('./modules/fl-scout');
+    const [market, scout] = await Promise.all([
+      negotiator.getMarketIntelligence(),
+      flScout.getScoutStats(),
+    ]);
+    res.json({ market, scout });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/negotiations/list — all active negotiations
+app.get('/api/negotiations/list', requireAuth, async (req, res) => {
+  try {
+    const db = require('./db');
+    const r  = await db.query(
+      `SELECT * FROM ai_negotiations ORDER BY updated_at DESC LIMIT 100`
+    );
+    res.json({ negotiations: r.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/negotiations/trigger-scout — manually trigger FL scout
+app.post('/api/negotiations/trigger-scout', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const flScout = require('./modules/fl-scout');
+    const result  = await flScout.runFreelancerScout({ maxMessages: 20 });
+    res.json({ ok: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/negotiations/quote — manually trigger a quote for an email
+app.post('/api/negotiations/quote', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const negotiator = require('./modules/ai-negotiator');
+    const { platform = 'email', contactRef, clientMessage, clientName, projectTitle } = req.body;
+    if (!contactRef || !clientMessage) return res.status(400).json({ error: 'contactRef and clientMessage required' });
+    const result = await negotiator.handleClientMessage({ platform, contactRef, clientMessage, clientName, projectTitle });
+    res.json({ ok: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Warm Outreach API ─────────────────────────────────────────────────────────
 // GET /api/warm-outreach/stats — dashboard stats
 app.get('/api/warm-outreach/stats', requireAuth, async (req, res) => {

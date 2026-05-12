@@ -2158,6 +2158,23 @@ async function startAgent() {
     require('./warm-outreach').runAllWarmOutreach().catch(() => {});
   }, 180_000);
 
+  // ── Freelancer Proactive Scout — every 45 minutes ─────────────────────────
+  // Scans new BPO projects, messages employers BEFORE they get flooded with bids
+  // AI negotiator handles all replies automatically via FL inbox sync
+  cron.schedule('*/45 * * * *', () => {
+    require('./fl-scout').runFreelancerScout({ maxMessages: 12 })
+      .then(r => {
+        if (r.sent > 0) logActivity('fl_scout', `Freelancer Scout: messaged ${r.sent} new project owners (${r.skipped} skipped)`, null, null, 'info');
+      })
+      .catch(e => logActivity('fl_scout', `FL Scout error: ${e.message}`, null, null, 'error'));
+  });
+  // Run FL scout 5 minutes after boot
+  setTimeout(() => {
+    require('./fl-scout').runFreelancerScout({ maxMessages: 8 })
+      .then(r => { if (r.sent > 0) console.log(`[FL-SCOUT] Boot run: ${r.sent} scouted`); })
+      .catch(() => {});
+  }, 300_000);
+
   // ── System health monitor every 15 minutes — auto-detects and logs issues ──
   cron.schedule('*/15 * * * *', () => {
     runSystemHealthCheck().catch(e => console.error('[MONITOR] Health check error:', e.message));
@@ -2257,6 +2274,7 @@ async function triggerNow(task) {
     case 'scrape_outreach':        await runScrapedContactsOutreach(); break;
     case 'scrape_followup':        await runScrapedContactsFollowUps(); break;
     case 'warm_outreach':          await require('./warm-outreach').runAllWarmOutreach(); break;
+    case 'fl_scout':               await require('./fl-scout').runFreelancerScout({ maxMessages: 15 }); break;
     case 'all':
       await gmailReader.processInboxReplies();
       await gmailReader.processBounces();

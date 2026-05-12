@@ -373,6 +373,7 @@ export default function AIAgentDashboard({ token }) {
         <button className={`tab-btn${activeTab==='pipeline'?' active':''}`} onClick={()=>{setActiveTab('pipeline');pipelineRef.current();}}>⚙️ Job Pipeline</button>
         <button className={`tab-btn${activeTab==='analytics'?' active':''}`} onClick={()=>{setActiveTab('analytics');analyticsRef.current();}}>📈 Email Analytics</button>
         <button className={`tab-btn${activeTab==='warm'?' active':''}`} onClick={()=>setActiveTab('warm')}>🔥 Warm Outreach</button>
+        <button className={`tab-btn${activeTab==='negotiations'?' active':''}`} onClick={()=>setActiveTab('negotiations')}>🤝 AI Negotiations</button>
       </div>
 
       {/* ══════════════════ OPS TAB ══════════════════════════════════════════ */}
@@ -869,6 +870,10 @@ export default function AIAgentDashboard({ token }) {
       {/* ══════════════════ WARM OUTREACH TAB ════════════════════════════════ */}
       {activeTab === 'warm' && (
         <WarmOutreachPanel token={token} />
+      )}
+
+      {activeTab === 'negotiations' && (
+        <NegotiationsPanel token={token} />
       )}
     </div>
   );
@@ -1735,6 +1740,258 @@ function ScrapedContactsPanel({ token, live }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── AI Negotiations Panel ─────────────────────────────────────────────────────
+function NegotiationsPanel({ token }) {
+  const [stats, setStats]       = useState(null);
+  const [negoList, setNegoList] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [running, setRunning]   = useState('');
+  const [msg, setMsg]           = useState('');
+  const tokenRef = useRef(token);
+  useEffect(() => { tokenRef.current = token; }, [token]);
+
+  const fetchAll = async () => {
+    const h = { Authorization: `Bearer ${tokenRef.current}` };
+    const [sRes, nRes] = await Promise.all([
+      fetch(`${API}/api/negotiations/stats`, { headers: h }).then(r => r.json()).catch(() => null),
+      fetch(`${API}/api/negotiations/list`,  { headers: h }).then(r => r.json()).catch(() => null),
+    ]);
+    if (sRes) setStats(sRes);
+    if (nRes) setNegoList(nRes.negotiations || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchAll(); const iv = setInterval(fetchAll, 20000); return () => clearInterval(iv); }, []); // eslint-disable-line
+
+  const runScout = async () => {
+    setRunning('scout'); setMsg('');
+    try {
+      const h = { Authorization: `Bearer ${tokenRef.current}` };
+      const r = await fetch(`${API}/api/negotiations/trigger-scout`, { method: 'POST', headers: h });
+      const d = await r.json();
+      setMsg(`Scout complete — ${d.sent || 0} new project owners messaged (${d.skipped || 0} skipped)`);
+      setTimeout(fetchAll, 2000);
+    } catch { setMsg('Error — check backend logs'); }
+    finally { setRunning(''); }
+  };
+
+  const market = stats?.market || {};
+  const scout  = stats?.scout  || {};
+
+  const statusColors = { quoting:'#2563eb', negotiating:'#f59e0b', won:'#10b981', lost:'#ef4444', no_response:'#94a3b8' };
+  const statusIcons  = { quoting:'💬', negotiating:'🤝', won:'🏆', lost:'❌', no_response:'😶' };
+  const serviceLabels = {
+    'data-entry':'Data Entry','transcription':'Transcription','translation':'Translation',
+    'virtual-assistant':'Virtual Assist','customer-support':'Customer Support',
+    'document-processing':'Docs','finance-admin':'Finance','content-moderation':'Content Mod',
+    'research':'Research','general':'General BPO',
+  };
+
+  if (loading) return <div style={{padding:40,textAlign:'center',color:'#94a3b8'}}>Loading negotiations data...</div>;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{background:'linear-gradient(135deg,#f0fdf4,#dcfce7)',border:'1px solid #86efac',borderRadius:14,padding:'20px 24px',marginBottom:20}}>
+        <div style={{fontWeight:900,fontSize:18,color:'#14532d',marginBottom:4}}>🤝 AI Negotiation & Quote Engine</div>
+        <div style={{fontSize:13,color:'#166534',lineHeight:1.6}}>
+          Fully autonomous: AI reads every Freelancer message and email reply, detects service needs,
+          sends a <strong>personalised itemised quote</strong>, and negotiates pricing — learning from every outcome.
+        </div>
+      </div>
+
+      {/* KPI row */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(148px,1fr))',gap:12,marginBottom:20}}>
+        {[
+          {l:'Total Negotiations',v:market.totalNegotiations||0,  c:'#2563eb',icon:'📋'},
+          {l:'Won',               v:market.wins||0,               c:'#10b981',icon:'🏆'},
+          {l:'Lost',              v:market.losses||0,             c:'#ef4444',icon:'❌'},
+          {l:'Win Rate',          v:`${market.winRate||0}%`,      c:'#7c3aed',icon:'📊'},
+          {l:'Avg Win Price',     v:`$${market.avgWinPrice||0}`,  c:'#0891b2',icon:'💰'},
+          {l:'FL Scouted',        v:scout.totalScouted||0,        c:'#f59e0b',icon:'🎯'},
+          {l:'FL Replied',        v:scout.totalReplied||0,        c:'#db2777',icon:'💬'},
+          {l:'Scout Reply Rate',  v:`${scout.replyRate||0}%`,     c:'#16a34a',icon:'📈'},
+        ].map(k=>(
+          <div key={k.l} style={{background:'#fff',border:`1px solid ${k.c}30`,borderRadius:12,padding:'14px 16px',textAlign:'center',boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}>
+            <div style={{fontSize:20}}>{k.icon}</div>
+            <div style={{fontSize:20,fontWeight:900,color:k.c,marginTop:4}}>{k.v}</div>
+            <div style={{fontSize:10,fontWeight:700,color:'#64748b',textTransform:'uppercase',marginTop:2}}>{k.l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Action cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(290px,1fr))',gap:14,marginBottom:24}}>
+
+        {/* FL Scout */}
+        <div style={{background:'#fff7ed',border:'1.5px solid #fb923c40',borderRadius:12,padding:'18px 20px'}}>
+          <div style={{fontWeight:800,fontSize:13,color:'#c2410c',marginBottom:6}}>🎯 Freelancer Proactive Scout</div>
+          <div style={{fontSize:12,color:'#64748b',marginBottom:12,lineHeight:1.5}}>
+            Scans new BPO projects posted in the last 24h and messages employers <strong>before</strong> the bid flood —
+            asking about their needs so AI can send a personalised quote. Runs every 45 min automatically.
+          </div>
+          <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+            <span style={{background:'#fff',border:'1px solid #fed7aa',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,color:'#c2410c'}}>{scout.totalScouted||0} scouted</span>
+            <span style={{background:'#fff',border:'1px solid #bbf7d0',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,color:'#15803d'}}>{scout.totalReplied||0} replied ({scout.replyRate||0}%)</span>
+          </div>
+          <button onClick={runScout} disabled={!!running}
+            style={{background:'#ea580c',color:'#fff',border:'none',borderRadius:8,padding:'9px 20px',fontSize:12,fontWeight:700,cursor:running?'not-allowed':'pointer',opacity:running?0.7:1}}>
+            {running==='scout'?'⟳ Scouting...':'🎯 Run Scout Now'}
+          </button>
+        </div>
+
+        {/* AI Quote Engine */}
+        <div style={{background:'#f0f9ff',border:'1.5px solid #7dd3fc40',borderRadius:12,padding:'18px 20px'}}>
+          <div style={{fontWeight:800,fontSize:13,color:'#0369a1',marginBottom:6}}>🤖 AI Quote Engine</div>
+          <div style={{fontSize:12,color:'#64748b',marginBottom:10,lineHeight:1.5}}>
+            Gemini AI reads each message, detects service type + scope, and generates an itemised quote with exact pricing.
+          </div>
+          <div style={{background:'#fff',borderRadius:8,padding:'10px 12px',fontSize:11,color:'#0369a1',lineHeight:1.7}}>
+            <strong>Pricing matrix:</strong><br/>
+            📋 Data Entry $0.06–0.18/record &nbsp;·&nbsp; 🎤 Transcription $0.75–1.80/min<br/>
+            🌐 Translation $0.07–0.20/word &nbsp;·&nbsp; 🤝 VA/Support $7–20/hr<br/>
+            📄 Documents $0.40–1.50/doc &nbsp;·&nbsp; 💰 Finance Admin $10–25/hr
+          </div>
+        </div>
+
+        {/* Negotiation Brain */}
+        <div style={{background:'#fdf4ff',border:'1.5px solid #d946ef40',borderRadius:12,padding:'18px 20px'}}>
+          <div style={{fontWeight:800,fontSize:13,color:'#7e22ce',marginBottom:6}}>🧠 Negotiation Brain</div>
+          <div style={{fontSize:12,color:'#64748b',marginBottom:10,lineHeight:1.5}}>
+            Client pushes back → AI offers 12% discount or starter package. Acceptance → instant client onboarding.
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:5}}>
+            {[
+              {intent:'Quote request', action:'Itemised quote sent instantly',       color:'#2563eb'},
+              {intent:'Price pushback',action:'12% discount + starter option',       color:'#f59e0b'},
+              {intent:'Question',      action:'Gemini answers, re-pitches service',  color:'#7c3aed'},
+              {intent:'Acceptance',    action:'Client onboarded, files requested',   color:'#10b981'},
+              {intent:'Rejection',     action:'Stops contact, records loss signal',  color:'#ef4444'},
+            ].map(r=>(
+              <div key={r.intent} style={{display:'flex',gap:8,alignItems:'center',fontSize:11}}>
+                <span style={{background:`${r.color}18`,color:r.color,padding:'2px 8px',borderRadius:20,fontWeight:700,minWidth:95,textAlign:'center',flexShrink:0}}>{r.intent}</span>
+                <span style={{color:'#475569'}}>→ {r.action}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Market Learning */}
+        <div style={{background:'#f8fafc',border:'1.5px solid #cbd5e140',borderRadius:12,padding:'18px 20px'}}>
+          <div style={{fontWeight:800,fontSize:13,color:'#334155',marginBottom:6}}>📊 Market Learning</div>
+          <div style={{fontSize:12,color:'#64748b',marginBottom:10,lineHeight:1.5}}>
+            Every win/loss and price pushback is stored. AI learns which services convert best and what prices win.
+          </div>
+          {market.byService?.length>0 ? (
+            <div style={{display:'flex',flexDirection:'column',gap:6}}>
+              {market.byService.slice(0,5).map(s=>(
+                <div key={s.service_type} style={{display:'flex',justifyContent:'space-between',fontSize:11}}>
+                  <span style={{fontWeight:700,color:'#334155'}}>{serviceLabels[s.service_type]||s.service_type}</span>
+                  <span style={{color:'#64748b'}}>{s.c} convos · avg ${Math.round(s.avg_quote||0)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{fontSize:11,color:'#94a3b8',fontStyle:'italic'}}>Intelligence builds as negotiations accumulate</div>
+          )}
+          {market.priceSensitivityEvents>0&&(
+            <div style={{marginTop:10,background:'#fef9c3',border:'1px solid #fde68a',borderRadius:6,padding:'6px 10px',fontSize:11,color:'#92400e'}}>
+              ⚠️ {market.priceSensitivityEvents} price-pushback events — AI adapting counter-offer strategy
+            </div>
+          )}
+        </div>
+      </div>
+
+      {msg&&(
+        <div style={{padding:'10px 16px',background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,fontSize:13,color:'#166534',fontWeight:600,marginBottom:20}}>
+          ✅ {msg}
+        </div>
+      )}
+
+      {/* Negotiations list */}
+      <div style={{background:'#fff',borderRadius:14,boxShadow:'0 1px 6px rgba(0,0,0,0.06)',overflow:'hidden',marginBottom:20}}>
+        <div style={{padding:'16px 20px',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{fontWeight:800,fontSize:13,color:'#0f172a'}}>Active & Recent Negotiations</div>
+          <span style={{fontSize:11,color:'#94a3b8'}}>{negoList.length} total</span>
+        </div>
+        {negoList.length===0?(
+          <div style={{padding:32,textAlign:'center',color:'#94a3b8',fontSize:13}}>
+            <div style={{fontSize:32,marginBottom:8}}>🤝</div>
+            No negotiations yet — AI creates these as Freelancer scout replies and cold email clients respond.
+          </div>
+        ):(
+          <div>
+            <div style={{display:'grid',gridTemplateColumns:'1.5fr 1fr 90px 80px 100px 110px',gap:8,padding:'8px 20px',background:'#f8fafc',fontSize:10,fontWeight:800,color:'#64748b',textTransform:'uppercase',letterSpacing:1}}>
+              <div>Client / Project</div><div>Service</div><div>Platform</div><div>Quote</div><div>Status</div><div>Updated</div>
+            </div>
+            {negoList.map(n=>{
+              const sc=statusColors[n.status]||'#64748b';
+              const si=statusIcons[n.status]||'💬';
+              return(
+                <div key={n.id} style={{display:'grid',gridTemplateColumns:'1.5fr 1fr 90px 80px 100px 110px',gap:8,padding:'12px 20px',borderBottom:'1px solid #f1f5f9',alignItems:'center',fontSize:12}}>
+                  <div>
+                    <div style={{fontWeight:700,color:'#0f172a',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n.client_name||n.contact_ref}</div>
+                    <div style={{fontSize:10,color:'#94a3b8',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{n.project_title||'—'}</div>
+                  </div>
+                  <div style={{color:'#334155'}}>{serviceLabels[n.service_type]||n.service_type||'—'}</div>
+                  <div>
+                    <span style={{background:n.platform==='freelancer'?'#fef3c7':'#eff6ff',color:n.platform==='freelancer'?'#92400e':'#1e40af',padding:'2px 8px',borderRadius:20,fontSize:10,fontWeight:700}}>
+                      {n.platform==='freelancer'?'💼 FL':'📧 Email'}
+                    </span>
+                  </div>
+                  <div style={{fontWeight:700,color:'#0f172a'}}>{n.quote_amount?`$${parseFloat(n.quote_amount).toFixed(0)}`:'—'}</div>
+                  <div><span style={{background:`${sc}18`,color:sc,padding:'3px 8px',borderRadius:20,fontSize:10,fontWeight:700}}>{si} {n.status}</span></div>
+                  <div style={{fontSize:10,color:'#64748b',fontFamily:'monospace'}}>{timeAgo(n.updated_at)}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Recent FL scout */}
+      {scout.recent?.length>0&&(
+        <div style={{background:'#fff',borderRadius:14,boxShadow:'0 1px 6px rgba(0,0,0,0.06)',overflow:'hidden',marginBottom:20}}>
+          <div style={{padding:'14px 20px',borderBottom:'1px solid #f1f5f9',fontWeight:800,fontSize:13,color:'#0f172a'}}>🎯 Recent Freelancer Scout Activity</div>
+          {scout.recent.map(r=>(
+            <div key={r.project_id} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 20px',borderBottom:'1px solid #f1f5f9',fontSize:12}}>
+              <span style={{fontSize:16}}>{r.replied?'💬':'📤'}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:700,color:'#0f172a',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.title||`Project #${r.project_id}`}</div>
+                <div style={{fontSize:10,color:'#94a3b8'}}>{r.replied?'✅ Employer replied — AI negotiating':'📤 Intro message sent — awaiting reply'}</div>
+              </div>
+              <div style={{fontSize:10,color:'#64748b',fontFamily:'monospace',flexShrink:0}}>{timeAgo(r.sent_at)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* How it works */}
+      <div style={{background:'#fff',borderRadius:14,padding:'20px 24px',boxShadow:'0 1px 6px rgba(0,0,0,0.06)'}}>
+        <div style={{fontWeight:800,fontSize:13,color:'#0f172a',marginBottom:14}}>How the Full Autonomous Loop Works</div>
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {[
+            {step:'1',icon:'🎯',title:'FL Scout scans every 45 min',desc:'Finds new BPO projects on Freelancer, messages the employer BEFORE the bid flood asking about their needs.'},
+            {step:'2',icon:'💬',title:'Employer replies',desc:'Inbox sync (every 5 min) catches the reply. Gemini AI reads it — extracts service type, scope, budget signals.'},
+            {step:'3',icon:'📋',title:'Itemised quote auto-sent',desc:'AI generates a quote with exact pricing per unit (record/minute/hour/word) and sends it back via FL messenger.'},
+            {step:'4',icon:'🤝',title:'AI negotiates counter-replies',desc:'Price pushback → 12% discount + starter pilot. Questions → Gemini answers. Acceptance → client onboarded instantly.'},
+            {step:'5',icon:'📊',title:'Market intelligence grows',desc:'Every win/loss, accepted price, and pushback signal is stored. Strategy improves with each negotiation.'},
+            {step:'6',icon:'📧',title:'Same loop for email replies',desc:'Cold email recipients who reply with queries are routed through the same AI negotiator — fully automated.'},
+          ].map(s=>(
+            <div key={s.step} style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+              <div style={{width:28,height:28,borderRadius:'50%',background:'linear-gradient(135deg,#2563eb,#7c3aed)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:900,flexShrink:0}}>{s.step}</div>
+              <div>
+                <div style={{fontWeight:700,fontSize:12,color:'#0f172a',marginBottom:2}}>{s.icon} {s.title}</div>
+                <div style={{fontSize:12,color:'#64748b',lineHeight:1.5}}>{s.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
