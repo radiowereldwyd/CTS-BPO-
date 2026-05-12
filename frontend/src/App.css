@@ -76,6 +76,24 @@ body {
   margin-bottom: 8px;
 }
 
+/* Compass icon */
+.sidebar-compass {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 6px rgba(0,200,255,0.45));
+  transition: filter 0.3s ease;
+}
+.sidebar-logo:hover .sidebar-compass {
+  filter: drop-shadow(0 0 12px rgba(0,200,255,0.75));
+  animation: compass-spin 8s linear infinite;
+}
+@keyframes compass-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
 /* Section label */
 .sidebar-section-label {
   font-size: 9px;

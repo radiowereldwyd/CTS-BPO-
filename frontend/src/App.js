@@ -52,8 +52,26 @@ function Sidebar({ user, onLogout, open, onClose }) {
       <aside className={`sidebar${open ? ' sidebar-open' : ''}`}>
         {/* Logo */}
         <div className="sidebar-logo">
-          <Link to="/operations" onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
-            <CTSLogo size="sm" />
+          <Link to="/operations" onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none' }}>
+            {/* Compass icon */}
+            <div className="sidebar-compass">
+              <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" width="38" height="38">
+                <circle cx="24" cy="24" r="22" stroke="#00c8ff" strokeWidth="2" fill="rgba(0,200,255,0.07)" />
+                <circle cx="24" cy="24" r="3" fill="#00c8ff" />
+                {/* N tick */}
+                <line x1="24" y1="4" x2="24" y2="9" stroke="#00c8ff" strokeWidth="2" strokeLinecap="round"/>
+                {/* S tick */}
+                <line x1="24" y1="39" x2="24" y2="44" stroke="#334155" strokeWidth="2" strokeLinecap="round"/>
+                {/* E tick */}
+                <line x1="39" y1="24" x2="44" y2="24" stroke="#334155" strokeWidth="2" strokeLinecap="round"/>
+                {/* W tick */}
+                <line x1="4" y1="24" x2="9" y2="24" stroke="#334155" strokeWidth="2" strokeLinecap="round"/>
+                {/* North needle (cyan) */}
+                <polygon points="24,8 20.5,24 24,21 27.5,24" fill="#00c8ff" />
+                {/* South needle (red) */}
+                <polygon points="24,40 20.5,24 24,27 27.5,24" fill="#ef4444" opacity="0.85" />
+              </svg>
+            </div>
             <div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#fff', letterSpacing: 0.5 }}>CTS BPO</div>
               <div style={{ fontSize: 9, color: '#00c8ff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.5 }}>AI Platform</div>
