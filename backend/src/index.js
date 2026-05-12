@@ -315,15 +315,15 @@ function OZOW_STATUS() {
 app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
   const axios = require('axios');
   const { GoogleAuth } = require('google-auth-library');
-  const KEY     = process.env.GOOGLE_API_KEY            || '';
-  const PROJECT = process.env.GOOGLE_CLOUD_PROJECT_ID   || '';
-  const PROC    = process.env.GOOGLE_DOCAI_PROCESSOR_ID || '';
-  const CSE_ID  = process.env.GOOGLE_CSE_ID             || '';
+  const KEY     = process.env.GOOGLE_API_KEY              || '';
+  const PROJECT = process.env.GOOGLE_CLOUD_PROJECT_ID     || '';
+  const PROC    = process.env.GOOGLE_DOCAI_PROCESSOR_ID   || '';
+  const _rawCseId = process.env.GOOGLE_CSE_ID || '';
+  const _cseMatch = _rawCseId.match(/cx=([a-zA-Z0-9_:-]+)/);
+  const CSE_ID    = _cseMatch ? _cseMatch[1] : _rawCseId.replace(/<[^>]+>/g, '').trim();
   const SA_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
 
-  const results = [];
-
-  // Helper — get service account access token (cached for this request)
+  // Obtain service account token once — shared across all parallel checks
   let _saToken = null;
   async function getSaToken() {
     if (_saToken) return _saToken;
@@ -340,133 +340,126 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
     } catch { return null; }
   }
 
-  // 1. Translation API (API key)
-  try {
-    const r = await axios.post('https://translation.googleapis.com/language/translate/v2',
-      { q: 'Hello', target: 'es' },
-      { params: { key: KEY }, validateStatus: () => true, timeout: 8000 });
-    results.push({
-      api: 'Cloud Translation',
-      status: r.status === 200 ? 'ok' : 'error',
-      message: r.status === 200 ? 'Working — translated "Hello" → "Hola"' : (r.data?.error?.message || `HTTP ${r.status}`),
-      authMethod: 'api_key',
-      enableUrl: null,
-    });
-  } catch (e) {
-    results.push({ api: 'Cloud Translation', status: 'error', message: e.message, authMethod: 'api_key', enableUrl: null });
-  }
+  // Fetch SA token upfront so all parallel checks can reuse it
+  await getSaToken().catch(() => {});
 
-  // 2. Cloud Speech-to-Text (API key)
-  try {
-    const r = await axios.get('https://speech.googleapis.com/v1/speech:recognize',
-      { params: { key: KEY }, validateStatus: () => true, timeout: 8000 });
-    const ok = r.status !== 403 && r.status !== 401;
-    results.push({
-      api: 'Cloud Speech-to-Text',
-      status: ok ? 'ok' : 'error',
-      message: ok ? 'API key accepted (endpoint reachable)' : (r.data?.error?.message || `HTTP ${r.status}`),
-      authMethod: 'api_key',
-      enableUrl: ok ? null : `https://console.cloud.google.com/apis/library/speech.googleapis.com?project=${PROJECT}`,
-    });
-  } catch (e) {
-    results.push({ api: 'Cloud Speech-to-Text', status: 'error', message: e.message, authMethod: 'api_key', enableUrl: null });
-  }
+  // Run all 6 checks in parallel — total time = slowest single check (≤ 8s)
+  const checks = await Promise.allSettled([
 
-  // 3. Places API (New) — service account
-  try {
-    const token = await getSaToken();
-    const headers = token
-      ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Goog-FieldMask': 'places.displayName' }
-      : { 'X-Goog-Api-Key': KEY, 'Content-Type': 'application/json', 'X-Goog-FieldMask': 'places.displayName' };
-    const r = await axios.post('https://places.googleapis.com/v1/places:searchText',
-      { textQuery: 'law firm', maxResultCount: 1 },
-      { headers, validateStatus: () => true, timeout: 10000 });
-    const ok = r.status === 200;
-    results.push({
-      api: 'Places API (New)',
-      status: ok ? 'ok' : 'disabled',
-      message: ok
-        ? `Working — found ${r.data?.places?.length || 0} result(s)`
-        : 'NOT ENABLED — must be activated in Google Cloud Console',
-      authMethod: token ? 'service_account' : 'api_key',
-      enableUrl: ok ? null : `https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=${PROJECT}`,
-    });
-  } catch (e) {
-    results.push({ api: 'Places API (New)', status: 'error', message: e.message, authMethod: 'service_account',
-      enableUrl: `https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=${PROJECT}` });
-  }
+    // 1. Translation API
+    (async () => {
+      const r = await axios.post('https://translation.googleapis.com/language/translate/v2',
+        { q: 'Hello', target: 'es' },
+        { params: { key: KEY }, validateStatus: () => true, timeout: 8000 });
+      return {
+        api: 'Cloud Translation',
+        status: r.status === 200 ? 'ok' : 'error',
+        message: r.status === 200 ? 'Working — translated "Hello" → "Hola"' : (r.data?.error?.message || `HTTP ${r.status}`),
+        authMethod: 'api_key', enableUrl: null,
+      };
+    })(),
 
-  // 4. Document AI (service account)
-  try {
-    const token = await getSaToken();
-    if (!token) throw new Error('No service account credentials');
-    const r = await axios.get(
-      `https://documentai.googleapis.com/v1/projects/${PROJECT}/locations/us/processors`,
-      { headers: { Authorization: `Bearer ${token}` }, validateStatus: () => true, timeout: 10000 });
-    const procs = r.data?.processors || [];
-    const proc  = procs.find(p => p.name.includes(PROC));
-    results.push({
-      api: 'Document AI',
-      status: r.status === 200 ? 'ok' : 'error',
-      message: r.status === 200
-        ? `${procs.length} processor(s) found — CTS-BPO-Parser: ${proc?.state || 'ENABLED'}`
-        : (r.data?.error?.message || `HTTP ${r.status}`),
-      authMethod: 'service_account',
-      enableUrl: r.status !== 200 ? `https://console.cloud.google.com/apis/library/documentai.googleapis.com?project=${PROJECT}` : null,
-    });
-  } catch (e) {
-    results.push({ api: 'Document AI', status: 'error', message: e.message, authMethod: 'service_account',
-      enableUrl: `https://console.cloud.google.com/apis/library/documentai.googleapis.com?project=${PROJECT}` });
-  }
+    // 2. Cloud Speech-to-Text
+    (async () => {
+      const r = await axios.get('https://speech.googleapis.com/v1/speech:recognize',
+        { params: { key: KEY }, validateStatus: () => true, timeout: 8000 });
+      const ok = r.status !== 403 && r.status !== 401;
+      return {
+        api: 'Cloud Speech-to-Text',
+        status: ok ? 'ok' : 'error',
+        message: ok ? 'API key accepted (endpoint reachable)' : (r.data?.error?.message || `HTTP ${r.status}`),
+        authMethod: 'api_key',
+        enableUrl: ok ? null : `https://console.cloud.google.com/apis/library/speech.googleapis.com?project=${PROJECT}`,
+      };
+    })(),
 
-  // 5. Custom Search API
-  try {
-    if (!CSE_ID) throw new Error('GOOGLE_CSE_ID secret not set — create a CSE at cse.google.com');
-    const r = await axios.get('https://www.googleapis.com/customsearch/v1',
-      { params: { key: KEY, cx: CSE_ID, q: 'BPO outsourcing' }, validateStatus: () => true, timeout: 8000 });
-    const ok = r.status === 200;
-    results.push({
-      api: 'Custom Search (CSE)',
-      status: ok ? 'ok' : 'error',
-      message: ok ? `Working — ${r.data?.searchInformation?.totalResults || 0} results` : (r.data?.error?.message || `HTTP ${r.status}`),
-      authMethod: 'api_key',
-      enableUrl: ok ? null : `https://console.cloud.google.com/apis/library/customsearch.googleapis.com?project=${PROJECT}`,
-    });
-  } catch (e) {
-    results.push({ api: 'Custom Search (CSE)', status: 'disabled', message: e.message, authMethod: 'api_key',
-      enableUrl: `https://console.cloud.google.com/apis/library/customsearch.googleapis.com?project=${PROJECT}` });
-  }
+    // 3. Places API (New)
+    (async () => {
+      const token = _saToken;
+      const headers = token
+        ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Goog-FieldMask': 'places.displayName' }
+        : { 'X-Goog-Api-Key': KEY, 'Content-Type': 'application/json', 'X-Goog-FieldMask': 'places.displayName' };
+      const r = await axios.post('https://places.googleapis.com/v1/places:searchText',
+        { textQuery: 'law firm', maxResultCount: 1 },
+        { headers, validateStatus: () => true, timeout: 8000 });
+      const ok = r.status === 200;
+      return {
+        api: 'Places API (New)',
+        status: ok ? 'ok' : 'disabled',
+        message: ok ? `Working — found ${r.data?.places?.length || 0} result(s)` : 'NOT ENABLED — activate in Google Cloud Console',
+        authMethod: token ? 'service_account' : 'api_key',
+        enableUrl: ok ? null : `https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=${PROJECT}`,
+      };
+    })(),
 
-  // 6. Service Account validity
-  if (SA_JSON) {
-    try {
+    // 4. Document AI
+    (async () => {
+      const token = _saToken;
+      if (!token) return { api: 'Document AI', status: 'error', message: 'No service account credentials', authMethod: 'service_account',
+        enableUrl: `https://console.cloud.google.com/apis/library/documentai.googleapis.com?project=${PROJECT}` };
+      const r = await axios.get(
+        `https://documentai.googleapis.com/v1/projects/${PROJECT}/locations/us/processors`,
+        { headers: { Authorization: `Bearer ${token}` }, validateStatus: () => true, timeout: 8000 });
+      const procs = r.data?.processors || [];
+      const proc  = procs.find(p => p.name.includes(PROC));
+      return {
+        api: 'Document AI',
+        status: r.status === 200 ? 'ok' : 'error',
+        message: r.status === 200 ? `${procs.length} processor(s) — CTS-BPO-Parser: ${proc?.state || 'ENABLED'}` : (r.data?.error?.message || `HTTP ${r.status}`),
+        authMethod: 'service_account',
+        enableUrl: r.status !== 200 ? `https://console.cloud.google.com/apis/library/documentai.googleapis.com?project=${PROJECT}` : null,
+      };
+    })(),
+
+    // 5. Custom Search (CSE)
+    (async () => {
+      if (!CSE_ID) return { api: 'Custom Search (CSE)', status: 'disabled', message: 'GOOGLE_CSE_ID secret not set', authMethod: 'api_key',
+        enableUrl: `https://console.cloud.google.com/apis/library/customsearch.googleapis.com?project=${PROJECT}` };
+      const r = await axios.get('https://www.googleapis.com/customsearch/v1',
+        { params: { key: KEY, cx: CSE_ID, q: 'BPO outsourcing' }, validateStatus: () => true, timeout: 8000 });
+      const ok  = r.status === 200;
+      const msg = r.data?.error?.message || `HTTP ${r.status}`;
+      // Treat "no access" as disabled (needs enabling) rather than a code error
+      const needsEnable = !ok && (msg.includes('access') || msg.includes('not enabled') || msg.includes('disabled') || r.status === 403);
+      return {
+        api: 'Custom Search (CSE)',
+        status: ok ? 'ok' : (needsEnable ? 'disabled' : 'error'),
+        message: ok
+          ? `Working — ${r.data?.searchInformation?.totalResults || 0} results`
+          : needsEnable ? 'API not enabled — click to enable in Google Cloud Console' : msg,
+        authMethod: 'api_key',
+        enableUrl: ok ? null : `https://console.cloud.google.com/apis/library/customsearch.googleapis.com?project=${PROJECT}`,
+      };
+    })(),
+
+    // 6. Service Account validity
+    (async () => {
+      if (!SA_JSON) return { api: 'Service Account', status: 'disabled', message: 'GOOGLE_SERVICE_ACCOUNT_JSON not set', authMethod: 'service_account', enableUrl: null };
       const parsed = JSON.parse(SA_JSON);
-      const token = await getSaToken();
-      results.push({
+      const token  = _saToken;
+      return {
         api: 'Service Account (cts-bpo-ai)',
         status: token ? 'ok' : 'error',
-        message: token
-          ? `Authenticated — ${parsed.client_email}`
-          : 'Failed to obtain access token',
-        authMethod: 'service_account',
-        enableUrl: null,
-      });
-    } catch (e) {
-      results.push({ api: 'Service Account (cts-bpo-ai)', status: 'error', message: e.message, authMethod: 'service_account', enableUrl: null });
-    }
-  } else {
-    results.push({ api: 'Service Account', status: 'disabled', message: 'GOOGLE_SERVICE_ACCOUNT_JSON not set', authMethod: 'service_account', enableUrl: null });
-  }
+        message: token ? `Authenticated — ${parsed.client_email}` : 'Failed to obtain access token',
+        authMethod: 'service_account', enableUrl: null,
+      };
+    })(),
+  ]);
+
+  // Unwrap settled results — any rejected check shows as error, never crashes the route
+  const results = checks.map(c =>
+    c.status === 'fulfilled' ? c.value : { api: 'Unknown', status: 'error', message: c.reason?.message || 'Check failed', authMethod: 'unknown', enableUrl: null }
+  );
 
   res.json({
     project: PROJECT,
     checkedAt: new Date().toISOString(),
     apis: results,
     summary: {
-      total: results.length,
-      ok: results.filter(r => r.status === 'ok').length,
+      total:    results.length,
+      ok:       results.filter(r => r.status === 'ok').length,
       disabled: results.filter(r => r.status === 'disabled').length,
-      error: results.filter(r => r.status === 'error').length,
+      error:    results.filter(r => r.status === 'error').length,
     },
   });
 });

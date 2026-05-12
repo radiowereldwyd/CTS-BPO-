@@ -8,6 +8,7 @@ function StatusPanel({ token }) {
   const [googleApis, setGoogleApis]   = useState(null);
   const [loading, setLoading]         = useState(true);
   const [gcLoading, setGcLoading]     = useState(true);
+  const [gcError, setGcError]         = useState(null);
   const [error, setError]             = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
 
@@ -37,12 +38,22 @@ function StatusPanel({ token }) {
     }
   }
 
-  async function fetchGoogleStatus() {
+  async function fetchGoogleStatus(attempt = 1) {
     try {
-      const res = await axios.get(`${API_BASE}/api/google-cloud/status`, { headers: authHeaders });
+      const res = await axios.get(`${API_BASE}/api/google-cloud/status`, {
+        headers: authHeaders,
+        timeout: 20000,
+      });
       setGoogleApis(res.data);
-    } catch {
+      setGcError(null);
+    } catch (e) {
+      if (attempt < 3 && e?.response?.status !== 401) {
+        // Retry up to 2 more times with a short delay
+        setTimeout(() => fetchGoogleStatus(attempt + 1), 2000 * attempt);
+        return;
+      }
       setGoogleApis(null);
+      setGcError(e?.response?.data?.error || e.message || 'Request failed');
     } finally {
       setGcLoading(false);
     }
@@ -187,8 +198,17 @@ function StatusPanel({ token }) {
       )}
 
       {!gcLoading && !googleApis && (
-        <div style={{ color: '#94a3b8', fontSize: 14, padding: '12px 0' }}>
-          Could not load Google Cloud API status.
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontWeight: 700, color: '#dc2626', fontSize: 14, marginBottom: 4 }}>⚠️ Could not reach Google Cloud API status endpoint</div>
+            {gcError && <div style={{ color: '#ef4444', fontSize: 13 }}>{gcError}</div>}
+          </div>
+          <button
+            onClick={() => { setGcLoading(true); setGcError(null); fetchGoogleStatus(); }}
+            style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 18px', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}
+          >
+            ↻ Retry
+          </button>
         </div>
       )}
 

@@ -6,7 +6,10 @@
 const axios = require('axios');
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
-const GOOGLE_CSE_ID  = process.env.GOOGLE_CSE_ID  || '';
+// CSE ID may be stored as raw ID or as the full HTML embed snippet — extract just the cx= value
+const _rawCseId     = process.env.GOOGLE_CSE_ID || '';
+const _cseMatch     = _rawCseId.match(/cx=([a-zA-Z0-9_:-]+)/);
+const GOOGLE_CSE_ID = _cseMatch ? _cseMatch[1] : _rawCseId.replace(/<[^>]+>/g, '').trim();
 const BASE = 'https://www.googleapis.com/customsearch/v1';
 
 function isConfigured() { return !!(GOOGLE_API_KEY && GOOGLE_CSE_ID); }
