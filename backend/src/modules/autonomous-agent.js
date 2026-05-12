@@ -817,11 +817,18 @@ async function runScrapedContactsOutreach() {
         /550|551|552|553|554|user unknown|does not exist|invalid address|mailbox not found|no such user|address rejected/.test(msg);
       if (isPermanent) {
         console.warn(`[OUTREACH] Permanent bounce → ${c.email}: ${err.message}`);
+        // Register in global bounce registry so ALL tables skip this address
+        emailOutreach.registerBounce(c.email);
         await db.query(
           `UPDATE scraped_contacts SET status='bounced', bounced_at=NOW(), updated_at=NOW() WHERE email=$1`,
           [c.email]
         ).catch(() => {});
-        await logActivity('scrape_outreach', `Permanent bounce → ${c.email}`, 'scraped_contact', c.id, 'warning');
+        // Also block in ai_leads
+        await db.query(
+          `UPDATE ai_leads SET status='bounced', bounced_at=NOW(), updated_at=NOW() WHERE LOWER(contact_email)=LOWER($1) AND bounced_at IS NULL`,
+          [c.email]
+        ).catch(() => {});
+        await logActivity('scrape_outreach', `Permanent bounce → ${c.email} (blocked globally)`, 'scraped_contact', c.id, 'warning');
       } else {
         await logActivity('scrape_outreach', `Failed → ${c.email}: ${err.message}`, 'scraped_contact', c.id, 'error');
       }

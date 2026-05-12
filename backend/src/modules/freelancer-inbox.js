@@ -141,7 +141,7 @@ async function fetchThreadMessages(threadId) {
 
 // ── Send a reply ─────────────────────────────────────────────────────────────
 async function sendReply(threadId, message) {
-  const r = await flPost(`/messages/0.1/threads/${threadId}/messages/`, { message });
+  const r = await flPost(`/messages/0.1/threads/${threadId}/messages/`, { body: message });
   if (r.status === 200 || r.status === 201) {
     const msgId = r.data?.result?.id || Date.now();
     await db.query(

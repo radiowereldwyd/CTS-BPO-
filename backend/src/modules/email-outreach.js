@@ -147,12 +147,46 @@ const _brokenProviders = new Set();
     console.warn('[EMAIL] Mailgun SKIPPED — sandbox domain detected; add a real verified domain to enable Mailgun');
   }
   if (BREVO_API_KEY) {
-    console.log('[EMAIL] Brevo configured — 300 emails/day free tier available');
+    console.log('[EMAIL] Brevo configured — 274 credits available, ready as fallback');
   }
   if (MAILERSEND_API_KEY) {
-    console.log('[EMAIL] MailerSend configured — 100 emails/day free tier available');
+    // MailerSend returns 403 (no permissions on this account) — pre-skip it
+    _brokenProviders.add('mailersend');
+    console.warn('[EMAIL] MailerSend SKIPPED — API token lacks required permissions (403)');
+  }
+  if (MAILJET_API_KEY) {
+    // Mailjet returns 401 on this account — pre-skip it
+    _brokenProviders.add('mailjet');
+    console.warn('[EMAIL] Mailjet SKIPPED — API credentials rejected (401)');
   }
 })();
+
+// ── Async Gmail preflight — marks Gmail broken if auth fails ─────────────────
+// Callable both at startup and after midnight reset.
+async function preflightGmailAsync() {
+  if (!GMAIL_USER || !GMAIL_APP_PASS) return;
+  try {
+    const testTransport = nodemailer.createTransport({
+      host: SMTP_HOST, port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASS },
+      connectionTimeout: 10000,
+    });
+    await testTransport.verify();
+    // Auth works — remove Gmail from broken set so it can be used
+    _brokenProviders.delete('gmail');
+    console.log(`[EMAIL] ✅ Gmail SMTP preflight OK — ${GMAIL_USER} authenticated`);
+  } catch (e) {
+    if (/535|authentication|credentials|login|EAUTH|password/i.test(e.message) || e.code === 'EAUTH' || e.responseCode === 535) {
+      markBroken('gmail');
+      console.warn(`[EMAIL] ⚠️ Gmail SMTP preflight FAILED — bad credentials, switching to Brevo. (${e.message})`);
+    } else {
+      console.warn(`[EMAIL] Gmail SMTP preflight warning (transient): ${e.message}`);
+    }
+  }
+}
+// Run preflight at module load
+preflightGmailAsync();
 
 function markBroken(provider) {
   if (!_brokenProviders.has(provider)) {
@@ -198,12 +232,39 @@ function getTransporter() {
 // ── Core send function — routes to correct provider ─────────────────────────
 const EMAIL_VALID_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
+// ── Global bounce registry — permanently block emails that have bounced ──────
+// Loaded from DB at startup, updated on every bounce event.
+const _bouncedEmails = new Set();
+
+(async function loadBounceRegistry() {
+  try {
+    const db = require('../db');
+    const r1 = await db.query(`SELECT LOWER(contact_email) AS e FROM ai_leads WHERE bounced_at IS NOT NULL AND contact_email IS NOT NULL`).catch(() => ({ rows: [] }));
+    const r2 = await db.query(`SELECT LOWER(email) AS e FROM scraped_contacts WHERE (bounced_at IS NOT NULL OR status='bounced') AND email IS NOT NULL`).catch(() => ({ rows: [] }));
+    for (const row of [...r1.rows, ...r2.rows]) { if (row.e) _bouncedEmails.add(row.e); }
+    console.log(`[EMAIL] Bounce registry loaded — ${_bouncedEmails.size} permanently blocked address(es)`);
+  } catch (e) { console.warn('[EMAIL] Could not load bounce registry:', e.message); }
+})();
+
+function registerBounce(email) {
+  if (email) _bouncedEmails.add(String(email).toLowerCase().trim());
+}
+function isBounced(email) {
+  return _bouncedEmails.has(String(email || '').toLowerCase().trim());
+}
+
 async function sendMail({ to, subject, html, text, replyTo }) {
   // Validate email address format before doing anything else
   const cleanTo = String(to || '').trim();
   if (!EMAIL_VALID_RE.test(cleanTo)) {
     console.warn(`[EMAIL] ❌ Invalid email skipped: "${to}"`);
     return { skipped: true, reason: 'invalid_email', to };
+  }
+
+  // Block permanently bounced addresses
+  if (isBounced(cleanTo)) {
+    console.log(`[EMAIL] 🚫 Bounced address blocked: ${cleanTo}`);
+    return { skipped: true, reason: 'bounced', to: cleanTo };
   }
 
   if (isEmailPaused()) {
@@ -357,9 +418,15 @@ async function sendMail({ to, subject, html, text, replyTo }) {
     const smtpCode = err.responseCode || 0; // nodemailer sets responseCode
     const isGmailAuthErr = mode === 'gmail' && (smtpCode === 535 || err.code === 'EAUTH' || /535|authentication|credentials|login/i.test(err.message));
     if (isGmailAuthErr) {
-      console.error(`[EMAIL] Gmail SMTP auth failure — marking broken: ${err.message}`);
+      console.error(`[EMAIL] Gmail SMTP auth failure — marking broken, falling through to Brevo: ${err.message}`);
       markBroken('gmail');
-      return { error: true, status: 535, message: `Gmail auth failed: ${err.message}` };
+      transporter = null; // reset cached transporter
+      const nextMode = getSenderMode();
+      if (nextMode) {
+        console.log(`[EMAIL] Gmail broken — retrying via ${nextMode}`);
+        return sendMail({ to, subject, html, text, replyTo });
+      }
+      return { error: true, status: 535, message: `Gmail auth failed and no fallback available: ${err.message}` };
     }
     // Gmail daily sending limit (550 5.4.5) — mark as broken, then fall through to check remaining providers
     const isGmailDailyLimit = mode === 'gmail' && (smtpCode === 550 || /550.*5\.4\.5|Daily.*sending.*limit|user sending limit/i.test(err.message));
@@ -2101,12 +2168,16 @@ function portalFooter() {
       dailySentCount  = 0;
       dailyResetDate  = new Date().toDateString();
       transporter     = null;           // force SMTP reconnect with fresh auth
-      _brokenProviders.clear();         // re-enable Gmail + all other providers
-      // Re-apply preflight: skip MailerLite (no transactional plan) and Mailgun sandbox
+      _brokenProviders.clear();         // re-enable providers for the new day
+      // Re-apply permanent preflight skips (these are broken accounts, not just daily caps)
       if (MAILERLITE_API_KEY) _brokenProviders.add('mailerlite');
       if (MAILGUN_KEY && MAILGUN_DOMAIN && MAILGUN_DOMAIN.includes('sandbox')) _brokenProviders.add('mailgun');
+      if (MAILERSEND_API_KEY) _brokenProviders.add('mailersend'); // 403 — no permissions
+      if (MAILJET_API_KEY)    _brokenProviders.add('mailjet');    // 401 — bad credentials
       savePerProviderCount();
-      console.log(`[EMAIL] 🌅 Midnight daily reset — cleared ${prev} sends, Gmail re-enabled, SMTP refreshed`);
+      // Re-run Gmail preflight for the new day (app password may have changed)
+      preflightGmailAsync();
+      console.log(`[EMAIL] 🌅 Midnight daily reset — cleared ${prev} sends, re-checking Gmail, Brevo ready`);
     }, { timezone: 'UTC' });
     console.log('[EMAIL] Midnight reset scheduled (00:01 UTC daily)');
   } catch (e) {
@@ -2158,7 +2229,18 @@ module.exports = {
   getSenderMode,
   isEmailPaused,
   setEmailPaused,
+  registerBounce,
+  isBounced,
   getDailyStats: () => { checkDailyReset(); const mode = getSenderMode(); return { sent: dailySentCount, cap: getProviderCap(), stopAt: getStopAt(), mode, paused: emailPaused, broken: [..._brokenProviders] }; },
   getOutreachStats: () => { checkDailyReset(); return { sent: dailySentCount, mode: getSenderMode(), broken: [..._brokenProviders] }; },
-  resetBrokenProviders: () => { _brokenProviders.clear(); console.log('[EMAIL] 🔧 Auto-monitor reset broken providers — will retry all on next send'); },
+  resetBrokenProviders: () => {
+    _brokenProviders.clear();
+    // Re-apply permanent skips after reset
+    if (MAILERLITE_API_KEY) _brokenProviders.add('mailerlite');
+    if (MAILGUN_KEY && MAILGUN_DOMAIN && MAILGUN_DOMAIN.includes('sandbox')) _brokenProviders.add('mailgun');
+    if (MAILERSEND_API_KEY) _brokenProviders.add('mailersend');
+    if (MAILJET_API_KEY)    _brokenProviders.add('mailjet');
+    preflightGmailAsync();
+    console.log('[EMAIL] 🔧 Provider reset — re-checking Gmail, Brevo ready as active provider');
+  },
 };

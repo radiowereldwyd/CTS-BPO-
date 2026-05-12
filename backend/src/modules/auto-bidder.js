@@ -143,14 +143,55 @@ const SKIP_KEYWORDS = [
 // Keywords that indicate a job CTS BPO CAN handle — plus which type
 // ─────────────────────────────────────────────────────────────────────────────
 const BPO_PATTERNS = [
-  { type: 'transcription',       keywords: ['transcri','transcript','audio to text','video to text','dictation','subtitl','caption','srt','vtt'] },
-  { type: 'translation',         keywords: ['translat','interpret','multilingual','locali','language pair'] },
-  { type: 'data-entry',          keywords: ['data entry','data input','copy typing','spreadsheet','excel entry','form fill','database entry','data typing','data collection','web scraping','scraping','list building','copy paste','copy-paste','pdf to excel','pdf to word','image to text','ocr','digitize','digitise'] },
-  { type: 'document-processing', keywords: ['document process','invoice process','invoice extract','pdf extract','document digitiz','document review','document index','contract review','form process','ocr processing'] },
-  { type: 'virtual-assistant',   keywords: ['virtual assistant','va needed','va role','admin assistant','administrative assistant','personal assistant','executive assistant','email management','inbox management','calendar management','scheduling assistant','research assistant','online research','lead generation research'] },
-  { type: 'customer-support',    keywords: ['customer support','customer service','help desk','helpdesk','ticket support','live chat support','email support','support agent','support rep'] },
-  { type: 'finance-admin',       keywords: ['bookkeeping','bookkeeper','accounts payable','accounts receivable','bank reconcil','payroll','invoice entry','expense report','accounting data','xero','quickbooks data'] },
-  { type: 'content-moderation',  keywords: ['content moderation','content review','content policy','trust and safety','user generated content','ugc review','moderat'] },
+  { type: 'transcription',       keywords: ['transcri','transcript','audio to text','video to text','dictation','subtitl','caption','srt','vtt','interview record','meeting record'] },
+  { type: 'translation',         keywords: ['translat','interpret','multilingual','locali','language pair','native speaker'] },
+  { type: 'data-entry',          keywords: [
+    'data entry','data input','copy typing','spreadsheet','excel entry','form fill',
+    'database entry','data typing','data collection','web scraping','scraping',
+    'list building','copy paste','copy-paste','pdf to excel','pdf to word',
+    'image to text','ocr','digitize','digitise',
+    // title-only patterns (description often empty)
+    'data clean','list clean','email list','contact list','email verif','list verif',
+    'database clean','data process','data organ','data sort','data format',
+    'csv','excel data','google sheet','sheet entry','manual entry',
+    'product list','product data','catalog entry','catalogue entry',
+    'address list','address verif','phone list','number verif',
+    'linkedin data','linkedin list','company list','company research',
+    'record entry','record updat','update record','update database','update spreadsheet',
+    'amazon listing','ebay listing','product upload','product entry',
+  ] },
+  { type: 'document-processing', keywords: [
+    'document process','invoice process','invoice extract','pdf extract',
+    'document digitiz','document review','document index','contract review',
+    'form process','ocr processing','pdf convert','word convert','document convert',
+    'pdf typ','retype','re-type','copy from pdf','extract from pdf',
+  ] },
+  { type: 'virtual-assistant',   keywords: [
+    'virtual assistant','va needed','va role','admin assistant','administrative assistant',
+    'personal assistant','executive assistant','email management','inbox management',
+    'calendar management','scheduling assistant','research assistant','online research',
+    'lead generation research','general assistant','remote assistant','part.time assistant',
+    'administrative support','admin support','office assistant','admin task',
+    'email respons','reply to email','manage email','handle email',
+    'appointment book','schedule meeting','travel arrang',
+  ] },
+  { type: 'customer-support',    keywords: [
+    'customer support','customer service','help desk','helpdesk','ticket support',
+    'live chat support','email support','support agent','support rep',
+    'customer care','client support','respond to customer','reply to customer',
+    'order support','complaint handl','feedback handl','amazon feedback',
+    'review management','review respons','client communicat',
+  ] },
+  { type: 'finance-admin',       keywords: [
+    'bookkeeping','bookkeeper','accounts payable','accounts receivable','bank reconcil',
+    'payroll','invoice entry','expense report','accounting data','xero','quickbooks data',
+    'financial data','financial entry','receipt entry','expense entry',
+  ] },
+  { type: 'content-moderation',  keywords: [
+    'content moderation','content review','content policy','trust and safety',
+    'user generated content','ugc review','moderat','flag content','review submission',
+    'image review','image classif',
+  ] },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,34 +269,41 @@ const MIN_BUDGET_USD = parseInt(process.env.MIN_BID_BUDGET_USD || '30', 10);
 // Returns BPO type string, or null if should skip
 // ─────────────────────────────────────────────────────────────────────────────
 function classifyJob(job) {
-  // 1. ── URL category check (most reliable signal) ─────────────────────────
   const urlCategory = (job.job_url || '').split('/projects/')[1]?.split('/')[0]?.toLowerCase() || '';
-  if (urlCategory && BLOCKED_URL_CATEGORIES.has(urlCategory)) {
-    return null; // definitively not BPO — skip immediately
-  }
 
-  // 2. ── Budget floor — don't waste a slot on $10-25 micro-jobs ────────────
+  // 1. ── Budget floor — don't waste a slot on $10-25 micro-jobs ────────────
   const budget = parseFloat(job.budget_min || job.budget_max || 0);
   if (budget > 0 && budget < MIN_BUDGET_USD) return null;
 
-  // 3. ── Title / snippet keyword hard-skip ─────────────────────────────────
+  // 2. ── Title / snippet keyword hard-skip (always applied first) ──────────
   const text = `${job.title || ''} ${job.snippet || ''}`.toLowerCase();
   for (const kw of SKIP_KEYWORDS) {
     if (text.includes(kw)) return null;
   }
 
-  // 4. ── Positive BPO pattern match (required for api_submitted) ───────────
+  // 3. ── Positive BPO pattern match in title/snippet (highest priority) ────
+  //    A job retrieved via a BPO search query should be judged by its CONTENT,
+  //    not the category the poster happened to choose on the platform.
   for (const { type, keywords } of BPO_PATTERNS) {
     if (keywords.some(kw => text.includes(kw))) return type;
   }
 
+  // 4. ── No positive BPO signal — now apply URL category hard-block ─────────
+  if (urlCategory && BLOCKED_URL_CATEGORIES.has(urlCategory)) {
+    return null; // URL confirms it's not BPO work
+  }
+
   // 5. ── URL in allowed list + no skip keywords = cautious BPO pass ────────
-  //    Only accept if Freelancer itself categorised it as a BPO type
   if (urlCategory && ALLOWED_URL_CATEGORIES.has(urlCategory)) {
     const BPO_TYPES = new Set(['data-entry','transcription','translation','virtual-assistant',
       'customer-support','document-processing','finance-admin','content-moderation']);
     if (BPO_TYPES.has(job.job_type)) return job.job_type;
   }
+
+  // 6. ── Job-type from search query is a strong BPO signal (no URL cat) ─────
+  const BPO_TYPES = new Set(['data-entry','transcription','translation','virtual-assistant',
+    'customer-support','document-processing','finance-admin','content-moderation']);
+  if (!urlCategory && BPO_TYPES.has(job.job_type)) return job.job_type;
 
   return null; // no positive BPO signal — skip
 }
@@ -737,7 +785,7 @@ async function autoBidNewJobs() {
   await ensureAutoBidColumns();
 
   const { rows: newJobs } = await db.query(
-    `SELECT * FROM platform_jobs WHERE status = 'new' AND auto_bid IS NOT TRUE ORDER BY created_at DESC LIMIT 100`
+    `SELECT * FROM platform_jobs WHERE status IN ('new','pending') AND auto_bid IS NOT TRUE ORDER BY created_at DESC LIMIT 100`
   );
 
   if (newJobs.length === 0) return { processed: 0, submitted: 0, skipped: 0, notified: 0 };

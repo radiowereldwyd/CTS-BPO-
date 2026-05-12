@@ -428,8 +428,8 @@ async function scrapeFreelancerAPI() {
       try {
         const res = await axios.get('https://www.freelancer.com/api/projects/0.1/projects/active', {
           params: {
-            compact:           true,
             job_details:       true,
+            full_description:  true,
             limit:             20,
             query:             q,
             'project_types[]': projectType,
