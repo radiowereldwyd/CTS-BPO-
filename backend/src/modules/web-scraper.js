@@ -1152,25 +1152,89 @@ async function scrapeFacebookViaSearch() {
   return totalInserted;
 }
 
-// ── 8. Business Directories — Clutch.co, Cylex, Hotfrog SA, Bizcommunity ────
+// ── 8. Business Directories — Clutch, Cylex, Hotfrog, Manta, Yell, GoodFirms, Bark, etc ──
 const DIRECTORY_TARGETS = [
-  { url: 'https://clutch.co/bpo/data-entry',                     source: 'clutch',       label: 'Clutch Data Entry' },
-  { url: 'https://clutch.co/bpo/document-management',            source: 'clutch',       label: 'Clutch Doc Mgmt' },
-  { url: 'https://clutch.co/bpo',                                source: 'clutch',       label: 'Clutch BPO' },
-  { url: 'https://clutch.co/bpo/customer-service',               source: 'clutch',       label: 'Clutch CX' },
-  { url: 'https://www.cylex.us.com/companies/outsourcing.html',  source: 'cylex',        label: 'Cylex Outsourcing' },
-  { url: 'https://www.hotfrog.co.za/company/accounting',         source: 'hotfrog_sa',   label: 'Hotfrog SA Accounting' },
-  { url: 'https://www.hotfrog.co.za/company/law-firm',           source: 'hotfrog_sa',   label: 'Hotfrog SA Law' },
-  { url: 'https://www.hotfrog.co.za/company/medical',            source: 'hotfrog_sa',   label: 'Hotfrog SA Medical' },
-  { url: 'https://www.bizcommunity.com/companies/',              source: 'bizcommunity', label: 'Bizcommunity SA' },
-  { url: 'https://www.yellowpages.co.za/yp/accountants',         source: 'yellowpages_sa', label: 'YP SA Accountants' },
-  { url: 'https://www.yellowpages.co.za/yp/attorneys',           source: 'yellowpages_sa', label: 'YP SA Attorneys' },
-  { url: 'https://www.yellowpages.co.za/yp/insurance',           source: 'yellowpages_sa', label: 'YP SA Insurance' },
+  // Clutch.co — BPO & professional services
+  { url: 'https://clutch.co/bpo/data-entry',                         source: 'clutch',         label: 'Clutch Data Entry' },
+  { url: 'https://clutch.co/bpo/document-management',                source: 'clutch',         label: 'Clutch Doc Mgmt' },
+  { url: 'https://clutch.co/bpo',                                    source: 'clutch',         label: 'Clutch BPO' },
+  { url: 'https://clutch.co/bpo/customer-service',                   source: 'clutch',         label: 'Clutch CX' },
+  { url: 'https://clutch.co/it-services',                            source: 'clutch',         label: 'Clutch IT Services' },
+  { url: 'https://clutch.co/accounting',                             source: 'clutch',         label: 'Clutch Accounting' },
+  { url: 'https://clutch.co/hr',                                     source: 'clutch',         label: 'Clutch HR' },
+  // GoodFirms — outsourcing & IT companies
+  { url: 'https://www.goodfirms.co/directory/services/list-of-bpo-companies', source: 'goodfirms', label: 'GoodFirms BPO' },
+  { url: 'https://www.goodfirms.co/directory/services/list-of-data-entry-companies', source: 'goodfirms', label: 'GoodFirms Data Entry' },
+  { url: 'https://www.goodfirms.co/directory/services/virtual-assistant-companies', source: 'goodfirms', label: 'GoodFirms VA' },
+  // Manta — US small business directory
+  { url: 'https://www.manta.com/mb_43_A4D7/accounting_bookkeeping_and_auditing',  source: 'manta', label: 'Manta Accounting' },
+  { url: 'https://www.manta.com/mb_43_A4B7/legal_services',                       source: 'manta', label: 'Manta Legal' },
+  { url: 'https://www.manta.com/mb_43_B12/insurance_carriers_and_agents',         source: 'manta', label: 'Manta Insurance' },
+  { url: 'https://www.manta.com/mb_43_A4/medical_and_dental',                     source: 'manta', label: 'Manta Medical' },
+  { url: 'https://www.manta.com/mb_43_A4C9/real_estate',                          source: 'manta', label: 'Manta Real Estate' },
+  // Yell.com — UK business directory
+  { url: 'https://www.yell.com/s/accountants-england.html',          source: 'yell_uk',        label: 'Yell UK Accountants' },
+  { url: 'https://www.yell.com/s/solicitors-england.html',           source: 'yell_uk',        label: 'Yell UK Solicitors' },
+  { url: 'https://www.yell.com/s/insurance+brokers-england.html',    source: 'yell_uk',        label: 'Yell UK Insurance' },
+  { url: 'https://www.yell.com/s/dentists-england.html',             source: 'yell_uk',        label: 'Yell UK Dentists' },
+  { url: 'https://www.yell.com/s/mortgage+brokers-england.html',     source: 'yell_uk',        label: 'Yell UK Mortgage' },
+  { url: 'https://www.yell.com/s/estate+agents-england.html',        source: 'yell_uk',        label: 'Yell UK Estate Agents' },
+  // Bark.com — service business leads
+  { url: 'https://www.bark.com/en/gb/accountants/',                  source: 'bark',           label: 'Bark UK Accountants' },
+  { url: 'https://www.bark.com/en/gb/solicitors/',                   source: 'bark',           label: 'Bark UK Solicitors' },
+  { url: 'https://www.bark.com/en/gb/bookkeepers/',                  source: 'bark',           label: 'Bark UK Bookkeepers' },
+  { url: 'https://www.bark.com/en/gb/hr-consultants/',               source: 'bark',           label: 'Bark UK HR' },
+  { url: 'https://www.bark.com/en/us/accountants/',                  source: 'bark',           label: 'Bark US Accountants' },
+  { url: 'https://www.bark.com/en/za/accountants/',                  source: 'bark',           label: 'Bark SA Accountants' },
+  // Cylex directories — US & international
+  { url: 'https://www.cylex.us.com/companies/outsourcing.html',      source: 'cylex',          label: 'Cylex Outsourcing' },
+  { url: 'https://www.cylex.us.com/companies/accounting.html',       source: 'cylex',          label: 'Cylex Accounting' },
+  { url: 'https://www.cylex.us.com/companies/law-firm.html',         source: 'cylex',          label: 'Cylex Law' },
+  { url: 'https://www.cylex.us.com/companies/insurance.html',        source: 'cylex',          label: 'Cylex Insurance' },
+  // Hotfrog SA
+  { url: 'https://www.hotfrog.co.za/company/accounting',             source: 'hotfrog_sa',     label: 'Hotfrog SA Accounting' },
+  { url: 'https://www.hotfrog.co.za/company/law-firm',               source: 'hotfrog_sa',     label: 'Hotfrog SA Law' },
+  { url: 'https://www.hotfrog.co.za/company/medical',                source: 'hotfrog_sa',     label: 'Hotfrog SA Medical' },
+  { url: 'https://www.hotfrog.co.za/company/insurance',              source: 'hotfrog_sa',     label: 'Hotfrog SA Insurance' },
+  { url: 'https://www.hotfrog.co.za/company/real-estate',            source: 'hotfrog_sa',     label: 'Hotfrog SA Real Estate' },
+  { url: 'https://www.hotfrog.co.za/company/recruitment',            source: 'hotfrog_sa',     label: 'Hotfrog SA Recruitment' },
+  // Bizcommunity SA
+  { url: 'https://www.bizcommunity.com/companies/',                  source: 'bizcommunity',   label: 'Bizcommunity SA' },
+  { url: 'https://www.bizcommunity.com/companies/1/196/',            source: 'bizcommunity',   label: 'Bizcommunity IT' },
+  { url: 'https://www.bizcommunity.com/companies/1/financ/',         source: 'bizcommunity',   label: 'Bizcommunity Finance' },
+  // SA Yellow Pages
+  { url: 'https://www.yellowpages.co.za/yp/accountants',             source: 'yellowpages_sa', label: 'YP SA Accountants' },
+  { url: 'https://www.yellowpages.co.za/yp/attorneys',               source: 'yellowpages_sa', label: 'YP SA Attorneys' },
+  { url: 'https://www.yellowpages.co.za/yp/insurance',               source: 'yellowpages_sa', label: 'YP SA Insurance' },
+  { url: 'https://www.yellowpages.co.za/yp/medical-practitioners',   source: 'yellowpages_sa', label: 'YP SA Medical' },
+  { url: 'https://www.yellowpages.co.za/yp/estate-agents',           source: 'yellowpages_sa', label: 'YP SA Estate Agents' },
+  { url: 'https://www.yellowpages.co.za/yp/bookkeeping',             source: 'yellowpages_sa', label: 'YP SA Bookkeeping' },
+  // Superpages — US businesses
+  { url: 'https://www.superpages.com/accounting-firms',              source: 'superpages',     label: 'Superpages Accounting' },
+  { url: 'https://www.superpages.com/insurance',                     source: 'superpages',     label: 'Superpages Insurance' },
+  { url: 'https://www.superpages.com/lawyers',                       source: 'superpages',     label: 'Superpages Lawyers' },
+  // Kompass — international B2B directory
+  { url: 'https://za.kompass.com/s/business-services/2/',            source: 'kompass',        label: 'Kompass SA Business' },
+  { url: 'https://gb.kompass.com/s/accounting-auditing-taxation/040601/', source: 'kompass',  label: 'Kompass UK Accounting' },
+  { url: 'https://us.kompass.com/s/outsourcing/020501/',             source: 'kompass',        label: 'Kompass US Outsourcing' },
+  // Thomasnet — US industrial & service businesses
+  { url: 'https://www.thomasnet.com/nsearch.html?cov=NA&what=data+entry+services', source: 'thomasnet', label: 'Thomasnet Data Entry' },
+  { url: 'https://www.thomasnet.com/nsearch.html?cov=NA&what=business+process+outsourcing', source: 'thomasnet', label: 'Thomasnet BPO' },
+  // Expertise.com — US local professional services
+  { url: 'https://www.expertise.com/accounting',                     source: 'expertise',      label: 'Expertise Accounting' },
+  { url: 'https://www.expertise.com/legal',                          source: 'expertise',      label: 'Expertise Legal' },
+  // Approved Business (UK)
+  { url: 'https://www.approvedbusiness.co.uk/category/accountants',  source: 'approved_biz',   label: 'Approved Biz Accountants UK' },
+  { url: 'https://www.approvedbusiness.co.uk/category/solicitors',   source: 'approved_biz',   label: 'Approved Biz Solicitors UK' },
+  // FreeIndex (UK)
+  { url: 'https://www.freeindex.co.uk/category/accountants/',        source: 'freeindex',      label: 'FreeIndex UK Accountants' },
+  { url: 'https://www.freeindex.co.uk/category/solicitors/',         source: 'freeindex',      label: 'FreeIndex UK Solicitors' },
+  { url: 'https://www.freeindex.co.uk/category/recruitment-agencies/', source: 'freeindex',    label: 'FreeIndex UK Recruitment' },
 ];
 
 async function scrapeBusinessDirectories() {
   let totalInserted = 0;
-  const selected = pickRandom(DIRECTORY_TARGETS, 4);
+  const selected = pickRandom(DIRECTORY_TARGETS, 8);
 
   for (const target of selected) {
     try {
@@ -1634,7 +1698,7 @@ async function scrapeTrustpilot() {
 }
 
 async function runAllScrapers() {
-  console.log('🕷️  [SCRAPER] Starting multi-source scrape run (13 sources)...');
+  console.log('🕷️  [SCRAPER] Starting multi-source scrape run (13 sources + 57 directories)...');
   let total = 0;
 
   try { total += await scrapeGooglePlaces(); }        catch (e) { console.error('[SCRAPER] Places failed:', e.message); }
