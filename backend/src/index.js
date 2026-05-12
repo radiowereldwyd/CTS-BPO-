@@ -2827,8 +2827,13 @@ app.post('/api/freelancer/inbox/:threadId/reply', requireAuth, requireAdmin, asy
 // intercept /api/* requests.
 const buildDir = path.join(__dirname, '../../frontend/build');
 if (require('fs').existsSync(buildDir)) {
-  app.use(express.static(buildDir));
+  app.use(express.static(buildDir, { etag: false, lastModified: false, setHeaders: (res) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+  }}));
   app.get('*', (req, res) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(buildDir, 'index.html'));
   });
 }
