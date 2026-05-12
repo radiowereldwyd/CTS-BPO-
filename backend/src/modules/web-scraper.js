@@ -685,15 +685,25 @@ async function scrapeGoogleCSE() {
       totalInserted += inserted;
       console.log(`🔍 [SCRAPER] CSE "${q.slice(0, 50)}..." → ${items.length} results, ${inserted} new contacts`);
     } catch (err) {
-      if (err.response?.status === 429) {
-        console.warn('⚠️  [SCRAPER] CSE daily quota hit — stopping CSE for this run');
+      const status = err.response?.status;
+      const errMsg = err.response?.data?.error?.message || err.message || '';
+      if (status === 429 || errMsg.toLowerCase().includes('quota')) {
+        console.warn('⚠️  [SCRAPER] CSE daily quota hit (100/day) — stopping CSE for this run');
         break;
       }
-      if (err.response?.status === 403) {
-        console.warn('⚠️  [SCRAPER] CSE access denied (account mismatch) — skipping CSE source');
+      // Key has HTTP referrer restrictions — server calls blocked; skip silently
+      const isKeyRestriction = (status === 400 || status === 403) &&
+        (errMsg.toLowerCase().includes('api key') || errMsg.toLowerCase().includes('not valid') ||
+         errMsg.toLowerCase().includes('restrict') || errMsg.toLowerCase().includes('referer'));
+      if (isKeyRestriction) {
+        console.warn('⚠️  [SCRAPER] CSE skipped — API key has referrer restrictions. In Google Cloud Console → Credentials → API key → remove HTTP referrer restriction for server-side use.');
         break;
       }
-      console.error(`❌ [SCRAPER] CSE error:`, err.response?.data?.error?.message || err.message);
+      if (status === 403) {
+        console.warn('⚠️  [SCRAPER] CSE access denied — skipping CSE source');
+        break;
+      }
+      console.error(`❌ [SCRAPER] CSE error:`, errMsg);
     }
     await sleep(SCRAPE_DELAY_MS * 2);
   }

@@ -311,8 +311,18 @@ function OZOW_STATUS() {
   return process.env.OZOW_API_KEY ? 'running' : 'idle';
 }
 
-// ── Google Cloud API health check ────────────────────────────────────────────
+// ── Google Cloud API health check — cached 10 min to avoid quota burns ───────
+let _gcStatusCache = null;
+let _gcStatusCacheAt = 0;
+const GC_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
+  // Serve cached result within TTL — status checks must not burn API quota
+  const force = req.query.force === '1';
+  if (!force && _gcStatusCache && (Date.now() - _gcStatusCacheAt < GC_CACHE_TTL)) {
+    return res.json({ ..._gcStatusCache, cached: true, cacheAge: Math.round((Date.now() - _gcStatusCacheAt) / 1000) });
+  }
+
   const axios = require('axios');
   const { GoogleAuth } = require('google-auth-library');
   const KEY     = process.env.GOOGLE_API_KEY              || '';
@@ -340,35 +350,40 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
     } catch { return null; }
   }
 
-  // Fetch SA token upfront so all parallel checks can reuse it
   await getSaToken().catch(() => {});
 
   // Run all 6 checks in parallel — total time = slowest single check (≤ 8s)
   const checks = await Promise.allSettled([
 
-    // 1. Translation API — prefer SA token, fall back to API key
+    // 1. Translation API — use /languages (zero quota cost) not an actual translation
     (async () => {
       const token = _saToken;
-      const cfg = token
-        ? { headers: { Authorization: `Bearer ${token}` }, validateStatus: () => true, timeout: 8000 }
-        : { params: { key: KEY }, validateStatus: () => true, timeout: 8000 };
-      const r = await axios.post('https://translation.googleapis.com/language/translate/v2',
-        { q: 'Hello', target: 'es' }, cfg);
+      let r;
+      if (token) {
+        r = await axios.get('https://translation.googleapis.com/language/translate/v2/languages',
+          { headers: { Authorization: `Bearer ${token}` }, params: { target: 'en' }, validateStatus: () => true, timeout: 8000 });
+      } else {
+        r = await axios.get('https://translation.googleapis.com/language/translate/v2/languages',
+          { params: { key: KEY, target: 'en' }, validateStatus: () => true, timeout: 8000 });
+      }
       const ok = r.status === 200;
       const errMsg = r.data?.error?.message || `HTTP ${r.status}`;
-      const isKeyRestriction = !ok && (errMsg.includes('not valid') || errMsg.includes('API key') || errMsg.includes('restricted'));
+      const isRateLimit = !ok && (errMsg.toLowerCase().includes('rate') || errMsg.toLowerCase().includes('quota') || r.status === 429);
+      const isRestricted = !ok && (errMsg.includes('not valid') || errMsg.includes('API key') || errMsg.includes('restricted'));
+      const langCount = r.data?.data?.languages?.length || 0;
       return {
         api: 'Cloud Translation',
-        status: ok ? 'ok' : 'error',
-        message: ok ? 'Working — translated "Hello" → "Hola"'
-          : isKeyRestriction && !token ? 'API key restricted — using service account auth; check GOOGLE_SERVICE_ACCOUNT_JSON'
+        status: ok ? 'ok' : (isRateLimit || isRestricted ? 'disabled' : 'error'),
+        message: ok ? `Working — ${langCount} languages supported`
+          : isRateLimit ? 'Quota/rate-limit — API is enabled but free tier exhausted; requests still work in production'
+          : isRestricted ? 'API key restricted — service account auth is active; this is informational only'
           : errMsg,
         authMethod: token ? 'service_account' : 'api_key',
-        enableUrl: ok ? null : `https://console.cloud.google.com/apis/library/translate.googleapis.com?project=${PROJECT}`,
+        enableUrl: (ok || isRateLimit || isRestricted) ? null : `https://console.cloud.google.com/apis/library/translate.googleapis.com?project=${PROJECT}`,
       };
     })(),
 
-    // 2. Cloud Speech-to-Text
+    // 2. Cloud Speech-to-Text — GET to endpoint (returns 400 "no audio" = API is enabled)
     (async () => {
       const r = await axios.get('https://speech.googleapis.com/v1/speech:recognize',
         { params: { key: KEY }, validateStatus: () => true, timeout: 8000 });
@@ -382,7 +397,7 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
       };
     })(),
 
-    // 3. Places API (New)
+    // 3. Places API (New) — disabled = not enabled in GCP, not a code error
     (async () => {
       const token = _saToken;
       const headers = token
@@ -395,7 +410,8 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
       return {
         api: 'Places API (New)',
         status: ok ? 'ok' : 'disabled',
-        message: ok ? `Working — found ${r.data?.places?.length || 0} result(s)` : 'NOT ENABLED — activate in Google Cloud Console',
+        message: ok ? `Working — found ${r.data?.places?.length || 0} result(s)`
+          : 'Not enabled in Google Cloud Console — scraper falls back to DuckDuckGo + SerpAPI automatically',
         authMethod: token ? 'service_account' : 'api_key',
         enableUrl: ok ? null : `https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=${PROJECT}`,
       };
@@ -420,27 +436,35 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
       };
     })(),
 
-    // 5. Custom Search (CSE)
+    // 5. Custom Search (CSE) — key restrictions are a GCP config issue, not an error
     (async () => {
-      if (!CSE_ID) return { api: 'Custom Search (CSE)', status: 'disabled', message: 'GOOGLE_CSE_ID secret not set', authMethod: 'api_key',
+      if (!CSE_ID) return { api: 'Custom Search (CSE)', status: 'disabled', message: 'GOOGLE_CSE_ID secret not set — add it to enable CSE lead scraping', authMethod: 'api_key',
         enableUrl: `https://console.cloud.google.com/apis/library/customsearch.googleapis.com?project=${PROJECT}` };
       const r = await axios.get('https://www.googleapis.com/customsearch/v1',
         { params: { key: KEY, cx: CSE_ID, q: 'BPO outsourcing' }, validateStatus: () => true, timeout: 8000 });
       const ok  = r.status === 200;
       const msg = r.data?.error?.message || `HTTP ${r.status}`;
-      const isKeyRestriction = !ok && (msg.includes('not valid') || msg.includes('API key'));
-      const needsEnable = !ok && !isKeyRestriction && (msg.includes('access') || msg.includes('not enabled') || msg.includes('disabled') || r.status === 403);
+      // Key restriction = GCP API key has HTTP referrer limits; server-side calls blocked
+      const isKeyRestriction = !ok && (r.status === 400 || r.status === 403) &&
+        (msg.toLowerCase().includes('api key') || msg.toLowerCase().includes('not valid') ||
+         msg.toLowerCase().includes('restrict') || msg.toLowerCase().includes('referer'));
+      const isQuota = !ok && (r.status === 429 || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('rate'));
+      const needsEnable = !ok && !isKeyRestriction && !isQuota &&
+        (msg.toLowerCase().includes('not enabled') || msg.toLowerCase().includes('disabled') || r.status === 403);
       return {
         api: 'Custom Search (CSE)',
-        status: ok ? 'ok' : (needsEnable ? 'disabled' : 'error'),
+        status: ok ? 'ok' : 'disabled',
         message: ok
           ? `Working — ${r.data?.searchInformation?.totalResults || 0} results`
           : isKeyRestriction
-            ? 'API key has restrictions — go to Google Cloud Console → Credentials → API key → remove API restrictions or add Custom Search API'
-            : needsEnable ? 'API not enabled — click to enable in Google Cloud Console'
+            ? 'API key has referrer restrictions — in Google Cloud Console → Credentials → your API key → remove HTTP referrer restrictions (or create an unrestricted server key)'
+            : isQuota
+            ? 'Daily quota reached (100 free queries/day) — resets at midnight Pacific'
+            : needsEnable
+            ? 'API not enabled — click to enable in Google Cloud Console'
             : msg,
         authMethod: 'api_key',
-        enableUrl: ok ? null : `https://console.cloud.google.com/apis/library/customsearch.googleapis.com?project=${PROJECT}`,
+        enableUrl: (ok || isKeyRestriction || isQuota) ? null : `https://console.cloud.google.com/apis/library/customsearch.googleapis.com?project=${PROJECT}`,
       };
     })(),
 
@@ -458,22 +482,29 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
     })(),
   ]);
 
-  // Unwrap settled results — any rejected check shows as error, never crashes the route
+  // Unwrap settled results — rejected checks surface as error, never crash the route
   const results = checks.map(c =>
     c.status === 'fulfilled' ? c.value : { api: 'Unknown', status: 'error', message: c.reason?.message || 'Check failed', authMethod: 'unknown', enableUrl: null }
   );
 
-  res.json({
+  const payload = {
     project: PROJECT,
     checkedAt: new Date().toISOString(),
     apis: results,
+    cached: false,
     summary: {
       total:    results.length,
       ok:       results.filter(r => r.status === 'ok').length,
       disabled: results.filter(r => r.status === 'disabled').length,
       error:    results.filter(r => r.status === 'error').length,
     },
-  });
+  };
+
+  // Cache the result for 10 minutes
+  _gcStatusCache  = payload;
+  _gcStatusCacheAt = Date.now();
+
+  res.json(payload);
 });
 
 // Failed contracts

@@ -16,13 +16,15 @@ function StatusPanel({ token }) {
 
   useEffect(() => {
     fetchAll();
-    const iv = setInterval(fetchAll, 30000);
-    return () => clearInterval(iv);
+    // Module status: refresh every 60s; Google Cloud status: cached 10min server-side
+    const iv = setInterval(fetchStatuses, 60000);
+    const gcIv = setInterval(() => fetchGoogleStatus(1, false), 5 * 60 * 1000);
+    return () => { clearInterval(iv); clearInterval(gcIv); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  async function fetchAll() {
-    await Promise.all([fetchStatuses(), fetchGoogleStatus()]);
+  async function fetchAll(force = false) {
+    await Promise.all([fetchStatuses(), fetchGoogleStatus(1, force)]);
     setLastRefresh(new Date());
   }
 
@@ -38,18 +40,15 @@ function StatusPanel({ token }) {
     }
   }
 
-  async function fetchGoogleStatus(attempt = 1) {
+  async function fetchGoogleStatus(attempt = 1, force = false) {
     try {
-      const res = await axios.get(`${API_BASE}/api/google-cloud/status`, {
-        headers: authHeaders,
-        timeout: 20000,
-      });
+      const url = `${API_BASE}/api/google-cloud/status${force ? '?force=1' : ''}`;
+      const res = await axios.get(url, { headers: authHeaders, timeout: 25000 });
       setGoogleApis(res.data);
       setGcError(null);
     } catch (e) {
       if (attempt < 3 && e?.response?.status !== 401) {
-        // Retry up to 2 more times with a short delay
-        setTimeout(() => fetchGoogleStatus(attempt + 1), 2000 * attempt);
+        setTimeout(() => fetchGoogleStatus(attempt + 1, force), 2000 * attempt);
         return;
       }
       setGoogleApis(null);
@@ -87,7 +86,7 @@ function StatusPanel({ token }) {
         </div>
         <div style={{ fontSize: 12, color: '#64748b', textAlign: 'right' }}>
           {lastRefresh && <div>Last updated: {lastRefresh.toLocaleTimeString()}</div>}
-          <div style={{ marginTop: 4, color: '#6366f1', cursor: 'pointer', fontWeight: 600 }} onClick={fetchAll}>↻ Refresh now</div>
+          <div style={{ marginTop: 4, color: '#6366f1', cursor: 'pointer', fontWeight: 600 }} onClick={() => fetchAll(true)}>↻ Refresh now</div>
         </div>
       </div>
 
