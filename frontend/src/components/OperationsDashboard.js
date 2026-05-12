@@ -239,8 +239,8 @@ export default function OperationsDashboard({ token }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           {[
             { label: 'Contacts DB',     v: fmt(db.scrapedTotal || lv.db?.grand_total)    },
-            { label: 'Emails Today',    v: fmt(es.sentToday)                             },
-            { label: 'Provider',        v: `${(es.mode || '—').toUpperCase()} (${es.cap || 0}/day)` },
+            { label: 'Emails Today',    v: fmt((es.providers||[]).reduce((s,p)=>s+(p.sentToday||0),0) || es.sentToday) },
+            { label: 'Provider',        v: (() => { const a=(es.providers||[]).find(p=>p.active); return a ? `${a.name.toUpperCase()} (${a.dailyCap}/day)` : '—'; })() },
             { label: 'AI Leads',        v: fmt(m.totalLeads)                             },
           ].map(k => (
             <div key={k.label} style={{ textAlign: 'center' }}>
@@ -358,33 +358,76 @@ export default function OperationsDashboard({ token }) {
           {/* Email provider health */}
           <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14, padding: '16px 18px' }}>
             <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 900, color: '#0f172a' }}>📮 Email Health</h3>
-            {[
-              { name: 'Gmail',       cap: 500,  key: 'gmail'       },
-              { name: 'Brevo',       cap: 300,  key: 'brevo'       },
-              { name: 'MailerSend',  cap: 100,  key: 'mailersend'  },
-              { name: 'Mailjet',     cap: 200,  key: 'mailjet'     },
-            ].map(({ name, cap, key }) => {
-              const isActive = es.mode === key;
-              const used = isActive ? (es.sentToday || 0) : 0;
-              const pct  = Math.min(100, Math.round((used / cap) * 100));
+            {(es.providers || [
+              { name: 'Brevo',      configured: false, active: false, broken: false, sentToday: 0, dailyCap: 300, account: null },
+              { name: 'Gmail',      configured: false, active: false, broken: false, sentToday: 0, dailyCap: 500, account: null },
+              { name: 'Mailjet',    configured: false, active: false, broken: false, sentToday: 0, dailyCap: 299, account: null },
+              { name: 'Mailgun',    configured: false, active: false, broken: false, sentToday: 0, dailyCap: 99,  account: null },
+              { name: 'MailerLite', configured: false, active: false, broken: false, sentToday: 0, dailyCap: 399, account: null },
+            ]).map((p) => {
+              const used = p.sentToday || 0;
+              const cap  = p.dailyCap  || 0;
+              const pct  = cap ? Math.min(100, Math.round((used / cap) * 100)) : 0;
+              const nearFull = pct >= 80;
+              const dotColor = !p.configured ? '#cbd5e1'
+                : p.broken     ? '#ef4444'
+                : nearFull     ? '#f59e0b'
+                : p.active     ? '#22c55e'
+                :                '#22c55e';
+              const barColor = p.broken ? '#ef4444' : nearFull ? '#f59e0b' : p.active ? '#6366f1' : '#10b981';
               return (
-                <div key={key} style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, fontWeight: isActive ? 800 : 600, color: isActive ? '#0f172a' : '#94a3b8' }}>
-                      {isActive ? '▶ ' : ''}{name}
-                    </span>
-                    <span style={{ fontSize: 11, color: '#64748b' }}>
-                      {isActive ? `${used}/${cap}` : `0/${cap}`}
-                    </span>
+                <div key={p.name} style={{ marginBottom: 11 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                      {/* Status dot */}
+                      <span style={{
+                        width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+                        background: dotColor,
+                        boxShadow: (p.configured && !p.broken && p.active) ? `0 0 0 3px ${dotColor}33` : 'none',
+                        display: 'inline-block',
+                      }} />
+                      <span style={{ fontSize: 12, fontWeight: p.active ? 800 : 600, color: p.configured ? '#0f172a' : '#94a3b8', whiteSpace: 'nowrap' }}>
+                        {p.name}
+                      </span>
+                      {p.active && (
+                        <span style={{ fontSize: 9, fontWeight: 900, background: '#6366f1', color: '#fff', borderRadius: 4, padding: '1px 5px', letterSpacing: 0.5 }}>
+                          PRIMARY
+                        </span>
+                      )}
+                      {p.broken && (
+                        <span style={{ fontSize: 9, fontWeight: 900, background: '#fef2f2', color: '#ef4444', borderRadius: 4, padding: '1px 5px' }}>
+                          TRIPPED
+                        </span>
+                      )}
+                      {!p.configured && (
+                        <span style={{ fontSize: 9, color: '#94a3b8', fontStyle: 'italic' }}>not set up</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      {p.account && (
+                        <span style={{ fontSize: 10, color: '#94a3b8', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {p.account}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 11, fontWeight: 700, color: nearFull ? '#f59e0b' : p.configured ? '#374151' : '#cbd5e1', minWidth: 52, textAlign: 'right' }}>
+                        {p.configured ? `${used} / ${cap}` : `— / ${cap}`}
+                      </span>
+                    </div>
                   </div>
                   <div style={{ background: '#f1f5f9', borderRadius: 999, height: 5 }}>
-                    <div style={{ width: `${isActive ? pct : 0}%`, background: isActive ? '#6366f1' : '#e2e8f0', height: '100%', borderRadius: 999, transition: 'width 0.5s' }} />
+                    <div style={{
+                      width: `${p.configured && !p.broken ? pct : 0}%`,
+                      background: barColor,
+                      height: '100%', borderRadius: 999, transition: 'width 0.6s',
+                      minWidth: (p.configured && used > 0) ? 4 : 0,
+                    }} />
                   </div>
                 </div>
               );
             })}
-            <div style={{ marginTop: 10, fontSize: 11, color: '#64748b', borderTop: '1px solid #f1f5f9', paddingTop: 8 }}>
-              Daily capacity: <strong>1,100 emails</strong> · Providers chain automatically
+            <div style={{ marginTop: 10, fontSize: 11, color: '#64748b', borderTop: '1px solid #f1f5f9', paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+              <span>Total today: <strong>{(es.providers||[]).reduce((s,p)=>s+(p.sentToday||0),0)} sent</strong></span>
+              <span>All-time: <strong>{es.allTime ? (es.allTime >= 1000 ? `${(es.allTime/1000).toFixed(1)}K` : es.allTime) : '—'}</strong></span>
             </div>
           </div>
 
