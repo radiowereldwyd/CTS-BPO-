@@ -2147,6 +2147,17 @@ async function startAgent() {
     } catch (e) { console.error('[AGENT] AI takeover cron error:', e.message); }
   });
 
+  // ── Warm outreach — every 3 hours (openers, high-score contacts, FL bid follow-ups) ──
+  cron.schedule('0 */3 * * *', () => {
+    require('./warm-outreach').runAllWarmOutreach()
+      .then(r => { if (r.totalSent > 0) logActivity('warm_outreach', `Warm outreach: ${r.totalSent} messages sent`, null, null, 'info'); })
+      .catch(e => logActivity('warm_outreach', `Warm outreach error: ${e.message}`, null, null, 'error'));
+  });
+  // Run warm outreach once 3 minutes after boot
+  setTimeout(() => {
+    require('./warm-outreach').runAllWarmOutreach().catch(() => {});
+  }, 180_000);
+
   // ── System health monitor every 15 minutes — auto-detects and logs issues ──
   cron.schedule('*/15 * * * *', () => {
     runSystemHealthCheck().catch(e => console.error('[MONITOR] Health check error:', e.message));
@@ -2245,6 +2256,7 @@ async function triggerNow(task) {
     case 'web_scrape':             await runWebScraper(); break;
     case 'scrape_outreach':        await runScrapedContactsOutreach(); break;
     case 'scrape_followup':        await runScrapedContactsFollowUps(); break;
+    case 'warm_outreach':          await require('./warm-outreach').runAllWarmOutreach(); break;
     case 'all':
       await gmailReader.processInboxReplies();
       await gmailReader.processBounces();

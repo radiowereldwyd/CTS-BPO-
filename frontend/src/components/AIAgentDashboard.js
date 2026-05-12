@@ -372,6 +372,7 @@ export default function AIAgentDashboard({ token }) {
         <button className={`tab-btn${activeTab==='platform'?' active':''}`} onClick={()=>{setActiveTab('platform');platformRef.current();}}>🎯 Platform Jobs</button>
         <button className={`tab-btn${activeTab==='pipeline'?' active':''}`} onClick={()=>{setActiveTab('pipeline');pipelineRef.current();}}>⚙️ Job Pipeline</button>
         <button className={`tab-btn${activeTab==='analytics'?' active':''}`} onClick={()=>{setActiveTab('analytics');analyticsRef.current();}}>📈 Email Analytics</button>
+        <button className={`tab-btn${activeTab==='warm'?' active':''}`} onClick={()=>setActiveTab('warm')}>🔥 Warm Outreach</button>
       </div>
 
       {/* ══════════════════ OPS TAB ══════════════════════════════════════════ */}
@@ -777,7 +778,8 @@ export default function AIAgentDashboard({ token }) {
               { key: 'contracts',         label: '📋 Assign Contracts',       bg: '#f59e0b' },
               { key: 'bounce_check',      label: '🚫 Process Bounces',        bg: '#64748b' },
               { key: 'payment_chase',     label: '💰 Payment Chase',          bg: '#dc2626' },
-              { key: 'all',               label: '⚡ Run Everything Now',      bg: '#0f172a' },
+              { key: 'warm_outreach',     label: '🔥 Run Warm Outreach',      bg: '#dc7c00' },
+            { key: 'all',               label: '⚡ Run Everything Now',      bg: '#0f172a' },
             ].map(({ key, label, bg }) => (
               <button key={key} className="trig-btn" style={{ background: bg, color: '#fff' }} disabled={!!triggering} onClick={() => trigger(key)}>
                 {triggering === key ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳ </span> : null}
@@ -863,6 +865,157 @@ export default function AIAgentDashboard({ token }) {
       {activeTab === 'analytics' && (
         <EmailAnalyticsPanel data={emailAnalytics} />
       )}
+
+      {/* ══════════════════ WARM OUTREACH TAB ════════════════════════════════ */}
+      {activeTab === 'warm' && (
+        <WarmOutreachPanel token={token} />
+      )}
+    </div>
+  );
+}
+
+// ── Warm Outreach Panel ───────────────────────────────────────────────────────
+function WarmOutreachPanel({ token }) {
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState('');
+  const [msg, setMsg]         = useState('');
+  const tokenRef = useRef(token);
+  useEffect(() => { tokenRef.current = token; }, [token]);
+
+  const fetchData = () => {
+    const h = { Authorization: `Bearer ${tokenRef.current}` };
+    fetch(`${API}/api/warm-outreach/stats`, { headers: h })
+      .then(r => r.json()).then(d => { setData(d); setLoading(false); }).catch(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchData(); const iv = setInterval(fetchData, 20000); return () => clearInterval(iv); }, []);
+
+  const runChannel = async (channel) => {
+    setRunning(channel); setMsg('');
+    try {
+      const h = { Authorization: `Bearer ${tokenRef.current}`, 'Content-Type': 'application/json' };
+      const r = await fetch(`${API}/api/warm-outreach/run`, { method: 'POST', headers: h, body: JSON.stringify({ channel }) });
+      const d = await r.json();
+      setMsg(`Done — ${d.totalSent ?? d.sent ?? 0} warm messages sent`);
+      setTimeout(fetchData, 2000);
+    } catch { setMsg('Error — check backend logs'); }
+    finally { setRunning(''); }
+  };
+
+  const pending = data?.pending || {};
+  const byChannel = data?.byChannel || {};
+  const recent = data?.recent || [];
+
+  const channels = [
+    { key: 'all',           label: '🔥 Run All Warm Channels',     color: '#dc7c00', bg: '#fff7ed', desc: 'Runs all three warm outreach channels at once' },
+    { key: 'opener',        label: '👁️ Email Opener Re-engagement', color: '#7c3aed', bg: '#f5f3ff', desc: `${pending.openerReengagement || 0} contacts pending — people who opened your cold email` },
+    { key: 'high_score',    label: '⭐ High-Score Contacts',        color: '#0ea5e9', bg: '#f0f9ff', desc: `${pending.highScoreWarm || 0} contacts pending — prospect score ≥60, got outreach 3+ days ago` },
+    { key: 'freelancer_bid',label: '💼 Freelancer Bid Follow-ups', color: '#10b981', bg: '#f0fdf4', desc: `${pending.freelancerBidFu || 0} bids pending — Freelancer jobs bid 24–96h ago with no award` },
+  ];
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading warm outreach data...</div>;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ background: 'linear-gradient(135deg,#fff7ed,#fef3c7)', border: '1px solid #fed7aa', borderRadius: 14, padding: '20px 24px', marginBottom: 20 }}>
+        <div style={{ fontWeight: 900, fontSize: 18, color: '#92400e', marginBottom: 4 }}>🔥 Warm Outreach Engine</div>
+        <div style={{ fontSize: 13, color: '#78350f' }}>
+          Unlike cold emails, warm outreach targets people who already showed interest or are actively buying. Converts <strong>5–10× better</strong> than cold.
+        </div>
+        <div style={{ display: 'flex', gap: 20, marginTop: 16, flexWrap: 'wrap' }}>
+          {[
+            { l: 'Total Warm Sent',   v: data?.totalSent || 0,              c: '#dc7c00' },
+            { l: 'Opener Re-engage',  v: byChannel.opener_reengagement || 0, c: '#7c3aed' },
+            { l: 'High-Score Warm',   v: byChannel.high_score_warm || 0,     c: '#0ea5e9' },
+            { l: 'FL Bid Follow-ups', v: byChannel.fl_bid_followup || 0,     c: '#10b981' },
+            { l: 'Pending (openers)', v: pending.openerReengagement || 0,    c: '#f59e0b' },
+            { l: 'Pending (score≥60)',v: pending.highScoreWarm || 0,         c: '#db2777' },
+            { l: 'Pending (FL bids)', v: pending.freelancerBidFu || 0,       c: '#64748b' },
+          ].map(k => (
+            <div key={k.l} style={{ textAlign: 'center', background: '#fff', padding: '8px 14px', borderRadius: 10, border: `1px solid ${k.c}30` }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: k.c }}>{k.v}</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{k.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Channel cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14, marginBottom: 24 }}>
+        {channels.map(ch => (
+          <div key={ch.key} style={{ background: ch.bg, border: `1.5px solid ${ch.color}40`, borderRadius: 12, padding: '18px 20px' }}>
+            <div style={{ fontWeight: 800, fontSize: 13, color: ch.color, marginBottom: 6 }}>{ch.label}</div>
+            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14, lineHeight: 1.5 }}>{ch.desc}</div>
+            <button
+              onClick={() => runChannel(ch.key)}
+              disabled={!!running}
+              style={{ background: ch.color, color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 12, fontWeight: 700, cursor: running ? 'not-allowed' : 'pointer', opacity: running ? 0.7 : 1 }}>
+              {running === ch.key ? '⟳ Running...' : 'Run Now'}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {msg && (
+        <div style={{ padding: '10px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#166534', fontWeight: 600, marginBottom: 20 }}>
+          ✅ {msg}
+        </div>
+      )}
+
+      {/* How it works */}
+      <div style={{ background: '#fff', borderRadius: 14, padding: '20px 24px', marginBottom: 20, boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontWeight: 800, fontSize: 13, color: '#0f172a', marginBottom: 14 }}>How Each Channel Works</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 14 }}>
+          {[
+            { icon: '👁️', title: 'Email Opener Re-engagement', body: 'When someone opens your cold email, a tracking pixel fires. This channel detects those opens and sends a warm, personal follow-up within 24h — shorter, more direct, with a free trial offer.' },
+            { icon: '⭐', title: 'High-Score Contacts', body: 'Scraped contacts with prospect score ≥60 that received outreach 3+ days ago but have no follow-up yet get a warmer, shorter email — focused on their specific business type and pain points.' },
+            { icon: '💼', title: 'Freelancer Bid Follow-ups', body: 'After placing a bid on Freelancer.com, employers often need a nudge. This channel messages them directly via Freelancer messenger 24–96h after bidding — before they forget about you.' },
+          ].map(c => (
+            <div key={c.title} style={{ background: '#f8fafc', borderRadius: 10, padding: '14px 16px' }}>
+              <div style={{ fontSize: 20, marginBottom: 8 }}>{c.icon}</div>
+              <div style={{ fontWeight: 700, fontSize: 12, color: '#0f172a', marginBottom: 6 }}>{c.title}</div>
+              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.6 }}>{c.body}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent activity */}
+      <div style={{ background: '#fff', borderRadius: 14, boxShadow: '0 1px 6px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontWeight: 800, fontSize: 13, color: '#0f172a' }}>
+          Recent Warm Outreach Activity
+        </div>
+        {recent.length === 0 ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>🔥</div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>No warm outreach sent yet</div>
+            <div style={{ fontSize: 13 }}>Run a channel above to start — or wait for email opens to accumulate (tracking is already live).</div>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 160px 80px', gap: 8, padding: '10px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1 }}>
+              <span>Channel</span><span>Contact / Company</span><span>Message</span><span>Sent</span>
+            </div>
+            {recent.map(r => {
+              const chColor = { opener_reengagement: '#7c3aed', high_score_warm: '#0ea5e9', fl_bid_followup: '#10b981' }[r.channel] || '#94a3b8';
+              const chLabel = { opener_reengagement: '👁️ Opener', high_score_warm: '⭐ High-Score', fl_bid_followup: '💼 FL Bid' }[r.channel] || r.channel;
+              return (
+                <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 160px 80px', gap: 8, padding: '11px 20px', borderBottom: '1px solid #f1f5f9', alignItems: 'center', fontSize: 12 }}>
+                  <span style={{ background: `${chColor}15`, color: chColor, padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 700 }}>{chLabel}</span>
+                  <div>
+                    <div style={{ fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.company || r.contact_ref}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8' }}>{r.contact_ref}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.message_sent}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8' }}>{timeAgo(r.sent_at)}</div>
+                </div>
+              );
+            })}
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -1639,6 +1639,30 @@ app.get('/api/ai-agent/platform-jobs/bid-status', requireAuth, requireAdmin, asy
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Warm Outreach API ─────────────────────────────────────────────────────────
+// GET /api/warm-outreach/stats — dashboard stats
+app.get('/api/warm-outreach/stats', requireAuth, async (req, res) => {
+  try {
+    const warmOutreach = require('./modules/warm-outreach');
+    const stats = await warmOutreach.getWarmStats();
+    res.json(stats);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/warm-outreach/run — run a specific warm channel or all
+app.post('/api/warm-outreach/run', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const warmOutreach = require('./modules/warm-outreach');
+    const { channel = 'all' } = req.body;
+    let result;
+    if (channel === 'opener')         result = await warmOutreach.runEmailOpenerWarm();
+    else if (channel === 'high_score') result = await warmOutreach.runHighScoreWarmSequence();
+    else if (channel === 'freelancer_bid') result = await warmOutreach.runFreelancerBidFollowUp();
+    else                               result = await warmOutreach.runAllWarmOutreach();
+    res.json({ ok: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/platform-jobs/approve/:id — one-click approve from email link (no login needed)
 app.get('/api/platform-jobs/approve/:id', async (req, res) => {
   const token = req.query.token;
