@@ -640,7 +640,17 @@ async function scrapeGooglePlaces() {
       totalInserted += inserted;
       console.log(`📍 [SCRAPER] Places "${query}" → ${places.length} businesses, ${inserted} new contacts`);
     } catch (err) {
-      console.error(`❌ [SCRAPER] Places error for "${query}":`, err.response?.data?.error?.message || err.message);
+      const status = err.response?.status;
+      const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || '';
+      if (status === 429 || errMsg.toLowerCase().includes('quota')) {
+        console.warn('⚠️  [SCRAPER] Places daily quota reached — stopping Places for this run (resets at midnight Pacific)');
+        break;
+      }
+      if (status === 403 || errMsg.toLowerCase().includes('not enabled') || errMsg.toLowerCase().includes('does not have')) {
+        console.warn('⚠️  [SCRAPER] Places API not enabled on GCP project — skipping Places source');
+        break;
+      }
+      console.error(`❌ [SCRAPER] Places error for "${query}":`, errMsg);
     }
     await sleep(SCRAPE_DELAY_MS);
   }

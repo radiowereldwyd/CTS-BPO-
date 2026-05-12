@@ -397,7 +397,7 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
       };
     })(),
 
-    // 3. Places API (New) — disabled = not enabled in GCP, not a code error
+    // 3. Places API (New) — 429 = enabled but daily quota hit (still working), 403/404 = not enabled
     (async () => {
       const token = _saToken;
       const headers = token
@@ -406,14 +406,21 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
       const r = await axios.post('https://places.googleapis.com/v1/places:searchText',
         { textQuery: 'law firm', maxResultCount: 1 },
         { headers, validateStatus: () => true, timeout: 8000 });
-      const ok = r.status === 200;
+      const ok       = r.status === 200;
+      const errMsg   = r.data?.error?.message || r.data?.message || `HTTP ${r.status}`;
+      const isQuota  = r.status === 429 || errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('rate');
+      const notEnabled = !ok && !isQuota && (r.status === 403 || r.status === 404 ||
+        errMsg.toLowerCase().includes('not enabled') || errMsg.toLowerCase().includes('disabled') ||
+        errMsg.toLowerCase().includes('does not have'));
       return {
         api: 'Places API (New)',
-        status: ok ? 'ok' : 'disabled',
-        message: ok ? `Working — found ${r.data?.places?.length || 0} result(s)`
-          : 'Not enabled in Google Cloud Console — scraper falls back to DuckDuckGo + SerpAPI automatically',
+        status: ok ? 'ok' : (isQuota ? 'ok' : 'disabled'),
+        message: ok        ? `Working — found ${r.data?.places?.length || 0} result(s)`
+          : isQuota        ? 'API enabled — daily quota reached; resets at midnight Pacific. Scraper continues with DuckDuckGo + SerpAPI.'
+          : notEnabled     ? 'Not enabled in Google Cloud Console — enable it to add Places lead scraping'
+          : errMsg,
         authMethod: token ? 'service_account' : 'api_key',
-        enableUrl: ok ? null : `https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=${PROJECT}`,
+        enableUrl: (ok || isQuota) ? null : `https://console.developers.google.com/apis/api/places.googleapis.com/overview?project=${PROJECT}`,
       };
     })(),
 
@@ -444,25 +451,30 @@ app.get('/api/google-cloud/status', requireAuth, async (req, res) => {
         { params: { key: KEY, cx: CSE_ID, q: 'BPO outsourcing' }, validateStatus: () => true, timeout: 8000 });
       const ok  = r.status === 200;
       const msg = r.data?.error?.message || `HTTP ${r.status}`;
-      // Key restriction = GCP API key has HTTP referrer limits; server-side calls blocked
-      const isKeyRestriction = !ok && (r.status === 400 || r.status === 403) &&
+      // "does not have access" = API not enabled on the GCP project
+      const notEnabledOnProject = !ok && (
+        msg.toLowerCase().includes('does not have') ||
+        msg.toLowerCase().includes('not enabled') ||
+        msg.toLowerCase().includes('disabled') ||
+        msg.toLowerCase().includes('has not been used')
+      );
+      // Key restriction = HTTP referrer/IP restriction on the API key itself
+      const isKeyRestriction = !ok && !notEnabledOnProject && (r.status === 400 || r.status === 403) &&
         (msg.toLowerCase().includes('api key') || msg.toLowerCase().includes('not valid') ||
          msg.toLowerCase().includes('restrict') || msg.toLowerCase().includes('referer'));
       const isQuota = !ok && (r.status === 429 || msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('rate'));
-      const needsEnable = !ok && !isKeyRestriction && !isQuota &&
-        (msg.toLowerCase().includes('not enabled') || msg.toLowerCase().includes('disabled') || r.status === 403);
       return {
         api: 'Custom Search (CSE)',
         status: ok ? 'ok' : 'disabled',
         message: ok
           ? `Working — ${r.data?.searchInformation?.totalResults || 0} results`
-          : isKeyRestriction
-            ? 'API key has referrer restrictions — in Google Cloud Console → Credentials → your API key → remove HTTP referrer restrictions (or create an unrestricted server key)'
-            : isQuota
+          : isQuota
             ? 'Daily quota reached (100 free queries/day) — resets at midnight Pacific'
-            : needsEnable
-            ? 'API not enabled — click to enable in Google Cloud Console'
-            : msg,
+          : notEnabledOnProject
+            ? 'Custom Search JSON API not enabled on this GCP project — enable it in Google Cloud Console to activate CSE lead scraping'
+          : isKeyRestriction
+            ? 'API key has referrer restrictions — in Google Cloud Console → Credentials → API key → remove HTTP referrer restrictions'
+          : msg,
         authMethod: 'api_key',
         enableUrl: (ok || isKeyRestriction || isQuota) ? null : `https://console.cloud.google.com/apis/library/customsearch.googleapis.com?project=${PROJECT}`,
       };
