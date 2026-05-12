@@ -139,16 +139,16 @@ const _brokenProviders = new Set();
 
 // Auto-skip providers that are known broken at startup
 (function preflightProviders() {
-  // MailerLite — attempt live connection test; mark broken only if API rejects
+  // MailerLite — preflight using /api/subscribers (works on all plan types)
   if (MAILERLITE_API_KEY) {
     const axios = require('axios');
-    axios.get('https://connect.mailerlite.com/api/campaigns', {
+    axios.get('https://connect.mailerlite.com/api/subscribers?limit=1', {
       headers: { Authorization: `Bearer ${MAILERLITE_API_KEY}`, Accept: 'application/json' },
       timeout: 8000, validateStatus: () => true,
     }).then(r => {
       if (r.status === 401 || r.status === 403) {
         _brokenProviders.add('mailerlite');
-        console.warn(`[EMAIL] MailerLite FAILED preflight (${r.status}) — marking broken`);
+        console.warn(`[EMAIL] MailerLite FAILED preflight (${r.status}) — check MAILERLITE_API_KEY`);
       } else {
         console.log(`[EMAIL] ✅ MailerLite ready — API key valid (HTTP ${r.status})`);
       }
