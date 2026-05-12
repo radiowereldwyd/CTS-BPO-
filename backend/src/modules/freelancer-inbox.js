@@ -118,9 +118,17 @@ async function fetchAllThreads() {
 }
 
 // ── Get messages for a specific thread ───────────────────────────────────────
+// NOTE: /threads/{id}/messages/ returns 405 on free-tier tokens.
+// Correct approach: fetch the thread list filtered by id with message_details=true.
 async function fetchThreadMessages(threadId) {
-  const r = await flGet(`/messages/0.1/threads/${threadId}/messages/`, { limit: 100 });
-  const msgs = r.data?.result?.messages || [];
+  const r = await flGet('/messages/0.1/threads/', {
+    'ids[]': threadId,
+    message_details: true,
+    limit: 100,
+  });
+  const tid = parseInt(threadId, 10);
+  const thread = (r.data?.result?.threads || []).find(t => t.id === tid || t.thread?.id === tid);
+  const msgs = thread?.messages || [];
   return msgs.map(m => ({
     msg_id:    m.id,
     thread_id: threadId,
@@ -180,6 +188,17 @@ function buildAutoReply(incomingText, projectTitle) {
   return null; // no auto-reply template matched
 }
 
+// ── Save a message list to DB ─────────────────────────────────────────────────
+async function saveMsgs(msgs) {
+  for (const m of msgs) {
+    if (!m.msg_id) continue;
+    await db.query(`
+      INSERT INTO fl_messages (msg_id, thread_id, from_user, direction, message, sent_at)
+      VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (msg_id) DO NOTHING
+    `, [m.msg_id, m.thread_id, m.from_user, m.direction, m.message || '', m.sent_at]);
+  }
+}
+
 // ── Sync + auto-reply loop ────────────────────────────────────────────────────
 async function syncInbox() {
   if (!FL_TOKEN()) return;
@@ -188,6 +207,11 @@ async function syncInbox() {
     const threads = await fetchAllThreads();
 
     for (const thread of threads) {
+      // Determine best last_msg_at
+      const lastInline = thread.messages.length > 0
+        ? thread.messages[thread.messages.length - 1].sent_at
+        : null;
+
       // Upsert thread record
       await db.query(`
         INSERT INTO fl_threads (thread_id, project_id, other_user_id, other_name, other_username, project_title, folder, is_read, last_msg_at, updated_at)
@@ -195,24 +219,31 @@ async function syncInbox() {
         ON CONFLICT (thread_id) DO UPDATE SET
           is_read=EXCLUDED.is_read, folder=EXCLUDED.folder,
           other_name=EXCLUDED.other_name, project_title=EXCLUDED.project_title,
-          last_msg_at=EXCLUDED.last_msg_at, updated_at=NOW()
+          last_msg_at=COALESCE(EXCLUDED.last_msg_at, fl_threads.last_msg_at),
+          updated_at=NOW()
       `, [
         thread.thread_id, thread.project_id, thread.other_user_id,
         thread.other_name, thread.other_username, thread.project_title,
-        thread.folder, thread.is_read,
-        thread.messages.length > 0 ? thread.messages[thread.messages.length - 1].sent_at : null
+        thread.folder, thread.is_read, lastInline,
       ]);
 
-      // Fetch full messages for this thread
-      const fullMsgs = await fetchThreadMessages(thread.thread_id);
-      for (const m of fullMsgs) {
-        await db.query(`
-          INSERT INTO fl_messages (msg_id, thread_id, from_user, direction, message, sent_at)
-          VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (msg_id) DO NOTHING
-        `, [m.msg_id, m.thread_id, m.from_user, m.direction, m.message, m.sent_at]);
+      // 1) Save the inline messages that came with fetchAllThreads (message_details: true)
+      if (thread.messages.length > 0) {
+        await saveMsgs(thread.messages);
       }
 
-      // Check for unread incoming messages that haven't been auto-replied to
+      // 2) Also fetch full message list from the dedicated messages endpoint
+      try {
+        const fullMsgs = await fetchThreadMessages(thread.thread_id);
+        if (fullMsgs.length > 0) {
+          await saveMsgs(fullMsgs);
+          console.log(`[FL-INBOX] Thread ${thread.thread_id}: saved ${fullMsgs.length} message(s)`);
+        }
+      } catch (msgErr) {
+        console.warn(`[FL-INBOX] Could not fetch messages for thread ${thread.thread_id}:`, msgErr.message);
+      }
+
+      // 3) Check for unread incoming messages that haven't been auto-replied to
       const unhandled = await db.query(`
         SELECT m.msg_id, m.message FROM fl_messages m
         WHERE m.thread_id=$1 AND m.direction='received' AND m.auto_replied=FALSE
@@ -227,7 +258,6 @@ async function syncInbox() {
             await db.query(`UPDATE fl_messages SET auto_replied=TRUE WHERE msg_id=$1`, [row.msg_id]);
           }
         } else {
-          // Mark as handled even if no template (admin will review manually)
           await db.query(`UPDATE fl_messages SET auto_replied=TRUE WHERE msg_id=$1`, [row.msg_id]);
         }
       }
@@ -254,7 +284,22 @@ async function getInboxData() {
 async function getThreadConversation(threadId) {
   await ensureTables();
   const t = await db.query(`SELECT * FROM fl_threads WHERE thread_id=$1`, [threadId]);
-  const m = await db.query(`SELECT * FROM fl_messages WHERE thread_id=$1 ORDER BY sent_at ASC`, [threadId]);
+  let m = await db.query(`SELECT * FROM fl_messages WHERE thread_id=$1 ORDER BY sent_at ASC`, [threadId]);
+
+  // If DB has no messages but Freelancer may have some, do a live fetch and save them
+  if (m.rows.length === 0 && FL_TOKEN()) {
+    try {
+      const live = await fetchThreadMessages(threadId);
+      if (live.length > 0) {
+        await saveMsgs(live);
+        m = await db.query(`SELECT * FROM fl_messages WHERE thread_id=$1 ORDER BY sent_at ASC`, [threadId]);
+        console.log(`[FL-INBOX] Live-fetched ${live.length} message(s) for thread ${threadId}`);
+      }
+    } catch (e) {
+      console.warn(`[FL-INBOX] Live fetch failed for thread ${threadId}:`, e.message);
+    }
+  }
+
   return { thread: t.rows[0] || null, messages: m.rows };
 }
 
