@@ -129,9 +129,9 @@ function isEmailPaused() { return emailPaused; }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Sender detection — priority: Gmail > Brevo > Mailjet > Mailgun > MailerLite ──
-// Gmail is first (500/day, already verified working).
-// Brevo is second — 300/day free, reliable API, no sandbox restrictions.
+// ── Sender detection — priority: Brevo > Gmail > Mailjet > Mailgun > MailerLite ──
+// Brevo is FIRST — proper ESP with SPF/DKIM, better cold-email deliverability.
+// Gmail is second (500/day) but flagged as spam more often for cold outreach.
 // MailerLite transactional is a paid add-on (404 if not enabled).
 // Mailgun sandbox domains cannot send to external addresses.
 // Providers that return 404/403/401 are skipped for the session.
@@ -150,50 +150,29 @@ const _brokenProviders = new Set();
     console.warn('[EMAIL] Mailgun SKIPPED — sandbox domain detected; add a real verified domain to enable Mailgun');
   }
   if (BREVO_API_KEY) {
-    console.log('[EMAIL] Brevo configured — 274 credits available, ready as fallback');
+    // Check live credit count from Brevo API
+    const axios = require('axios');
+    axios.get('https://api.brevo.com/v3/account', { headers: { 'api-key': BREVO_API_KEY }, timeout: 8000 })
+      .then(r => {
+        const plan = (r.data?.plan || []).find(p => p.type === 'free' || p.type === 'payAsYouGo');
+        const credits = plan?.credits ?? '?';
+        console.log(`[EMAIL] ✅ Brevo ready — ${credits} daily credits (primary sender)`);
+      })
+      .catch(() => console.log('[EMAIL] ✅ Brevo configured — ready as primary sender'));
   }
   if (MAILERSEND_API_KEY) {
-    // MailerSend returns 403 (no permissions on this account) — pre-skip it
     _brokenProviders.add('mailersend');
-    console.warn('[EMAIL] MailerSend SKIPPED — API token lacks required permissions (403)');
   }
   if (MAILJET_API_KEY) {
-    // Mailjet returns 401 on this account — pre-skip it
     _brokenProviders.add('mailjet');
-    console.warn('[EMAIL] Mailjet SKIPPED — API credentials rejected (401)');
   }
 })();
 
-// ── Async Gmail preflight — tries OAuth2 first, falls back to App Password ───
+// ── Async Gmail preflight — App Password only (OAuth2 creds are misconfigured) ──
 let _gmailAuthMode = null; // 'oauth2' | 'apppass' | null
 
 async function preflightGmailAsync() {
-  // Try OAuth2 first if credentials are available
-  if (GMAIL_USER && GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
-    try {
-      const oauthTransport = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          type: 'OAuth2',
-          user: GMAIL_USER,
-          clientId: GMAIL_CLIENT_ID,
-          clientSecret: GMAIL_CLIENT_SECRET,
-          refreshToken: GMAIL_REFRESH_TOKEN,
-        },
-      });
-      await oauthTransport.verify();
-      _gmailAuthMode = 'oauth2';
-      transporter = oauthTransport;
-      _brokenProviders.delete('gmail');
-      console.log(`[EMAIL] ✅ Gmail OAuth2 preflight OK — ${GMAIL_USER} authenticated via OAuth`);
-      return;
-    } catch (e) {
-      console.warn(`[EMAIL] ⚠️ Gmail OAuth2 preflight failed (${e.message}) — falling back to App Password`);
-      transporter = null; // reset so App Password transporter can be built
-    }
-  }
-
-  // Fall back to App Password
+  // App Password only — OAuth2 client secret is invalid, skip it silently
   if (!GMAIL_USER || !GMAIL_APP_PASS) return;
   try {
     const appPassTransport = nodemailer.createTransport({
@@ -206,11 +185,11 @@ async function preflightGmailAsync() {
     _gmailAuthMode = 'apppass';
     transporter = appPassTransport;
     _brokenProviders.delete('gmail');
-    console.log(`[EMAIL] ✅ Gmail App Password preflight OK — ${GMAIL_USER} authenticated`);
+    console.log(`[EMAIL] ✅ Gmail App Password ready — ${GMAIL_USER} (backup sender)`);
   } catch (e) {
     if (/535|authentication|credentials|login|EAUTH|password/i.test(e.message) || e.code === 'EAUTH' || e.responseCode === 535) {
       markBroken('gmail');
-      console.warn(`[EMAIL] ⚠️ Gmail App Password preflight FAILED — switching to Brevo. (${e.message})`);
+      console.warn(`[EMAIL] ⚠️ Gmail App Password failed — Brevo is sole sender. (${e.message})`);
     } else {
       console.warn(`[EMAIL] Gmail preflight warning (transient): ${e.message}`);
     }
@@ -222,13 +201,14 @@ preflightGmailAsync();
 function markBroken(provider) {
   if (!_brokenProviders.has(provider)) {
     _brokenProviders.add(provider);
-    console.warn(`[EMAIL] ⚠️ Provider '${provider}' marked broken (404/403) — falling back to next provider`);
+    console.warn(`[EMAIL] ⚠️ Provider '${provider}' marked broken — falling back to next provider`);
   }
 }
 
 function getSenderMode() {
-  if (GMAIL_USER && GMAIL_APP_PASS && !_brokenProviders.has('gmail'))            return 'gmail';
+  // Brevo first — proper ESP with SPF/DKIM, far better cold-email deliverability than Gmail
   if (BREVO_API_KEY && !_brokenProviders.has('brevo'))                           return 'brevo';
+  if (GMAIL_USER && GMAIL_APP_PASS && !_brokenProviders.has('gmail'))            return 'gmail';
   if (MAILERSEND_API_KEY && !_brokenProviders.has('mailersend'))                 return 'mailersend';
   if (MAILJET_API_KEY && MAILJET_SEC_KEY && !_brokenProviders.has('mailjet'))    return 'mailjet';
   if (MAILGUN_KEY && MAILGUN_DOMAIN && !_brokenProviders.has('mailgun'))         return 'mailgun';
