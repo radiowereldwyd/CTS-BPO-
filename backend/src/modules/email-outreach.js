@@ -1,7 +1,7 @@
 /**
  * CTS BPO — AI Email Outreach & Marketing Engine
  * Full sales funnel templates: Cold Outreach → Negotiation → Contract → Invoice → Payment → Completion
- * Sends via Gmail SMTP (App Password). Falls back to console log when unconfigured.
+ * Sends via Gmail OAuth2 (preferred) → Gmail App Password → Brevo → other providers.
  */
 
 const nodemailer     = require('nodemailer');
@@ -9,8 +9,11 @@ const axios          = require('axios');
 const auditLogger    = require('./audit-logger');
 const emailAnalytics = require('./email-analytics');
 
-const GMAIL_USER      = process.env.GMAIL_USER         || process.env.SMTP_USER || '';
-const GMAIL_APP_PASS  = (process.env.GMAIL_APP_PASSWORD  || process.env.SMTP_PASS || '').replace(/\s+/g, '');
+const GMAIL_USER         = process.env.GMAIL_USER         || process.env.SMTP_USER || '';
+const GMAIL_APP_PASS     = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').replace(/\s+/g, '');
+const GMAIL_CLIENT_ID    = process.env.GMAIL_CLIENT_ID    || '';
+const GMAIL_CLIENT_SECRET= process.env.GMAIL_CLIENT_SECRET|| '';
+const GMAIL_REFRESH_TOKEN= process.env.GMAIL_REFRESH_TOKEN|| '';
 const SMTP_HOST       = process.env.SMTP_HOST           || 'smtp.gmail.com';
 const SMTP_PORT       = parseInt(process.env.SMTP_PORT  || '587', 10);
 const MAILGUN_KEY     = process.env.MAILGUN_API_KEY     || '';
@@ -161,27 +164,55 @@ const _brokenProviders = new Set();
   }
 })();
 
-// ── Async Gmail preflight — marks Gmail broken if auth fails ─────────────────
-// Callable both at startup and after midnight reset.
+// ── Async Gmail preflight — tries OAuth2 first, falls back to App Password ───
+let _gmailAuthMode = null; // 'oauth2' | 'apppass' | null
+
 async function preflightGmailAsync() {
+  // Try OAuth2 first if credentials are available
+  if (GMAIL_USER && GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN) {
+    try {
+      const oauthTransport = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          type: 'OAuth2',
+          user: GMAIL_USER,
+          clientId: GMAIL_CLIENT_ID,
+          clientSecret: GMAIL_CLIENT_SECRET,
+          refreshToken: GMAIL_REFRESH_TOKEN,
+        },
+      });
+      await oauthTransport.verify();
+      _gmailAuthMode = 'oauth2';
+      transporter = oauthTransport;
+      _brokenProviders.delete('gmail');
+      console.log(`[EMAIL] ✅ Gmail OAuth2 preflight OK — ${GMAIL_USER} authenticated via OAuth`);
+      return;
+    } catch (e) {
+      console.warn(`[EMAIL] ⚠️ Gmail OAuth2 preflight failed (${e.message}) — falling back to App Password`);
+      transporter = null; // reset so App Password transporter can be built
+    }
+  }
+
+  // Fall back to App Password
   if (!GMAIL_USER || !GMAIL_APP_PASS) return;
   try {
-    const testTransport = nodemailer.createTransport({
+    const appPassTransport = nodemailer.createTransport({
       host: SMTP_HOST, port: SMTP_PORT,
       secure: SMTP_PORT === 465,
       auth: { user: GMAIL_USER, pass: GMAIL_APP_PASS },
       connectionTimeout: 10000,
     });
-    await testTransport.verify();
-    // Auth works — remove Gmail from broken set so it can be used
+    await appPassTransport.verify();
+    _gmailAuthMode = 'apppass';
+    transporter = appPassTransport;
     _brokenProviders.delete('gmail');
-    console.log(`[EMAIL] ✅ Gmail SMTP preflight OK — ${GMAIL_USER} authenticated`);
+    console.log(`[EMAIL] ✅ Gmail App Password preflight OK — ${GMAIL_USER} authenticated`);
   } catch (e) {
     if (/535|authentication|credentials|login|EAUTH|password/i.test(e.message) || e.code === 'EAUTH' || e.responseCode === 535) {
       markBroken('gmail');
-      console.warn(`[EMAIL] ⚠️ Gmail SMTP preflight FAILED — bad credentials, switching to Brevo. (${e.message})`);
+      console.warn(`[EMAIL] ⚠️ Gmail App Password preflight FAILED — switching to Brevo. (${e.message})`);
     } else {
-      console.warn(`[EMAIL] Gmail SMTP preflight warning (transient): ${e.message}`);
+      console.warn(`[EMAIL] Gmail preflight warning (transient): ${e.message}`);
     }
   }
 }
@@ -208,22 +239,19 @@ function getSenderMode() {
 function isConfigured() { return !!getSenderMode(); }
 function areAllProvidersBroken() { return getSenderMode() === null; }
 
-// ── Gmail SMTP transporter ──────────────────────────────────────────────────
+// ── Gmail transporter — set by preflightGmailAsync (OAuth2 or App Password) ──
 let transporter = null;
 function getTransporter() {
+  // transporter is set by preflightGmailAsync; return whatever was configured
   if (transporter) return transporter;
-  console.log(`[EMAIL] Config — mode:${getSenderMode()||'NONE'} user:${GMAIL_USER||'(not set)'} pass_len:${GMAIL_APP_PASS.length} host:${SMTP_HOST}:${SMTP_PORT}`);
+  // Not yet initialised (startup race) — build App Password fallback synchronously
+  console.log(`[EMAIL] Config — mode:${getSenderMode()||'NONE'} user:${GMAIL_USER||'(not set)'} auth:${_gmailAuthMode||'pending'}`);
   if (GMAIL_USER && GMAIL_APP_PASS) {
     transporter = nodemailer.createTransport({
       host: SMTP_HOST, port: SMTP_PORT,
       secure: SMTP_PORT === 465,
       auth: { user: GMAIL_USER, pass: GMAIL_APP_PASS },
       pool: true, maxConnections: 5, maxMessages: 100,
-    });
-    // Remove the X-Mailer header so recipients can't see "nodemailer"
-    transporter.use('compile', (mail, next) => {
-      mail.data.headers = { ...(mail.data.headers || {}), 'X-Mailer': undefined };
-      next();
     });
   }
   return transporter;
