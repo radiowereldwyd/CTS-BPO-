@@ -149,38 +149,66 @@ function isRelevant(snippet, query, businessType) {
 }
 
 // ── Target industries × cities ─────────────────────────────────────────────
-// Only high-value BPO prospect industries — NOT generic consumer businesses
+// ONLY companies that regularly outsource back-office operations to BPO firms.
+// Consumer-facing small businesses (clinics, vets, architects, non-profits etc.)
+// almost never buy BPO services — removed entirely.
 const BUSINESS_TYPES = [
-  // Legal
-  'law firm', 'solicitor firm', 'attorney office', 'legal practice', 'barrister chambers',
-  // Medical & Health
-  'medical clinic', 'dental practice', 'dental office', 'optometry practice', 'physiotherapy clinic',
-  'chiropractic clinic', 'veterinary clinic', 'specialist medical practice', 'private hospital',
-  'pharmacy', 'radiology clinic', 'pathology lab', 'mental health clinic', 'GP practice',
-  // Finance & Accounting
-  'accounting firm', 'chartered accountant', 'bookkeeping firm', 'tax preparation company',
-  'financial advisory firm', 'mortgage broker', 'investment firm', 'insurance broker',
-  'financial planning firm', 'payroll services company', 'audit firm',
-  // Real Estate & Property
-  'real estate agency', 'property management company', 'real estate developer',
-  'estate agent', 'commercial property company', 'property investment firm',
-  // Business Services
-  'management consulting firm', 'HR consulting firm', 'recruitment agency', 'staffing agency',
-  'training company', 'business coaching firm', 'IT services company', 'managed IT services',
-  // E-commerce & Retail
-  'e-commerce company', 'online retailer', 'retail chain', 'wholesale distributor',
-  // Logistics & Supply Chain
-  'logistics company', 'freight forwarding company', 'courier service', 'supply chain company',
-  'warehousing company', 'shipping company',
-  // Healthcare Administration
-  'healthcare company', 'pharmaceutical company', 'medical billing company',
-  'home care agency', 'disability services company',
-  // Professional Services
-  'engineering firm', 'architecture firm', 'marketing agency', 'advertising agency',
-  'PR firm', 'event management company', 'travel agency', 'hospitality company',
-  // Other High-Outsource Sectors
-  'construction company', 'manufacturing company', 'non-profit organization',
-  'education company', 'financial services company', 'insurance company',
+  // ── Finance & Insurance (highest BPO adoption globally) ──────────────────
+  'financial services company',
+  'insurance company',
+  'insurance brokerage',
+  'accounting firm',
+  'chartered accountant practice',
+  'bookkeeping company',
+  'payroll services company',
+  'tax advisory firm',
+  'audit firm',
+  'wealth management company',
+  'mortgage company',
+  'fintech company',
+  'credit union',
+  'asset management firm',
+  // ── Legal (high document & admin outsourcing) ─────────────────────────────
+  'law firm',
+  'legal services company',
+  'solicitor firm',
+  // ── Healthcare Administration (NOT consumer clinics) ──────────────────────
+  'medical billing company',
+  'healthcare management company',
+  'health insurance company',
+  'pharmacy benefits company',
+  'hospital administration company',
+  // ── E-Commerce & Retail (product data, customer support outsourcing) ──────
+  'e-commerce company',
+  'online retail company',
+  'wholesale distributor',
+  'retail chain',
+  // ── Logistics & Supply Chain (data, invoicing, freight docs) ─────────────
+  'logistics company',
+  'freight forwarding company',
+  'supply chain company',
+  'third-party logistics company',
+  'warehousing company',
+  // ── Technology & IT Services (back-office, data, support) ─────────────────
+  'software company',
+  'IT services company',
+  'managed services provider',
+  'SaaS company',
+  'technology company',
+  // ── HR, Recruitment & Staffing (high data/admin needs) ────────────────────
+  'recruitment agency',
+  'staffing agency',
+  'HR outsourcing company',
+  'workforce management company',
+  // ── Property Management (leasing admin, data entry, tenant management) ────
+  'property management company',
+  'commercial real estate company',
+  'real estate investment company',
+  // ── Business Process & Consulting ─────────────────────────────────────────
+  'management consulting firm',
+  'business process outsourcing company',
+  'shared services company',
+  'back office services company',
 ];
 
 const SEARCH_CITIES = [
@@ -477,6 +505,27 @@ async function runMxScoringBatch({ limit = 60 } = {}) {
   }
 }
 
+// ── Infer business type from query string ─────────────────────────────────────
+// Used for DDG / Bing / SerpAPI contacts that don't carry a businessType field.
+function inferBusinessType(query) {
+  const q = (query || '').toLowerCase();
+  if (/insurance company|insurance brokerage|health insur/.test(q))  return 'insurance company';
+  if (/financial services|fintech|wealth management|asset management/.test(q)) return 'financial services company';
+  if (/accounting firm|chartered accountant|bookkeeping|cpa firm/.test(q)) return 'accounting firm';
+  if (/payroll company|payroll services/.test(q))                     return 'payroll services company';
+  if (/law firm|solicitor|attorney|legal (firm|practice|services)/.test(q)) return 'law firm';
+  if (/logistics company|freight forward|supply chain|3pl|third.party logist/.test(q)) return 'logistics company';
+  if (/e.commerce|online retail|wholesale distributor/.test(q))       return 'e-commerce company';
+  if (/recruitment agency|staffing agency|staffing company/.test(q))  return 'recruitment agency';
+  if (/hr outsourc|hr consulting|workforce management/.test(q))       return 'hr outsourcing company';
+  if (/property management|commercial real estate/.test(q))           return 'property management company';
+  if (/software company|saas company|technology company/.test(q))     return 'software company';
+  if (/it services|managed services|it company/.test(q))              return 'it services company';
+  if (/medical billing|healthcare management|health insurance/.test(q)) return 'medical billing company';
+  if (/back office outsourc|bpo|data entry outsourc|outsource data|document processing outsourc/.test(q)) return 'business process outsourcing company';
+  return null; // unknown — no points for type, but still stored
+}
+
 // ── Helper: is this domain junk / a competitor? ──────────────────────────────
 function isJunkDomain(domain) {
   if (!domain) return true;
@@ -653,89 +702,78 @@ async function scrapeGoogleCSE() {
 }
 
 // ── 3. DuckDuckGo HTML scraping ─────────────────────────────────────────────
-// Queries target companies that NEED BPO — NOT other BPO/outsourcing companies
+// HIGH-INTENT queries — companies actively seeking outsourcing / BPO services
 const DDG_QUERIES = [
-  // Legal
-  'law firm UK "contact us" "admin" OR "document management" -site:linkedin.com',
-  'solicitor firm UK "contact" email -site:linkedin.com',
-  'attorney office USA "contact us" "admin support" -site:linkedin.com',
-  'legal practice Australia "contact us" "documents" OR "records" -site:linkedin.com',
-  'law firm South Africa "contact us" -site:linkedin.com',
-  'legal firm Canada "contact us" "admin" -site:linkedin.com',
-  'barrister chambers UK "contact" email -site:linkedin.com',
-  // Medical & Dental
-  'accounting firm Australia "contact us" "bookkeeping" OR "data capture" -site:linkedin.com',
-  'dental practice USA "contact us" "records" OR "billing" -site:linkedin.com',
-  'medical clinic South Africa "contact us" "admin" OR "records" -site:linkedin.com',
-  'GP practice UK "contact us" -site:linkedin.com',
-  'physiotherapy clinic Australia "contact us" "admin" -site:linkedin.com',
-  'chiropractic clinic USA "contact us" "records" -site:linkedin.com',
-  'optometry practice Canada "contact us" "billing" OR "records" -site:linkedin.com',
-  'veterinary clinic USA "contact us" "records" OR "admin" -site:linkedin.com',
-  'dental office USA "contact" email "billing" -site:linkedin.com',
-  'private hospital South Africa "contact us" "admin" -site:linkedin.com',
-  'mental health clinic UK "contact us" "records" -site:linkedin.com',
-  // Finance & Accounting
-  'accounting firm UK "contact us" "bookkeeping" OR "payroll" -site:linkedin.com',
-  'chartered accountant South Africa "contact us" "data entry" -site:linkedin.com',
-  'mortgage broker USA "contact us" "documents" OR "processing" -site:linkedin.com',
-  'investment firm UK "contact us" "reports" OR "data" -site:linkedin.com',
-  'financial advisory firm South Africa "contact us" -site:linkedin.com',
-  'tax preparation company USA "contact us" -site:linkedin.com',
-  'bookkeeping firm Australia "contact us" "small business" -site:linkedin.com',
-  'insurance broker UK "contact us" "admin" OR "documents" -site:linkedin.com',
-  'insurance broker South Africa "contact" email -site:linkedin.com',
-  'payroll company Australia "contact us" -site:linkedin.com',
-  'audit firm UK "contact us" -site:linkedin.com',
-  // Real Estate & Property
-  'real estate agency Canada "contact us" "admin" OR "listings" -site:linkedin.com',
+  // ── Direct buying-intent signals ─────────────────────────────────────────
+  '"outsource data entry" company "contact us" -site:linkedin.com',
+  '"data entry outsourcing" services "get a quote" -site:linkedin.com',
+  '"back office outsourcing" company "contact" -site:linkedin.com',
+  '"document processing" outsource company "contact us" -site:linkedin.com',
+  '"virtual assistant" company "hire" "contact us" -site:linkedin.com',
+  '"BPO services" "contact us" pricing -site:linkedin.com -site:clutch.co',
+  '"outsource payroll" services "contact us" -site:linkedin.com',
+  '"outsource bookkeeping" services "contact us" -site:linkedin.com',
+  '"outsource invoicing" company "contact us" -site:linkedin.com',
+  '"outsource admin" team "contact us" "quote" -site:linkedin.com',
+  '"data capture" outsourcing "contact us" -site:linkedin.com',
+  '"claims processing" outsource "contact us" -site:linkedin.com',
+  '"offshore data" processing company "contact us" -site:linkedin.com',
+  '"medical billing" outsource company "contact us" -site:linkedin.com',
+  '"legal transcription" services "contact us" -site:linkedin.com',
+  // ── Finance & Insurance — biggest BPO buyers ─────────────────────────────
+  'insurance company UK "data processing" OR "outsource" "contact us" -site:linkedin.com',
+  'financial services firm UK "back office" OR "outsource" "contact us" -site:linkedin.com',
+  'accounting firm UK "outsource" OR "bookkeeping" "contact us" -site:linkedin.com',
+  'payroll company UK "contact us" "data" -site:linkedin.com',
+  'fintech company UK "contact us" "data" OR "operations" -site:linkedin.com',
+  'insurance company South Africa "contact us" "admin" -site:linkedin.com',
+  'accounting firm South Africa "contact us" "bookkeeping" -site:linkedin.com',
+  'financial services South Africa "contact us" "data" -site:linkedin.com',
+  'insurance company Australia "contact us" "claims" OR "admin" -site:linkedin.com',
+  'accounting firm Australia "outsource" OR "bookkeeping" "contact us" -site:linkedin.com',
+  'insurance broker USA "contact us" "admin" OR "data" -site:linkedin.com',
+  'CPA firm USA "outsource" OR "bookkeeping" "contact us" -site:linkedin.com',
+  'asset management company USA "contact us" "data" -site:linkedin.com',
+  // ── Legal — document-heavy, high BPO adoption ────────────────────────────
+  'law firm UK "outsource" OR "document" "contact us" -site:linkedin.com',
+  'law firm USA "admin support" OR "outsource" "contact us" -site:linkedin.com',
+  'law firm Australia "document" OR "transcription" "contact us" -site:linkedin.com',
+  'law firm South Africa "admin" OR "documents" "contact us" -site:linkedin.com',
+  'law firm Canada "contact us" "admin" OR "records" -site:linkedin.com',
+  // ── E-Commerce — product data, order processing, customer support ─────────
+  'e-commerce company UK "product data" OR "data entry" "contact us" -site:linkedin.com',
+  'e-commerce brand USA "outsource" OR "catalogue" "contact us" -site:linkedin.com',
+  'online retailer Australia "product listing" OR "data" "contact us" -site:linkedin.com',
+  'wholesale distributor USA "data entry" OR "invoicing" "contact us" -site:linkedin.com',
+  'e-commerce company South Africa "contact us" "admin" -site:linkedin.com',
+  // ── Logistics — invoicing, documentation, freight data ───────────────────
+  'logistics company UK "contact us" "invoicing" OR "admin" -site:linkedin.com',
+  'freight forwarding company UK "documents" OR "admin" "contact us" -site:linkedin.com',
+  'logistics company South Africa "contact us" "invoices" -site:linkedin.com',
+  'supply chain company USA "contact us" "data" OR "admin" -site:linkedin.com',
+  'third-party logistics company Australia "contact us" -site:linkedin.com',
+  // ── Technology & SaaS — customer support, data ops outsourcing ───────────
+  'software company UK "contact us" "back office" OR "data ops" -site:linkedin.com',
+  'SaaS company USA "contact us" "support" OR "data" -site:linkedin.com',
+  'IT services company UK "outsource" OR "admin" "contact us" -site:linkedin.com',
+  'technology company Australia "contact us" "operations" OR "data" -site:linkedin.com',
+  // ── Recruitment & HR — candidate data, onboarding, payroll ───────────────
+  'recruitment agency UK "contact us" "admin" OR "data entry" -site:linkedin.com',
+  'staffing agency USA "contact us" "admin" OR "payroll" -site:linkedin.com',
+  'HR outsourcing company UK "contact us" -site:linkedin.com',
+  'recruitment company Australia "contact us" "data" -site:linkedin.com',
+  // ── Property Management — tenant data, lease admin ────────────────────────
+  'property management company UK "contact us" "admin" OR "data" -site:linkedin.com',
+  'property management company USA "contact us" "tenant" OR "invoices" -site:linkedin.com',
   'property management company Australia "contact us" -site:linkedin.com',
-  'estate agent UK "contact us" "admin" -site:linkedin.com',
-  'real estate developer South Africa "contact us" -site:linkedin.com',
-  'real estate agency USA "contact us" "listing data" OR "admin" -site:linkedin.com',
-  'commercial property company UK "contact us" -site:linkedin.com',
-  // Business Services
-  'HR consulting firm UK "contact us" "admin" OR "payroll" -site:linkedin.com',
-  'recruitment company Australia "contact us" "admin" OR "data" -site:linkedin.com',
-  'staffing agency USA "contact us" "admin" -site:linkedin.com',
-  'management consulting firm South Africa "contact us" -site:linkedin.com',
-  'IT services company UK "contact us" "admin" OR "support" -site:linkedin.com',
-  'training company Australia "contact us" -site:linkedin.com',
-  // Healthcare Administration
-  'pharmaceutical company UK "contact us" "records" OR "regulatory" -site:linkedin.com',
-  'healthcare provider Canada "contact us" "billing" OR "records" -site:linkedin.com',
-  'medical billing company USA "contact us" -site:linkedin.com',
-  'home care agency UK "contact us" "admin" -site:linkedin.com',
-  // E-commerce & Retail
-  'e-commerce company USA "contact us" "product data" OR "inventory" -site:linkedin.com',
-  'online retailer UK "contact us" "product catalogue" OR "data entry" -site:linkedin.com',
-  'wholesale distributor South Africa "contact us" -site:linkedin.com',
-  'retail chain Australia "contact us" "admin" -site:linkedin.com',
-  // Logistics
-  'logistics company South Africa "contact us" "invoices" OR "admin" -site:linkedin.com',
-  'freight forwarding company UK "contact us" "admin" OR "documents" -site:linkedin.com',
-  'courier service Australia "contact us" "admin" -site:linkedin.com',
-  'shipping company USA "contact us" "admin" OR "invoicing" -site:linkedin.com',
-  // Professional Services
-  'engineering firm Australia "contact us" "admin" OR "documents" -site:linkedin.com',
-  'architecture firm UK "contact us" "admin" OR "documents" -site:linkedin.com',
-  'marketing agency USA "contact us" "admin" OR "reporting" -site:linkedin.com',
-  'construction company South Africa "contact us" "admin" -site:linkedin.com',
-  'manufacturing company South Africa "contact us" "invoices" OR "data entry" -site:linkedin.com',
-  // New markets
-  'law firm Ireland "contact us" -site:linkedin.com',
-  'accounting firm New Zealand "contact us" -site:linkedin.com',
-  'dental practice Canada "contact us" "billing" -site:linkedin.com',
-  'real estate agency Ireland "contact us" -site:linkedin.com',
-  'medical clinic Nigeria "contact us" "admin" -site:linkedin.com',
-  'accounting firm Kenya "contact us" -site:linkedin.com',
-  'law firm Ghana "contact us" -site:linkedin.com',
-  'startup UK "contact us" "admin" OR "back office" -site:linkedin.com',
-  'startup Australia "contact us" "admin" OR "back office" -site:linkedin.com',
-  'non-profit organization USA "contact us" "admin" OR "data" -site:linkedin.com',
-  'charity UK "contact us" "admin support" -site:linkedin.com',
-  'event management company UK "contact us" -site:linkedin.com',
-  'travel agency Australia "contact us" "admin" -site:linkedin.com',
+  'commercial real estate company UK "contact us" "admin" -site:linkedin.com',
+  // ── Emerging markets ──────────────────────────────────────────────────────
+  'financial services company Nigeria "contact us" -site:linkedin.com',
+  'insurance company Kenya "contact us" "admin" -site:linkedin.com',
+  'accounting firm Ghana "contact us" -site:linkedin.com',
+  'logistics company East Africa "contact us" "admin" -site:linkedin.com',
+  'insurance company Ireland "contact us" "claims" -site:linkedin.com',
+  'financial services New Zealand "contact us" "data" -site:linkedin.com',
 ];
 
 async function scrapeDuckDuckGo() {
@@ -771,15 +809,15 @@ async function scrapeDuckDuckGo() {
       });
 
       // Try real email extraction for each domain (with concurrency limit)
+      const inferredType = inferBusinessType(q);
       const contacts = [];
       for (const item of items) {
         const emails = await buildEmailList(item.domain, item.link);
-        const realFlag = emails.length === 1 && !EMAIL_PREFIXES.some(p => emails[0].startsWith(p + '@'));
         for (const email of emails) {
           contacts.push({
             company: item.title, website: item.link, domain: item.domain, email,
             source: 'duckduckgo', query: q, snippet: item.snippet || null,
-            ...(realFlag ? { business_type: 'verified_email' } : {}),
+            businessType: inferredType || undefined,
           });
         }
         await sleep(300); // small gap between page fetches
@@ -802,18 +840,29 @@ async function scrapeDuckDuckGo() {
   return totalInserted;
 }
 
-// ── 4. SerpAPI extended — TARGET: companies that HIRE BPO, not BPO firms ─────
+// ── 4. SerpAPI extended — HIGH-VALUE BPO buyer queries ───────────────────────
+// Focus: companies actively searching for outsourcing, OR in high-BPO industries
 const SERP_BPO_QUERIES = [
-  'law firm "contact us" South Africa "admin support" OR "document" -site:linkedin.com',
-  'accounting firm "contact us" South Africa "bookkeeping" OR "data entry" -site:linkedin.com',
-  'medical practice "contact us" South Africa "admin" OR "records" -site:linkedin.com',
-  'real estate agency "contact us" South Africa "admin" OR "listings" -site:linkedin.com',
-  'insurance broker "contact us" South Africa -site:linkedin.com',
-  'e-commerce store "contact us" South Africa "product data" OR "catalogue" -site:linkedin.com',
-  'recruitment agency "contact us" South Africa "admin" -site:linkedin.com',
-  'dental practice "contact us" South Africa -site:linkedin.com',
-  'small business "contact us" UK "data entry" OR "admin support" outsource -site:linkedin.com',
-  'mortgage broker "contact us" UK "admin" OR "document" -site:linkedin.com',
+  // Direct outsourcing intent — highest conversion rate
+  '"outsource data entry" company "contact" -site:linkedin.com -site:clutch.co',
+  '"back office outsourcing" services "get quote" OR "contact us" -site:linkedin.com',
+  '"data entry company" "hire" OR "outsource" "contact us" -site:linkedin.com',
+  '"BPO company" "contact us" "pricing" OR "quote" -site:linkedin.com -site:clutch.co',
+  '"virtual assistant services" "contact us" "hire" -site:linkedin.com',
+  // Finance & Insurance — highest BPO spend globally
+  'insurance company "outsource claims" OR "outsource admin" "contact us" -site:linkedin.com',
+  'financial services company UK "back office" "contact us" -site:linkedin.com',
+  'accounting firm "outsource bookkeeping" OR "data capture" "contact" -site:linkedin.com',
+  'payroll company "data entry" OR "outsource" "contact us" -site:linkedin.com',
+  'fintech startup "operations" OR "back office" "contact us" -site:linkedin.com',
+  // E-commerce — product data and order management
+  'e-commerce company "product data entry" OR "catalogue management" "contact us" -site:linkedin.com',
+  'online retailer "outsource" OR "data entry" "contact us" -site:linkedin.com',
+  // Logistics — freight docs, invoicing
+  'logistics company "outsource invoicing" OR "data entry" "contact us" -site:linkedin.com',
+  'freight company "document processing" OR "admin" "contact us" -site:linkedin.com',
+  // Healthcare admin — billing, records
+  'healthcare company "medical billing" OR "outsource admin" "contact us" -site:linkedin.com',
 ];
 
 async function scrapeViaSerpAPI() {
@@ -832,6 +881,7 @@ async function scrapeViaSerpAPI() {
 
       const results = res.data.organic_results || [];
       const contacts = [];
+      const inferredType = inferBusinessType(q);
 
       for (const r of results) {
         const domain = extractDomain(r.link);
@@ -841,6 +891,7 @@ async function scrapeViaSerpAPI() {
           contacts.push({
             company: r.title || domain, website: r.link, domain, email,
             source: 'serpapi_bpo', query: q, snippet: r.snippet || null,
+            businessType: inferredType || undefined,
           });
         }
         await sleep(200);
@@ -860,85 +911,70 @@ async function scrapeViaSerpAPI() {
 
 // ── Main orchestrator ────────────────────────────────────────────────────────
 // ── 5. Bing Web Search scraping ─────────────────────────────────────────────
-// BING targets: companies that NEED BPO services — NOT BPO/outsourcing firms
+// HIGH-INTENT BPO buyer queries — companies with outsourcing needs
 const BING_QUERIES = [
-  // South Africa — breadth
-  'dental practice "contact us" South Africa -site:linkedin.com',
-  'dentist office "contact" email South Africa -site:linkedin.com',
-  'law firm "contact us" South Africa -site:linkedin.com -site:legalaid.co.za',
-  'attorney firm South Africa "contact us" -site:linkedin.com',
-  'accounting firm "contact us" South Africa -site:linkedin.com',
-  'chartered accountant South Africa "email" "contact" -site:linkedin.com',
-  'medical practice "contact us" "admin" South Africa -site:linkedin.com',
-  'GP clinic "contact" "admin" South Africa -site:linkedin.com',
-  'real estate agency "contact" email South Africa -site:linkedin.com',
-  'property management "contact us" South Africa -site:linkedin.com',
-  'insurance broker "contact us" South Africa -site:linkedin.com',
-  'financial advisor "contact us" South Africa -site:linkedin.com',
-  'e-commerce shop "contact" email South Africa -site:linkedin.com -site:takealot.com',
-  'online retailer "contact us" South Africa -site:linkedin.com',
-  'HR consulting "contact us" South Africa -site:linkedin.com',
-  'payroll company "contact" email South Africa -site:linkedin.com',
-  'recruitment company "contact us" South Africa -site:linkedin.com',
-  'logistics company South Africa "contact us" -site:linkedin.com',
-  'construction company South Africa "contact us" -site:linkedin.com',
-  'engineering firm South Africa "contact us" -site:linkedin.com',
-  'physiotherapy "contact us" South Africa -site:linkedin.com',
-  'optometrist South Africa "contact us" -site:linkedin.com',
-  'veterinary clinic South Africa "contact us" -site:linkedin.com',
-  'pharmacy South Africa "contact us" email -site:linkedin.com',
-  'manufacturing company South Africa "contact us" -site:linkedin.com',
-  // UK
-  'law firm "contact us" UK solicitors -site:linkedin.com',
-  'accounting firm UK "contact" email -site:linkedin.com',
-  'dental practice UK "contact us" -site:linkedin.com',
-  'GP surgery UK "contact us" -site:linkedin.com',
-  'mortgage broker UK "contact us" -site:linkedin.com',
-  'estate agent UK "contact us" -site:linkedin.com',
-  'recruitment agency UK "contact" email -site:linkedin.com',
-  'IT company UK small "contact us" -site:linkedin.com',
-  'marketing agency UK "contact us" -site:linkedin.com',
-  'insurance broker UK "contact us" -site:linkedin.com',
-  'chartered accountant UK "contact" email -site:linkedin.com',
-  'logistics company UK "contact us" -site:linkedin.com',
-  'engineering firm UK "contact us" -site:linkedin.com',
-  // USA
-  'accounting firm USA "contact us" -site:linkedin.com',
-  'dental office USA "contact us" "billing" -site:linkedin.com',
-  'medical practice USA "contact us" "records" -site:linkedin.com',
-  'law firm USA small "contact us" -site:linkedin.com',
-  'real estate agency USA "contact" email -site:linkedin.com',
-  'mortgage broker USA "contact us" -site:linkedin.com',
-  'insurance agent USA "contact us" -site:linkedin.com',
-  'staffing agency USA "contact us" -site:linkedin.com',
-  'CPA firm USA "contact us" -site:linkedin.com',
-  'e-commerce store USA "contact us" -site:linkedin.com',
-  // Australia
-  'accounting firm "contact us" Australia -site:linkedin.com',
-  'dental practice Australia "contact us" -site:linkedin.com',
-  'real estate agency Australia "contact us" -site:linkedin.com',
-  'law firm Australia "contact us" -site:linkedin.com',
-  'IT company Australia small "contact us" -site:linkedin.com',
-  'bookkeeping firm Australia "contact" email -site:linkedin.com',
-  'HR consulting Australia "contact us" -site:linkedin.com',
-  'logistics Australia "contact us" -site:linkedin.com',
-  // Canada
-  'accounting firm Canada "contact us" -site:linkedin.com',
-  'dental office Canada "contact us" "billing" -site:linkedin.com',
-  'real estate agency Canada "contact us" -site:linkedin.com',
-  'mortgage broker Canada "contact us" -site:linkedin.com',
-  'law firm Canada small "contact us" -site:linkedin.com',
-  // Ireland & NZ
-  'accounting firm Ireland "contact us" -site:linkedin.com',
-  'law firm Ireland "contact us" -site:linkedin.com',
-  'dental practice New Zealand "contact us" -site:linkedin.com',
-  'real estate agency New Zealand "contact us" -site:linkedin.com',
-  // Africa
-  'accounting firm Kenya "contact us" -site:linkedin.com',
-  'law firm Nigeria "contact us" -site:linkedin.com',
-  'medical clinic Ghana "contact us" -site:linkedin.com',
-  'real estate company Uganda "contact us" -site:linkedin.com',
-  'logistics company East Africa "contact us" -site:linkedin.com',
+  // ── Direct buying-intent ──────────────────────────────────────────────────
+  '"outsource data entry" company "contact us" -site:linkedin.com',
+  '"back office outsourcing" "contact us" pricing -site:linkedin.com',
+  '"data capture" services company "contact us" -site:linkedin.com',
+  '"document processing" company "contact" "quote" -site:linkedin.com',
+  '"outsource payroll" company "contact us" -site:linkedin.com',
+  '"offshore back office" services "contact us" -site:linkedin.com',
+  '"virtual assistant" team "hire" "contact us" -site:linkedin.com',
+  '"BPO services" company "contact us" -site:linkedin.com -site:clutch.co',
+  // ── Finance & Insurance — South Africa ───────────────────────────────────
+  'insurance company South Africa "outsource" OR "admin" "contact us" -site:linkedin.com',
+  'accounting firm South Africa "bookkeeping" OR "outsource" "contact us" -site:linkedin.com',
+  'financial services company South Africa "contact us" "data" -site:linkedin.com',
+  'payroll company South Africa "contact us" -site:linkedin.com',
+  'asset management company South Africa "contact us" -site:linkedin.com',
+  'fintech company South Africa "contact us" "operations" -site:linkedin.com',
+  // ── Finance & Insurance — UK ──────────────────────────────────────────────
+  'insurance company UK "outsource" OR "claims" "contact us" -site:linkedin.com',
+  'accounting firm UK "outsource" OR "bookkeeping" "contact us" -site:linkedin.com',
+  'financial services company UK "back office" "contact us" -site:linkedin.com',
+  'payroll company UK "contact us" "data" -site:linkedin.com',
+  'fintech company UK "contact us" "operations" -site:linkedin.com',
+  // ── Finance & Insurance — USA ─────────────────────────────────────────────
+  'insurance company USA "outsource claims" OR "admin" "contact us" -site:linkedin.com',
+  'CPA firm USA "outsource" OR "bookkeeping" "contact us" -site:linkedin.com',
+  'financial services company USA "back office" "contact us" -site:linkedin.com',
+  'staffing agency USA "admin" OR "data" "contact us" -site:linkedin.com',
+  // ── Finance & Insurance — Australia ───────────────────────────────────────
+  'insurance company Australia "contact us" "admin" OR "claims" -site:linkedin.com',
+  'accounting firm Australia "bookkeeping" OR "data" "contact us" -site:linkedin.com',
+  // ── Legal ─────────────────────────────────────────────────────────────────
+  'law firm UK "document" OR "outsource" "contact us" -site:linkedin.com',
+  'law firm South Africa "admin" OR "documents" "contact us" -site:linkedin.com',
+  'law firm USA "admin support" "contact us" -site:linkedin.com',
+  'law firm Australia "contact us" "records" -site:linkedin.com',
+  // ── E-Commerce ────────────────────────────────────────────────────────────
+  'e-commerce company UK "product data" OR "data entry" "contact us" -site:linkedin.com',
+  'e-commerce company USA "outsource" OR "catalogue" "contact us" -site:linkedin.com',
+  'online retailer Australia "product listing" OR "data" "contact us" -site:linkedin.com',
+  'wholesale distributor USA "invoicing" OR "data entry" "contact us" -site:linkedin.com',
+  // ── Logistics ─────────────────────────────────────────────────────────────
+  'logistics company UK "invoicing" OR "admin" "contact us" -site:linkedin.com',
+  'freight forwarding UK "documents" OR "admin" "contact us" -site:linkedin.com',
+  'logistics company South Africa "invoices" "contact us" -site:linkedin.com',
+  'supply chain company USA "data" OR "admin" "contact us" -site:linkedin.com',
+  // ── HR & Recruitment ──────────────────────────────────────────────────────
+  'recruitment agency UK "admin" OR "data" "contact us" -site:linkedin.com',
+  'staffing company USA "admin" OR "payroll" "contact us" -site:linkedin.com',
+  'HR outsourcing company UK "contact us" -site:linkedin.com',
+  // ── Technology ────────────────────────────────────────────────────────────
+  'software company UK "back office" OR "data ops" "contact us" -site:linkedin.com',
+  'SaaS company USA "operations" OR "data" "contact us" -site:linkedin.com',
+  'IT services company Australia "outsource" OR "admin" "contact us" -site:linkedin.com',
+  // ── Property Management ───────────────────────────────────────────────────
+  'property management company UK "admin" OR "tenant" "contact us" -site:linkedin.com',
+  'property management company USA "invoices" OR "data" "contact us" -site:linkedin.com',
+  // ── Emerging Markets ──────────────────────────────────────────────────────
+  'insurance company Nigeria "contact us" "admin" -site:linkedin.com',
+  'accounting firm Kenya "bookkeeping" "contact us" -site:linkedin.com',
+  'financial services Ghana "contact us" -site:linkedin.com',
+  'logistics company East Africa "admin" "contact us" -site:linkedin.com',
+  'insurance company Ireland "claims" OR "admin" "contact us" -site:linkedin.com',
 ];
 
 async function scrapeBing() {
