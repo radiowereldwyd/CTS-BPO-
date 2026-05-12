@@ -2602,16 +2602,6 @@ app.get('/api/analytics/email', requireAuth, async (req, res) => {
   }
 });
 
-// ── Serve React build in production ──────────────────────────────────────────
-// Only activated when the frontend has been built (production / after `npm run build`)
-const buildDir = path.join(__dirname, '../../frontend/build');
-if (require('fs').existsSync(buildDir)) {
-  app.use(express.static(buildDir));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(buildDir, 'index.html'));
-  });
-}
-
 const http = require('http');
 const WebSocket = require('ws');
 const callCentreSignaling = require('./modules/call-centre');
@@ -2633,7 +2623,7 @@ app.get('/api/freelancer/inbox', requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
-// GET /api/freelancer/inbox/sync — force re-poll from Freelancer API
+// POST /api/freelancer/inbox/sync — force re-poll from Freelancer API
 app.post('/api/freelancer/inbox/sync', requireAuth, requireAdmin, async (req, res) => {
   try {
     await flInbox.syncInbox();
@@ -2659,15 +2649,24 @@ app.post('/api/freelancer/inbox/:threadId/reply', requireAuth, requireAdmin, asy
   const { message } = req.body;
   if (!message?.trim()) return res.status(400).json({ ok: false, error: 'message required' });
   try {
-    // Try real API send
     const result = await flInbox.sendReply(req.params.threadId, message.trim());
-    // Also refresh the thread from the live API
     await flInbox.syncInbox();
     res.json(result);
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
+
+// ── Serve React build in production ──────────────────────────────────────────
+// MUST be registered LAST — after all API routes — so the catch-all doesn't
+// intercept /api/* requests.
+const buildDir = path.join(__dirname, '../../frontend/build');
+if (require('fs').existsSync(buildDir)) {
+  app.use(express.static(buildDir));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(buildDir, 'index.html'));
+  });
+}
 
 // ── WebSocket signaling for WebRTC call centre ────────────────────────────────
 const wss = new WebSocket.Server({ noServer: true });
