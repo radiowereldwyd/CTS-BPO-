@@ -17,8 +17,9 @@ const MAILGUN_KEY     = process.env.MAILGUN_API_KEY     || '';
 const MAILGUN_DOMAIN  = process.env.MAILGUN_DOMAIN      || '';
 const MAILJET_API_KEY    = process.env.MAILJET_API_KEY     || '';
 const MAILJET_SEC_KEY    = process.env.MAILJET_SECRET_KEY  || '';
-const MAILERLITE_API_KEY = process.env.MAILERLITE_API_KEY  || '';
-const BREVO_API_KEY      = process.env.BREVO_API_KEY        || '';
+const MAILERLITE_API_KEY  = process.env.MAILERLITE_API_KEY  || '';
+const BREVO_API_KEY       = process.env.BREVO_API_KEY        || '';
+const MAILERSEND_API_KEY  = process.env.MAILERSEND_API_KEY   || '';
 const FROM_NAME       = process.env.FROM_NAME  || 'CTS BPO';
 const FROM_EMAIL      = process.env.FROM_EMAIL || GMAIL_USER || 'cts.cybersolutions@gmail.com';
 const REPLY_EMAIL     = 'cts.cybersolutions@gmail.com';
@@ -28,8 +29,8 @@ const WEBSITE         = 'cts.bposolutions@gmail.com';
 const EMAIL_RATE_MS   = parseInt(process.env.EMAIL_RATE_MS || '200', 10);
 
 // Per-provider daily caps (99% threshold = stop before hard limits)
-// Brevo free: 300/day | Gmail: 500/day | Mailjet: 200/day | Mailgun: 100/day | MailerLite: paid add-on
-const PROVIDER_CAPS = { brevo: 300, mailerlite: 399, mailjet: 299, gmail: 500, mailgun: 99 };
+// Gmail: 500/day | Brevo free: 300/day | MailerSend free: 100/day | Mailjet: 200/day | Mailgun: 100/day | MailerLite: paid add-on
+const PROVIDER_CAPS = { gmail: 500, brevo: 300, mailersend: 100, mailjet: 299, mailerlite: 399, mailgun: 99 };
 function getProviderCap() { return PROVIDER_CAPS[getSenderMode()] || 500; }
 function getStopAt()      { return Math.floor(getProviderCap() * 0.99); }   // 99% rule
 
@@ -148,6 +149,9 @@ const _brokenProviders = new Set();
   if (BREVO_API_KEY) {
     console.log('[EMAIL] Brevo configured — 300 emails/day free tier available');
   }
+  if (MAILERSEND_API_KEY) {
+    console.log('[EMAIL] MailerSend configured — 100 emails/day free tier available');
+  }
 })();
 
 function markBroken(provider) {
@@ -160,6 +164,7 @@ function markBroken(provider) {
 function getSenderMode() {
   if (GMAIL_USER && GMAIL_APP_PASS && !_brokenProviders.has('gmail'))            return 'gmail';
   if (BREVO_API_KEY && !_brokenProviders.has('brevo'))                           return 'brevo';
+  if (MAILERSEND_API_KEY && !_brokenProviders.has('mailersend'))                 return 'mailersend';
   if (MAILJET_API_KEY && MAILJET_SEC_KEY && !_brokenProviders.has('mailjet'))    return 'mailjet';
   if (MAILGUN_KEY && MAILGUN_DOMAIN && !_brokenProviders.has('mailgun'))         return 'mailgun';
   if (MAILERLITE_API_KEY && !_brokenProviders.has('mailerlite'))                 return 'mailerlite';
@@ -240,6 +245,26 @@ async function sendMail({ to, subject, html, text, replyTo }) {
       }, {
         headers: {
           'api-key': BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        timeout: 12000,
+      });
+
+    } else if (mode === 'mailersend') {
+      // MailerSend transactional email API v1 — 100/day free, verified domain required
+      // FROM must be an address on the verified domain (ctsbpo.com). Use MAILERSEND_FROM_EMAIL if set.
+      const msFrom = process.env.MAILERSEND_FROM_EMAIL || FROM_EMAIL;
+      await axios.post('https://api.mailersend.com/v1/email', {
+        from:     { email: msFrom, name: FROM_NAME },
+        to:       [{ email: to }],
+        reply_to: { email: replyTo || REPLY_EMAIL },
+        subject,
+        html,
+        ...(text ? { text } : {}),
+      }, {
+        headers: {
+          Authorization: `Bearer ${MAILERSEND_API_KEY}`,
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
