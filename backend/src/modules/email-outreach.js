@@ -176,8 +176,31 @@ const _brokenProviders = new Set();
   if (MAILERSEND_API_KEY) {
     _brokenProviders.add('mailersend');
   }
-  if (MAILJET_API_KEY) {
-    _brokenProviders.add('mailjet');
+  // Mailjet — live preflight test; only mark broken if credentials actually fail
+  if (MAILJET_API_KEY && MAILJET_SEC_KEY) {
+    const axiosMJ = require('axios');
+    axiosMJ.post('https://api.mailjet.com/v3.1/send', {
+      Messages: [{
+        From: { Email: 'cts.bposolutions@gmail.com', Name: 'CTS BPO' },
+        To:   [{ Email: 'cts.bposolutions@gmail.com', Name: 'CTS BPO' }],
+        Subject: 'preflight-check',
+        TextPart: 'preflight',
+      }],
+    }, {
+      auth: { username: MAILJET_API_KEY, password: MAILJET_SEC_KEY },
+      timeout: 10000,
+      validateStatus: () => true,
+    }).then(r => {
+      if (r.status === 401 || r.status === 403) {
+        _brokenProviders.add('mailjet');
+        console.warn(`[EMAIL] Mailjet FAILED preflight (${r.status}) — check MAILJET_API_KEY + MAILJET_SECRET_KEY`);
+      } else {
+        console.log(`[EMAIL] ✅ Mailjet ready — HTTP ${r.status} (adds 200/day capacity)`);
+      }
+    }).catch(() => {
+      _brokenProviders.add('mailjet');
+      console.warn('[EMAIL] Mailjet preflight error — marking broken');
+    });
   }
 })();
 
@@ -2192,7 +2215,7 @@ function portalFooter() {
       // Re-apply permanent preflight skips (only truly broken accounts)
       if (MAILGUN_KEY && MAILGUN_DOMAIN && MAILGUN_DOMAIN.includes('sandbox')) _brokenProviders.add('mailgun');
       if (MAILERSEND_API_KEY) _brokenProviders.add('mailersend'); // 403 — no permissions
-      if (MAILJET_API_KEY)    _brokenProviders.add('mailjet');    // 401 — bad credentials
+      // Mailjet: re-run preflight on midnight reset instead of hard-blocking
       savePerProviderCount();
       // Re-run Gmail preflight for the new day (app password may have changed)
       preflightGmailAsync();
@@ -2257,7 +2280,7 @@ module.exports = {
     // Re-apply permanent skips after reset (only truly broken)
     if (MAILGUN_KEY && MAILGUN_DOMAIN && MAILGUN_DOMAIN.includes('sandbox')) _brokenProviders.add('mailgun');
     if (MAILERSEND_API_KEY) _brokenProviders.add('mailersend');
-    if (MAILJET_API_KEY)    _brokenProviders.add('mailjet');
+    // Mailjet: preflight runs at startup — don't permanently re-block here
     preflightGmailAsync();
     console.log('[EMAIL] 🔧 Provider reset — re-checking Gmail, Brevo ready as active provider');
   },
