@@ -168,12 +168,42 @@ const _brokenProviders = new Set();
   }
 })();
 
-// ── Async Gmail preflight — App Password only (OAuth2 creds are misconfigured) ──
+// ── Async Gmail preflight — tries OAuth2 first, falls back to App Password ──
 let _gmailAuthMode = null; // 'oauth2' | 'apppass' | null
 
 async function preflightGmailAsync() {
-  // App Password only — OAuth2 client secret is invalid, skip it silently
-  if (!GMAIL_USER || !GMAIL_APP_PASS) return;
+  if (!GMAIL_USER) return;
+
+  // ── 1. Try OAuth2 if all three credentials are present ──────────────────
+  const hasOAuth2 = GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REFRESH_TOKEN;
+  if (hasOAuth2) {
+    try {
+      const oauth2Transport = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          type: 'OAuth2',
+          user: GMAIL_USER,
+          clientId: GMAIL_CLIENT_ID,
+          clientSecret: GMAIL_CLIENT_SECRET,
+          refreshToken: GMAIL_REFRESH_TOKEN,
+        },
+      });
+      await oauth2Transport.verify();
+      _gmailAuthMode = 'oauth2';
+      transporter = oauth2Transport;
+      _brokenProviders.delete('gmail');
+      console.log(`[EMAIL] ✅ Gmail OAuth2 ready — ${GMAIL_USER} (backup sender)`);
+      return;
+    } catch (e) {
+      console.warn(`[EMAIL] ⚠️ Gmail OAuth2 failed (${e.message}) — trying App Password fallback`);
+    }
+  }
+
+  // ── 2. Fall back to App Password ─────────────────────────────────────────
+  if (!GMAIL_APP_PASS) {
+    console.warn('[EMAIL] ⚠️ No Gmail App Password set — Gmail unavailable');
+    return;
+  }
   try {
     const appPassTransport = nodemailer.createTransport({
       host: SMTP_HOST, port: SMTP_PORT,
