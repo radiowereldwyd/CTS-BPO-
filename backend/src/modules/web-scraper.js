@@ -88,7 +88,38 @@ function clearSearchedQueries() {
 
 // ── Config ─────────────────────────────────────────────────────────────────
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || '';
-const GOOGLE_CSE_ID  = process.env.GOOGLE_CSE_ID  || '';
+// Auto-clean CSE ID — handle cases where user pasted full embed script instead of just the ID
+const _rawCseId      = process.env.GOOGLE_CSE_ID  || '';
+const _cseMatch      = _rawCseId.match(/[?&]cx=([^'"&\s<>]+)/);
+const GOOGLE_CSE_ID  = _cseMatch ? _cseMatch[1] : _rawCseId.replace(/<[^>]+>/g,'').trim();
+
+// ── Service Account helper for Places API (API key not enabled for Places) ───
+const SA_JSON = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '';
+let _saAccessToken   = null;
+let _saTokenExpiry   = 0;
+async function getSaAccessToken() {
+  if (_saAccessToken && Date.now() < _saTokenExpiry - 60000) return _saAccessToken;
+  if (!SA_JSON) return null;
+  try {
+    const { GoogleAuth } = require('google-auth-library');
+    const auth   = new GoogleAuth({ credentials: JSON.parse(SA_JSON), scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+    const client = await auth.getClient();
+    const t      = await client.getAccessToken();
+    _saAccessToken = t.token;
+    _saTokenExpiry = Date.now() + 3600000; // 1 hour
+    return _saAccessToken;
+  } catch (e) {
+    console.warn('[SCRAPER] SA token error:', e.message);
+    return null;
+  }
+}
+
+async function getPlacesHeaders() {
+  const token = await getSaAccessToken();
+  if (token) return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'X-Goog-FieldMask': 'places.displayName,places.websiteUri,places.formattedAddress,places.nationalPhoneNumber,places.businessStatus' };
+  // Fallback to API key if no SA credentials
+  return { 'X-Goog-Api-Key': GOOGLE_API_KEY, 'Content-Type': 'application/json', 'X-Goog-FieldMask': 'places.displayName,places.websiteUri,places.formattedAddress,places.nationalPhoneNumber,places.businessStatus' };
+}
 
 const PLACES_QUERIES_PER_RUN = parseInt(process.env.PLACES_QUERIES_PER_RUN || '15', 10);
 const CSE_QUERIES_PER_RUN    = parseInt(process.env.CSE_QUERIES_PER_RUN    || '10', 10);
@@ -529,14 +560,7 @@ async function scrapeGooglePlaces() {
       const res = await axios.post(
         'https://places.googleapis.com/v1/places:searchText',
         { textQuery: query, languageCode: 'en', maxResultCount: 20 },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': GOOGLE_API_KEY,
-            'X-Goog-FieldMask': 'places.displayName,places.websiteUri,places.formattedAddress,places.nationalPhoneNumber,places.businessStatus',
-          },
-          timeout: 15000,
-        }
+        { headers: await getPlacesHeaders(), timeout: 15000 }
       );
 
       const places = res.data.places || [];
@@ -1673,18 +1697,11 @@ function buildAllPairs() {
 async function runOnePair(pair) {
   try {
     if (pair.source === 'google_places') {
-      if (!GOOGLE_API_KEY) return 0;
+      if (!GOOGLE_API_KEY && !SA_JSON) return 0;
       const res = await axios.post(
         'https://places.googleapis.com/v1/places:searchText',
         { textQuery: pair.query, languageCode: 'en', maxResultCount: 20 },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': GOOGLE_API_KEY,
-            'X-Goog-FieldMask': 'places.displayName,places.websiteUri,places.formattedAddress,places.nationalPhoneNumber,places.businessStatus',
-          },
-          timeout: 15000,
-        }
+        { headers: await getPlacesHeaders(), timeout: 15000 }
       );
       const places = res.data.places || [];
       const contacts = [];
