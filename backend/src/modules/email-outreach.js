@@ -139,10 +139,23 @@ const _brokenProviders = new Set();
 
 // Auto-skip providers that are known broken at startup
 (function preflightProviders() {
-  // MailerLite transactional email requires a separate paid plan — skip unless explicitly enabled
+  // MailerLite — attempt live connection test; mark broken only if API rejects
   if (MAILERLITE_API_KEY) {
-    _brokenProviders.add('mailerlite');
-    console.log('[EMAIL] MailerLite skipped — transactional email add-on not confirmed active');
+    const axios = require('axios');
+    axios.get('https://connect.mailerlite.com/api/campaigns', {
+      headers: { Authorization: `Bearer ${MAILERLITE_API_KEY}`, Accept: 'application/json' },
+      timeout: 8000, validateStatus: () => true,
+    }).then(r => {
+      if (r.status === 401 || r.status === 403) {
+        _brokenProviders.add('mailerlite');
+        console.warn(`[EMAIL] MailerLite FAILED preflight (${r.status}) — marking broken`);
+      } else {
+        console.log(`[EMAIL] ✅ MailerLite ready — API key valid (HTTP ${r.status})`);
+      }
+    }).catch(() => {
+      _brokenProviders.add('mailerlite');
+      console.warn('[EMAIL] MailerLite preflight error — marking broken');
+    });
   }
   // Mailgun sandbox domains can only send to pre-authorized addresses, not cold prospects
   if (MAILGUN_KEY && MAILGUN_DOMAIN && MAILGUN_DOMAIN.includes('sandbox')) {
@@ -2176,8 +2189,7 @@ function portalFooter() {
       dailyResetDate  = new Date().toDateString();
       transporter     = null;           // force SMTP reconnect with fresh auth
       _brokenProviders.clear();         // re-enable providers for the new day
-      // Re-apply permanent preflight skips (these are broken accounts, not just daily caps)
-      if (MAILERLITE_API_KEY) _brokenProviders.add('mailerlite');
+      // Re-apply permanent preflight skips (only truly broken accounts)
       if (MAILGUN_KEY && MAILGUN_DOMAIN && MAILGUN_DOMAIN.includes('sandbox')) _brokenProviders.add('mailgun');
       if (MAILERSEND_API_KEY) _brokenProviders.add('mailersend'); // 403 — no permissions
       if (MAILJET_API_KEY)    _brokenProviders.add('mailjet');    // 401 — bad credentials
@@ -2242,8 +2254,7 @@ module.exports = {
   getOutreachStats: () => { checkDailyReset(); return { sent: dailySentCount, mode: getSenderMode(), broken: [..._brokenProviders] }; },
   resetBrokenProviders: () => {
     _brokenProviders.clear();
-    // Re-apply permanent skips after reset
-    if (MAILERLITE_API_KEY) _brokenProviders.add('mailerlite');
+    // Re-apply permanent skips after reset (only truly broken)
     if (MAILGUN_KEY && MAILGUN_DOMAIN && MAILGUN_DOMAIN.includes('sandbox')) _brokenProviders.add('mailgun');
     if (MAILERSEND_API_KEY) _brokenProviders.add('mailersend');
     if (MAILJET_API_KEY)    _brokenProviders.add('mailjet');
