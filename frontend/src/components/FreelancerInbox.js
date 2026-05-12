@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 
-const API = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+const API = process.env.REACT_APP_API_URL || '';
 
 export default function FreelancerInbox({ token }) {
   const [threads, setThreads]       = useState([]);
