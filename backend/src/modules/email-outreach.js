@@ -32,8 +32,9 @@ const WEBSITE         = 'cts.bposolutions@gmail.com';
 const EMAIL_RATE_MS   = parseInt(process.env.EMAIL_RATE_MS || '200', 10);
 
 // Per-provider daily caps (99% threshold = stop before hard limits)
-// Gmail: 500/day | Brevo free: 300/day | MailerSend free: 100/day | Mailjet: 200/day | Mailgun: 100/day | MailerLite: paid add-on
-const PROVIDER_CAPS = { gmail: 500, brevo: 300, mailersend: 100, mailjet: 299, mailerlite: 399, mailgun: 99 };
+// Brevo free: 300/day | MailerLite free: 399/day | Gmail: capped at 200 for cold email safety | MailerSend: 100/day | Mailjet: 299/day | Mailgun: 99/day
+// Combined free capacity: 300 + 399 + 200 = ~900/day across all three primary providers
+const PROVIDER_CAPS = { brevo: 300, mailerlite: 399, gmail: 200, mailersend: 100, mailjet: 299, mailgun: 99 };
 function getProviderCap() { return PROVIDER_CAPS[getSenderMode()] || 500; }
 function getStopAt()      { return Math.floor(getProviderCap() * 0.99); }   // 99% rule
 
@@ -241,13 +242,14 @@ function markBroken(provider) {
 }
 
 function getSenderMode() {
-  // Brevo first — proper ESP with SPF/DKIM, far better cold-email deliverability than Gmail
+  // Priority: Brevo (300/day) → MailerLite (399/day) → Gmail (200/day cold cap) → others
+  // Gmail is last among primaries — cold email at volume risks account suspension
   if (BREVO_API_KEY && !_brokenProviders.has('brevo'))                           return 'brevo';
+  if (MAILERLITE_API_KEY && !_brokenProviders.has('mailerlite'))                 return 'mailerlite';
   if (GMAIL_USER && GMAIL_APP_PASS && !_brokenProviders.has('gmail'))            return 'gmail';
   if (MAILERSEND_API_KEY && !_brokenProviders.has('mailersend'))                 return 'mailersend';
   if (MAILJET_API_KEY && MAILJET_SEC_KEY && !_brokenProviders.has('mailjet'))    return 'mailjet';
   if (MAILGUN_KEY && MAILGUN_DOMAIN && !_brokenProviders.has('mailgun'))         return 'mailgun';
-  if (MAILERLITE_API_KEY && !_brokenProviders.has('mailerlite'))                 return 'mailerlite';
   return null;
 }
 

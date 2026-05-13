@@ -782,14 +782,16 @@ async function runScrapedContactsOutreach() {
       AND created_at >= CURRENT_DATE
   `).catch(() => ({ rows: [{ n: 0 }] }));
   const todaySent = parseInt(todaySentRes.rows[0]?.n || 0);
-  if (todaySent >= 100) {
-    console.log(`[OUTREACH] Daily cap reached (${todaySent}/100) — skipping scraped_contacts run`);
+  // Combined free provider capacity: Brevo 300 + MailerLite 399 + Gmail 200 = ~900/day
+  // Cap at 850 to leave a safe buffer across all providers
+  if (todaySent >= 850) {
+    console.log(`[OUTREACH] Daily cap reached (${todaySent}/850) — skipping scraped_contacts run`);
     return;
   }
 
   let sent = 0;
   for (const c of rows.rows) {
-    if (sent >= 8) break;  // max 8 per run
+    if (sent >= 25) break;  // 25/run × every 45 min = up to 800/day across providers
     try {
       // ── BPO provider filter — NEVER email competitors ─────────────────────
       if (isAgentBpoProvider(c.domain)) {
