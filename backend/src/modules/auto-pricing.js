@@ -103,20 +103,26 @@ function fmtUSD(n) {
  * Build a personalised pricing proposal email (text + HTML).
  * Returns { subject, text, html }
  */
-function buildPricingEmail({ name, company, email, serviceKey, city, country }) {
+function buildPricingEmail({ name, company, email, serviceKey, city, country, personalOpener, subjectOverride }) {
   const co        = company || name || 'your business';
   const firstName = (name || '').split(/[\s,]+/)[0] || '';
   const greeting  = firstName ? `Hi ${firstName},` : 'Hi,';
   const loc       = city ? ` in ${city}` : country ? ` in ${country}` : '';
   const { svc, vol, marketTotal, ourRate, ourTotal, saving, discountPct } = calcQuote(serviceKey);
 
-  const subject = `Pricing proposal for ${co} — ${svc.label} at ${discountPct}% below market`;
+  // AI-generated subject line OR readable fallback (never "Pricing proposal for...")
+  const subject = subjectOverride || `quick question for ${co.split(/[\s,&]+/)[0]}`;
+
+  // AI-generated opener OR human-sounding fallback
+  const openerLine = personalOpener
+    ? personalOpener
+    : `Most ${(city || country) ? `${svc.label.toLowerCase()} providers${loc}` : 'businesses like yours'} spend more than they need to on this — so I put together a real quote for ${co} rather than a generic pitch.`;
 
   const text = `${greeting}
 
-I came across ${co}${loc} and wanted to reach out with something more useful than a generic pitch — a real quote.
+${openerLine}
 
-Based on your business profile, here's what ${svc.label} would cost you with CTS BPO Solutions vs the market average:
+Here's what ${svc.label} would cost ${co} with CTS BPO Solutions vs the market average:
 
 SERVICE: ${svc.label}
 TYPICAL VOLUME: ${vol.desc}
@@ -183,7 +189,10 @@ tr:last-child td{border-bottom:none}
   <div class="body">
     <div class="greeting">${greeting}</div>
     <div class="intro">
-      I've put together a real quote for ${co} based on your business profile — not a generic pitch, but actual numbers so you can see what working with CTS BPO Solutions would cost you vs. the market average.
+      ${personalOpener
+        ? `${personalOpener}<br><br>I've put together actual numbers for ${co} so you can see what working with CTS BPO Solutions would cost you vs. the market average.`
+        : `I've put together a real quote for ${co} based on your business profile — not a generic pitch, but actual numbers so you can see what working with CTS BPO Solutions would cost you vs. the market average.`
+      }
     </div>
 
     <div class="table-wrap">
@@ -237,9 +246,9 @@ tr:last-child td{border-bottom:none}
  * Main export: given a contact/lead object, detect the right service and
  * return { serviceKey, quote, subject, text, html } ready for sending.
  */
-function autoPricingProposal({ name, company, email, businessType, jobType, city, country }) {
+function autoPricingProposal({ name, company, email, businessType, jobType, city, country, personalOpener, subjectOverride }) {
   const serviceKey = detectService(businessType, jobType);
-  const emailData  = buildPricingEmail({ name, company, email, serviceKey, city, country });
+  const emailData  = buildPricingEmail({ name, company, email, serviceKey, city, country, personalOpener, subjectOverride });
   const quote      = calcQuote(serviceKey);
   return { serviceKey, serviceName: quote.svc.label, ...emailData, quote };
 }

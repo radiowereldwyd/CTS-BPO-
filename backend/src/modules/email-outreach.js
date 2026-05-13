@@ -296,7 +296,7 @@ function isBounced(email) {
   return _bouncedEmails.has(String(email || '').toLowerCase().trim());
 }
 
-async function sendMail({ to, subject, html, text, replyTo }) {
+async function sendMail({ to, subject, html, text, replyTo, unsubscribeEmail }) {
   // Validate email address format before doing anything else
   const cleanTo = String(to || '').trim();
   if (!EMAIL_VALID_RE.test(cleanTo)) {
@@ -335,6 +335,31 @@ async function sendMail({ to, subject, html, text, replyTo }) {
     return { error: true, allProvidersBroken: true, sent: false };
   }
 
+  // Inject List-Unsubscribe footer into HTML for deliverability (CAN-SPAM + GDPR)
+  const unsubEmail = unsubscribeEmail || REPLY_EMAIL;
+  const unsubFooter = `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;line-height:1.6">
+    You received this email because we believe our services may benefit your business.<br>
+    To stop receiving emails: <a href="mailto:${unsubEmail}?subject=unsubscribe" style="color:#94a3b8">reply with "unsubscribe"</a>
+  </div>`;
+  const unsubTextFooter = `\n\n---\nTo unsubscribe: reply with "unsubscribe" in the subject line.\n${unsubEmail}`;
+
+  let _html = html || '';
+  let _text = text || '';
+
+  if (_html && !_html.includes('unsubscribe')) {
+    if (_html.includes('</body>')) {
+      _html = _html.replace('</body>', `${unsubFooter}</body>`);
+    } else {
+      _html += unsubFooter;
+    }
+  }
+  if (_text && !_text.includes('unsubscribe')) {
+    _text = _text + unsubTextFooter;
+  }
+
+  html = _html || html;
+  text = _text || text;
+
   const fromStr = `${FROM_NAME} <${FROM_EMAIL}>`;
 
   try {
@@ -346,6 +371,11 @@ async function sendMail({ to, subject, html, text, replyTo }) {
         subject,
         htmlContent: html,
         ...(text ? { textContent: text } : {}),
+        headers: {
+          'List-Unsubscribe': `<mailto:${unsubEmail}?subject=unsubscribe>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          'X-Mailer': 'CTS-BPO-1.0',
+        },
       }, {
         headers: {
           'api-key': BREVO_API_KEY,
@@ -1801,17 +1831,18 @@ WhatsApp: +27 76 067 9100`,
 }
 
 // ── Follow-ups — 6 rotating human variants ──────────────────────────────────
-async function sendClientFollowUp({ email, company, jobType, followUpNumber }) {
+async function sendClientFollowUp({ email, company, jobType, followUpNumber, city, country }) {
   const co    = esc(company || 'there');
   const svc   = (jobType || 'outsourcing').replace(/-/g, ' ');
   const isOne = followUpNumber === 1;
+  const locStr = city ? ` in ${city}` : country ? ` in ${country}` : '';
 
   const variants = [
     {
       subject: pick([`still open if you're interested`, `just checking in`, `following up on my last note`]),
       body: `Hi ${co},
 
-Just following up on my note from ${isOne ? 'a few days' : 'last week'} about ${svc} support.
+Just following up on my note from ${isOne ? 'a few days' : 'last week'} about ${svc} support${locStr ? ` for your team${locStr}` : ''}.
 
 The free task offer is still on the table if you'd like to see what our output looks like. Zero cost, no strings.
 
@@ -1822,10 +1853,10 @@ ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
     },
     {
-      subject: pick([`${co} — did my message land?`, `re: ${svc} help`, `quick follow-up`]),
+      subject: pick([`re: ${svc} help`, `quick follow-up`, `did my last email reach you?`]),
       body: `Hi,
 
-Sent a note to ${co} ${isOne ? 'a few days' : 'about a week'} ago about ${svc} work — just checking it didn't get lost.
+Sent a note to ${co}${locStr} ${isOne ? 'a few days' : 'about a week'} ago about ${svc} — just checking it didn't get lost.
 
 If there's any kind of data or document task you need done, I'm happy to turn one around for free so you can judge the quality. No commitment needed.
 
@@ -1836,10 +1867,10 @@ CTS BPO Solutions
 WhatsApp: +27 76 067 9100`,
     },
     {
-      subject: pick([`one more thought`, `${svc} — last note from me`, `still happy to help if useful`]),
+      subject: pick([`one more thought`, `still happy to help if useful`, `${svc} — just in case`]),
       body: `Hi,
 
-${isOne ? 'Sent a message a couple of days ago' : 'Reached out last week'} about helping ${co} with ${svc} tasks. Figured I'd try once more in case the timing is better now.
+${isOne ? 'Sent a message a couple of days ago' : 'Reached out last week'} about helping ${co} with ${svc} tasks${locStr}. Figured I'd try once more in case the timing is better now.
 
 Happy to do a small task free of charge — data entry, transcription, a document, whatever's on your desk. If you like what comes back, great. If not, no hard feelings.
 
@@ -1848,10 +1879,10 @@ ${REPLY_EMAIL}
 WhatsApp: +27 76 067 9100`,
     },
     {
-      subject: pick([`following up — ${co}`, `quick one`, `${svc} — just in case`]),
+      subject: pick([`quick one`, `following up on my last note`, `${svc} — just in case`]),
       body: `Hi,
 
-Quick follow-up from ${isOne ? 'earlier this week' : 'last week'} — I mentioned we do ${svc} outsourcing and offered a free sample task.
+Quick follow-up from ${isOne ? 'earlier this week' : 'last week'} — I mentioned we do ${svc} outsourcing for businesses${locStr} and offered a free sample task.
 
 Still happy to do that if you'd like a look. Just reply and tell me what you need done.
 
@@ -1860,10 +1891,10 @@ CTS BPO Solutions
 WhatsApp: +27 76 067 9100`,
     },
     {
-      subject: pick([`checking in on my last email`, `${co} — did this reach you?`, `last follow-up from me`]),
+      subject: pick([`${co} — did this reach you?`, `last follow-up from me`, `checking in`]),
       body: `Hi ${co},
 
-${isOne ? 'Sent you a short note a few days ago' : 'I reached out about a week ago'} about ${svc} support. I'll keep this one even shorter.
+${isOne ? 'Sent you a short note a few days ago' : 'I reached out about a week ago'} about ${svc} support${locStr}. I'll keep this one even shorter.
 
 We do the work quickly, it's well-priced, and I'll do the first task at no charge. If that sounds like anything useful, just reply.
 
@@ -1871,10 +1902,10 @@ Thomas
 ${REPLY_EMAIL}`,
     },
     {
-      subject: pick([`last message — promise`, `one last note from CTS BPO`, `${svc} — just wanted to close the loop`]),
+      subject: pick([`last message — promise`, `one last note from CTS BPO`, `just wanted to close the loop`]),
       body: `Hi,
 
-Last message from me regarding ${svc} support for ${co} — just didn't want to leave it without a proper follow-up.
+Last message from me regarding ${svc} support for ${co}${locStr} — just didn't want to leave it without a proper follow-up.
 
 If the timing's ever right, the free task offer stands. We handle the work quickly and affordably.
 

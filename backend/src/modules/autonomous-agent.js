@@ -61,6 +61,7 @@ const db         = require('../db');
 const auditLogger = require('./audit-logger');
 const emailOutreach  = require('./email-outreach');
 const autoPricing    = require('./auto-pricing');
+const geminiPersonalizer = require('./gemini-personalizer');
 const aiProcessor    = require('./ai-job-processor');
 const gmailReader    = require('./gmail-reader');
 const jobSearch      = require('./job-search');
@@ -781,8 +782,8 @@ async function runScrapedContactsOutreach() {
       AND created_at >= CURRENT_DATE
   `).catch(() => ({ rows: [{ n: 0 }] }));
   const todaySent = parseInt(todaySentRes.rows[0]?.n || 0);
-  if (todaySent >= 25) {
-    console.log(`[OUTREACH] Daily cap reached (${todaySent}/25) — skipping scraped_contacts run`);
+  if (todaySent >= 50) {
+    console.log(`[OUTREACH] Daily cap reached (${todaySent}/50) — skipping scraped_contacts run`);
     return;
   }
 
@@ -812,21 +813,40 @@ async function runScrapedContactsOutreach() {
       }
 
       if (!circuitCheck()) break;
+
+      // ── Gemini AI Personalization — unique opener + human subject per company ──
+      const serviceKey = autoPricing.detectService(c.business_type || '', '');
+      const { svc } = autoPricing.calcQuote(serviceKey);
+      const { opener: personalOpener, subject: aiSubject } = await geminiPersonalizer.personalizeEmail({
+        company:     c.company || c.domain,
+        businessType: c.business_type || '',
+        city:        c.city || '',
+        country:     c.country || '',
+        snippet:     c.snippet || c.query_used || '',
+        serviceKey,
+        discountPct: 15,
+      }).catch(() => ({ opener: null, subject: null }));
+
+      if (personalOpener) console.log(`✨ [AI] Personalized opener for ${c.domain}: "${personalOpener.slice(0, 60)}..."`);
+
       // ── AI Price Negotiator: detect service, build competitive quote, send proposal ──
       const proposal = autoPricing.autoPricingProposal({
-        name:         c.company || c.domain,
-        company:      c.company || c.domain,
-        email:        c.email,
-        businessType: c.business_type || '',
-        jobType:      '',
-        city:         c.city || null,
-        country:      c.country || null,
+        name:          c.company || c.domain,
+        company:       c.company || c.domain,
+        email:         c.email,
+        businessType:  c.business_type || '',
+        jobType:       '',
+        city:          c.city || null,
+        country:       c.country || null,
+        personalOpener: personalOpener || null,
+        subjectOverride: aiSubject || null,
       });
       const sendResult = await emailOutreach.sendMail({
         to:      c.email,
         subject: proposal.subject,
         text:    proposal.text,
         html:    proposal.html,
+        unsubscribeEmail: 'cts.bposolutions@gmail.com',
       });
       if (!sendResult || sendResult.sent === false) {
         if (sendResult?.allProvidersBroken) {
@@ -860,7 +880,7 @@ async function runScrapedContactsOutreach() {
       liveStats.outreach.lastSentAt  = new Date().toISOString();
       liveStats.outreach.active      = true;
       saveOutreachStats(liveStats.outreach);
-      await logActivity('scrape_outreach', `Outreach → ${c.email} [${c.business_type || 'BPO'}]`, 'scraped_contact', c.id, 'success', { to: c.email });
+      await logActivity('scrape_outreach', `Outreach → ${c.email} [${c.business_type || 'BPO'}]${personalOpener ? ' (AI personalised)' : ''}`, 'scraped_contact', c.id, 'success', { to: c.email, personalised: !!personalOpener });
       await sleep(4000); // 4s between emails
     } catch (err) {
       if (isAuthError(err)) {
@@ -917,7 +937,7 @@ async function runScrapedContactsFollowUps() {
 
   for (const c of day3.rows) {
     try {
-      await emailOutreach.sendClientFollowUp({ email: c.email, company: c.company, jobType: c.business_type, followUpNumber: 1 });
+      await emailOutreach.sendClientFollowUp({ email: c.email, company: c.company, jobType: c.business_type, followUpNumber: 1, city: c.city || null, country: c.country || null });
       // Mark ALL same-domain rows so no other address gets a follow-up
       await db.query(
         `UPDATE scraped_contacts SET followup1_sent_at=NOW(), status='followup1', updated_at=NOW() WHERE domain=$1`,
@@ -943,7 +963,7 @@ async function runScrapedContactsFollowUps() {
 
   for (const c of day7.rows) {
     try {
-      await emailOutreach.sendClientFollowUp({ email: c.email, company: c.company, jobType: c.business_type, followUpNumber: 2 });
+      await emailOutreach.sendClientFollowUp({ email: c.email, company: c.company, jobType: c.business_type, followUpNumber: 2, city: c.city || null, country: c.country || null });
       await db.query(
         `UPDATE scraped_contacts SET followup2_sent_at=NOW(), status='followup2', updated_at=NOW() WHERE domain=$1`,
         [c.domain]
