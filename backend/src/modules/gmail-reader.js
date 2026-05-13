@@ -412,6 +412,20 @@ async function processInboxReplies() {
 
       console.log(`📬 [INBOX] Reply from ${email.from} — intent: ${intent}`);
 
+      // ── Mark reply in both lead tables regardless of intent ────────────────
+      if (intent !== 'rejected' && intent !== 'unsubscribe') {
+        await dbMod.query(
+          `UPDATE ai_leads SET status='responded', updated_at=NOW()
+           WHERE LOWER(contact_email)=LOWER($1) AND status NOT IN ('responded','bounced','rejected')`,
+          [email.from]
+        ).catch(() => {});
+        await dbMod.query(
+          `UPDATE scraped_contacts SET status='replied', updated_at=NOW()
+           WHERE LOWER(email)=LOWER($1) AND status NOT IN ('replied','bounced','rejected')`,
+          [email.from]
+        ).catch(() => {});
+      }
+
       if (intent === 'interested') {
         // ── Auto-onboard: create client + send portal welcome ────────────────
         const { portalLink, alreadyClient, name } = await onboardClient(email.from, email.name);

@@ -28,6 +28,7 @@ const path         = require('path');
 const db           = require('../db');
 const emailVerifier  = require('./email-verifier');
 const prospectScorer = require('./prospect-scorer');
+const serpApiBudget  = require('./serpapi-budget');
 
 // ── Stats persistence — survives backend restarts ────────────────────────────
 const STATS_FILE    = path.join(__dirname, '../../data/scraper-stats.json');
@@ -888,16 +889,23 @@ const SERP_BPO_QUERIES = [
 async function scrapeViaSerpAPI() {
   const SERPAPI_KEY = process.env.SERPAPI_KEY;
   if (!SERPAPI_KEY) return 0;
+  if (serpApiBudget.isOverBudget()) {
+    const s = serpApiBudget.getStatus();
+    console.log(`💸 [SCRAPER] SerpAPI monthly cap reached (${s.used}/${s.cap}) — skipping BPO queries`);
+    return 0;
+  }
 
   const selected = pickRandom(SERP_BPO_QUERIES, 5);
   let totalInserted = 0;
 
   for (const q of selected) {
+    if (serpApiBudget.isOverBudget()) break;
     try {
       const res = await axios.get('https://serpapi.com/search', {
         params: { q, api_key: SERPAPI_KEY, engine: 'google', num: 100, hl: 'en', gl: 'us' },
         timeout: 20000,
       });
+      serpApiBudget.increment();
 
       const results = res.data.organic_results || [];
       const contacts = [];
@@ -1899,10 +1907,16 @@ async function runOnePair(pair) {
     if (pair.source === 'serpapi_bpo') {
       const SERPAPI_KEY = process.env.SERPAPI_KEY;
       if (!SERPAPI_KEY) return 0;
+      if (serpApiBudget.isOverBudget()) {
+        const s = serpApiBudget.getStatus();
+        console.log(`💸 [SCRAPER] SerpAPI monthly cap (${s.used}/${s.cap}) — skipping query`);
+        return 0;
+      }
       const res = await axios.get('https://serpapi.com/search', {
         params: { q: pair.query, api_key: SERPAPI_KEY, engine: 'google', num: 100, hl: 'en', gl: 'us' },
         timeout: 20000,
       });
+      serpApiBudget.increment();
       const results = res.data.organic_results || [];
       const contacts = [];
       for (const r of results) {

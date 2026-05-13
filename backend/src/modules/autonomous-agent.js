@@ -75,6 +75,12 @@ const AI_WORKER_ID = 0; // sentinel: sub_id=0 means the AI Worker
 const SERPAPI_COOLDOWN_FILE = path.join(__dirname, '../../data/serpapi-cooldown.json');
 let _serpApiCooledUntil = 0;
 
+// SerpAPI monthly budget guard — shared with web-scraper.js via serpapi-budget.js
+const serpApiBudget = require('./serpapi-budget');
+function serpApiOverBudget()      { return serpApiBudget.isOverBudget(); }
+function serpApiIncrementBudget(n){ serpApiBudget.increment(n); }
+function loadSerpApiBudget()      { /* loaded on require() in serpapi-budget.js */ }
+
 function loadSerpApiCooldown() {
   try {
     if (fs.existsSync(SERPAPI_COOLDOWN_FILE)) {
@@ -481,12 +487,24 @@ async function runLeadSearch() {
     return;
   }
 
+  // Monthly budget cap — stop if we've hit the monthly query limit
+  if (serpApiOverBudget()) {
+    console.log(`💸 [SERPAPI] Monthly budget cap hit (${_serpApiMonthlyCount}/${SERPAPI_MONTHLY_CAP} queries) — skipping until next month`);
+    await logActivity('lead_search', `SerpAPI monthly cap reached (${_serpApiMonthlyCount}/${SERPAPI_MONTHLY_CAP}) — paused to prevent overspend`, null, null, 'warning');
+    return;
+  }
+
   const queries = LEAD_QUERIES;
   let newLeads = 0;
   let queried = 0;
   let consecutive429 = 0;
 
   for (const { q, type } of queries) {
+    // Stop mid-run if we've hit the monthly cap
+    if (serpApiOverBudget()) {
+      console.log(`💸 [SERPAPI] Monthly cap reached mid-run — stopping at ${queried} queries`);
+      break;
+    }
     try {
       const resp = await axios.get('https://serpapi.com/search.json', {
         params: { q, api_key: SERPAPI_KEY, num: 100, hl: 'en', gl: 'za' },
@@ -494,6 +512,7 @@ async function runLeadSearch() {
       });
       consecutive429 = 0; // reset on success
       queried++;
+      serpApiIncrementBudget(); // track monthly spend
 
       const results = resp.data?.organic_results || [];
 
@@ -1523,11 +1542,11 @@ async function runPlatformScan() {
       if (bidResult.processed > 0) {
         await logActivity(
           'platform_scan',
-          `Auto-bidder: ${bidResult.processed} proposals generated, ${bidResult.emailed} direct emails sent, ${bidResult.notified} admin digests sent`,
+          `Auto-bidder: ${bidResult.processed} proposals generated, ${bidResult.submitted} direct bids submitted, ${bidResult.notified} admin digests sent`,
           null, null, 'success',
           bidResult
         );
-        console.log(`🤖 [AUTO-BID] ${bidResult.processed} proposals ready (${bidResult.emailed} direct, ${bidResult.notified} emailed to admin for approval)`);
+        console.log(`🤖 [AUTO-BID] ${bidResult.processed} proposals ready (${bidResult.submitted} direct bids, ${bidResult.notified} emailed to admin for approval)`);
       }
     } catch (bidErr) {
       console.warn(`[AUTO-BID] Error: ${bidErr.message}`);
@@ -1972,6 +1991,7 @@ async function startAgent() {
 
   // Load persisted SerpAPI cooldown — survives restarts
   loadSerpApiCooldown();
+  loadSerpApiBudget();
 
   // Run platform scan on startup (uses DDG if SerpAPI is cooling) — FIRST priority
   setTimeout(() => runPlatformScan().catch(console.error),               10_000);
@@ -2300,6 +2320,7 @@ async function triggerNow(task) {
 function getStatus() {
   checkDailyReset();
   const serpCooling = isSerpApiCooling();
+  const budget = serpApiBudget.getStatus();
   return {
     ...agentState,
     scraper: {
@@ -2309,6 +2330,13 @@ function getStatus() {
     },
     outreach: { ...liveStats.outreach },
     db: { ...liveStats.db },
+    serpapiBudget: {
+      used:      budget.used,
+      cap:       budget.cap,
+      remaining: budget.remaining,
+      month:     budget.month,
+      overBudget: budget.used >= budget.cap,
+    },
   };
 }
 
