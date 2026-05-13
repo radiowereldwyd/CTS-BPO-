@@ -782,14 +782,14 @@ async function runScrapedContactsOutreach() {
       AND created_at >= CURRENT_DATE
   `).catch(() => ({ rows: [{ n: 0 }] }));
   const todaySent = parseInt(todaySentRes.rows[0]?.n || 0);
-  if (todaySent >= 50) {
-    console.log(`[OUTREACH] Daily cap reached (${todaySent}/50) — skipping scraped_contacts run`);
+  if (todaySent >= 100) {
+    console.log(`[OUTREACH] Daily cap reached (${todaySent}/100) — skipping scraped_contacts run`);
     return;
   }
 
   let sent = 0;
   for (const c of rows.rows) {
-    if (sent >= 5) break;  // max 5 per run (was 20)
+    if (sent >= 8) break;  // max 8 per run
     try {
       // ── BPO provider filter — NEVER email competitors ─────────────────────
       if (isAgentBpoProvider(c.domain)) {

@@ -122,118 +122,114 @@ function buildPricingEmail({ name, company, email, serviceKey, city, country, pe
 
 ${openerLine}
 
-Here's what ${svc.label} would cost ${co} with CTS BPO Solutions vs the market average:
+I'd like to put forward a formal service proposal for ${co}.
 
-SERVICE: ${svc.label}
-TYPICAL VOLUME: ${vol.desc}
+CTS BPO Solutions handles ${svc.label.toLowerCase()} for businesses across the US, UK, Australia and South Africa. Our team operates from South Africa which allows us to offer rates 15–25% below what US or UK providers charge — without any reduction in quality or turnaround.
 
-  Market average rate:  ${fmtUSD(svc.rate)} ${svc.unitLabel}
-  Our CTS rate:         ${fmtUSD(ourRate)} ${svc.unitLabel}  (${discountPct}% cheaper)
-  ─────────────────────────────────────
-  Market average total: ${fmtUSD(marketTotal)}/month
-  Your CTS total:       ${fmtUSD(ourTotal)}/month
-  You save:             ${fmtUSD(saving)}/month — every single month
+Here is what a standard engagement would look like for ${co}:
 
-We can do this because our team operates from South Africa, with significantly lower overheads than US or UK BPO firms — and we pass every cent of that saving directly to you.
+Service:          ${svc.label}
+Typical volume:   ${vol.desc}
 
-What's included at this price:
-✓ Quality-checked output before every delivery
-✓ 24–48 hour turnaround on standard volumes
-✓ POPIA & GDPR-compliant data handling
-✓ Free revision within 48 hours of delivery
-✓ No long-term contracts — cancel anytime
+  Market rate:      ${fmtUSD(svc.rate)} ${svc.unitLabel}
+  CTS BPO rate:     ${fmtUSD(ourRate)} ${svc.unitLabel}  (${discountPct}% below market)
+  ─────────────────────────────────────────
+  Market total:     ${fmtUSD(marketTotal)}/month
+  Your total:       ${fmtUSD(ourTotal)}/month
+  Monthly saving:   ${fmtUSD(saving)}
 
-To make the decision easier: the first batch is completely free, no invoice, no commitment. Just send us your files and see the quality for yourself.
+Terms of engagement:
+• Month-to-month service agreement — no lock-in period
+• Quality-checked output before every delivery
+• 24–48 hour turnaround on standard volumes
+• POPIA and GDPR-compliant data handling
+• Dedicated account manager from day one
+• Free pilot batch to verify quality before commitment
 
-If this sounds relevant for ${co}, just reply and I'll set it up today.
+To move forward, I suggest we start with a no-obligation pilot — we complete one batch of your work at no charge so you can assess the output before signing anything. If the quality meets your standard, we formalise the arrangement with a simple service agreement.
+
+Reply to this email and I will send through the pilot details and our standard service agreement for your review.
 
 Calvin Thomas
-CTS BPO Solutions
+Director, CTS BPO Solutions
 cts.bposolutions@gmail.com
 WhatsApp: +27 76 067 9100`;
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-body{font-family:Arial,sans-serif;color:#1e293b;background:#f8fafc;margin:0;padding:0}
-.wrap{max-width:620px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08)}
-.hero{background:linear-gradient(135deg,#1e3a5f,#2563eb);padding:32px 36px;color:#fff}
-.hero h1{margin:0 0 6px;font-size:22px}
-.hero p{margin:0;font-size:14px;opacity:0.85}
-.body{padding:32px 36px}
-.greeting{font-size:16px;color:#0f172a;margin-bottom:16px}
-.intro{font-size:14px;color:#475569;line-height:1.7;margin-bottom:24px}
-.table-wrap{background:#f0f9ff;border-radius:10px;padding:20px 24px;margin-bottom:24px;border:1px solid #bae6fd}
-.table-wrap h3{margin:0 0 14px;font-size:15px;color:#0369a1;font-weight:700}
-table{width:100%;border-collapse:collapse}
-td{padding:8px 0;font-size:14px;color:#1e293b;border-bottom:1px solid #e0f2fe}
-td:last-child{text-align:right;font-weight:600}
-tr:last-child td{border-bottom:none}
-.saving-row td{color:#16a34a;font-size:15px;font-weight:800}
-.discount-badge{display:inline-block;background:#dcfce7;color:#16a34a;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;margin-left:8px}
-.includes{background:#f8fafc;border-radius:10px;padding:18px 24px;margin-bottom:24px;border:1px solid #e2e8f0}
-.includes h3{margin:0 0 10px;font-size:14px;font-weight:700;color:#374151}
-.includes ul{margin:0;padding:0 0 0 18px}
-.includes ul li{font-size:13px;color:#475569;margin-bottom:6px;line-height:1.5}
-.free-offer{background:linear-gradient(135deg,#fefce8,#fef9c3);border:1px solid #fde047;border-radius:10px;padding:16px 22px;margin-bottom:24px;text-align:center}
-.free-offer strong{font-size:15px;color:#854d0e}
-.free-offer p{margin:6px 0 0;font-size:13px;color:#92400e}
-.cta{text-align:center;margin-bottom:28px}
-.cta a{display:inline-block;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;padding:14px 36px;border-radius:9px;font-weight:700;font-size:15px}
-.sig{font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:18px;line-height:1.7}
+body{font-family:Georgia,'Times New Roman',serif;color:#1a1a2e;background:#f4f6f9;margin:0;padding:0}
+.wrap{max-width:640px;margin:30px auto;background:#ffffff;border:1px solid #d1d5db;border-radius:4px;overflow:hidden}
+.header{background:#0f2244;padding:28px 40px 24px;border-bottom:3px solid #1e4a8a}
+.header h1{margin:0 0 4px;font-size:18px;color:#ffffff;font-weight:600;letter-spacing:0.3px}
+.header p{margin:0;font-size:12px;color:#93c5fd;letter-spacing:1px;text-transform:uppercase}
+.body{padding:36px 40px}
+.greeting{font-size:15px;color:#0f172a;margin-bottom:18px;font-family:Arial,sans-serif}
+.opener{font-size:14px;color:#334155;line-height:1.75;margin-bottom:20px;font-family:Arial,sans-serif}
+.section-label{font-size:11px;font-weight:700;color:#6b7280;letter-spacing:1.2px;text-transform:uppercase;margin:0 0 12px;font-family:Arial,sans-serif}
+.rate-table{width:100%;border-collapse:collapse;margin-bottom:28px;font-family:Arial,sans-serif}
+.rate-table td{padding:10px 12px;font-size:13.5px;border-bottom:1px solid #e5e7eb;color:#1e293b}
+.rate-table td:last-child{text-align:right;font-weight:600}
+.rate-table tr:last-child td{border-bottom:none;color:#15803d;font-size:15px;font-weight:800;background:#f0fdf4}
+.rate-table .mkt td{color:#9ca3af;font-size:13px}
+.terms-box{background:#f8fafc;border-left:3px solid #0f2244;padding:16px 20px;margin-bottom:24px;font-family:Arial,sans-serif}
+.terms-box p{margin:0 0 8px;font-size:13.5px;color:#374151;line-height:1.6}
+.terms-box p:last-child{margin-bottom:0}
+.terms-box strong{color:#0f2244}
+.pilot-box{background:#fffbeb;border:1px solid #d97706;border-radius:4px;padding:16px 20px;margin-bottom:28px;font-family:Arial,sans-serif}
+.pilot-box p{margin:0;font-size:13.5px;color:#92400e;line-height:1.65}
+.cta-row{margin-bottom:28px;font-family:Arial,sans-serif}
+.cta-row a{display:inline-block;background:#0f2244;color:#ffffff;text-decoration:none;padding:13px 30px;border-radius:3px;font-weight:600;font-size:14px;letter-spacing:0.3px}
+.sig{font-size:13px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:18px;line-height:1.8;font-family:Arial,sans-serif}
+.sig strong{color:#0f172a}
 </style></head><body>
 <div class="wrap">
-  <div class="hero">
-    <h1>Pricing Proposal — ${svc.label}</h1>
-    <p>Prepared specifically for ${co}${loc}</p>
+  <div class="header">
+    <h1>Service Proposal — ${svc.label}</h1>
+    <p>CTS BPO Solutions &nbsp;·&nbsp; Prepared for ${co}${loc}</p>
   </div>
   <div class="body">
     <div class="greeting">${greeting}</div>
-    <div class="intro">
+    <div class="opener">
       ${personalOpener
-        ? `${personalOpener}<br><br>I've put together actual numbers for ${co} so you can see what working with CTS BPO Solutions would cost you vs. the market average.`
-        : `I've put together a real quote for ${co} based on your business profile — not a generic pitch, but actual numbers so you can see what working with CTS BPO Solutions would cost you vs. the market average.`
+        ? `${personalOpener}<br><br>I am writing to put forward a formal service proposal for ${co}.`
+        : `I am writing to put forward a formal service proposal for ${co}${loc}.`
       }
+      <br><br>
+      CTS BPO Solutions provides ${svc.label.toLowerCase()} to businesses across the US, UK, Australia and South Africa. Our team operates from South Africa, which allows us to offer rates 15–25% below what US or UK providers charge — with no reduction in quality or turnaround time.
     </div>
 
-    <div class="table-wrap">
-      <h3>${svc.label} <span class="discount-badge">💰 ${discountPct}% below market</span></h3>
-      <table>
-        <tr><td>Typical volume</td><td>${vol.desc}</td></tr>
-        <tr><td>Market average rate</td><td style="color:#ef4444">${fmtUSD(svc.rate)} <small style="font-weight:400;color:#94a3b8">${svc.unitLabel}</small></td></tr>
-        <tr><td>CTS BPO rate</td><td style="color:#2563eb">${fmtUSD(ourRate)} <small style="font-weight:400;color:#94a3b8">${svc.unitLabel}</small></td></tr>
-        <tr><td>Market total/month</td><td style="color:#ef4444;text-decoration:line-through">${fmtUSD(marketTotal)}</td></tr>
-        <tr><td>Your total/month</td><td style="color:#2563eb">${fmtUSD(ourTotal)}</td></tr>
-        <tr class="saving-row"><td>You save every month</td><td>${fmtUSD(saving)} ✓</td></tr>
-      </table>
+    <p class="section-label">Proposed Engagement — Rate Comparison</p>
+    <table class="rate-table">
+      <tr><td>Service</td><td>${svc.label}</td></tr>
+      <tr><td>Standard volume</td><td>${vol.desc}</td></tr>
+      <tr class="mkt"><td>Market average rate</td><td>${fmtUSD(svc.rate)} <span style="font-weight:400;font-size:12px">${svc.unitLabel}</span></td></tr>
+      <tr class="mkt"><td>Market average monthly cost</td><td style="text-decoration:line-through">${fmtUSD(marketTotal)}/mo</td></tr>
+      <tr><td style="color:#1e4a8a;font-weight:700">CTS BPO rate (${discountPct}% below market)</td><td style="color:#1e4a8a">${fmtUSD(ourRate)} <span style="font-weight:400;font-size:12px">${svc.unitLabel}</span></td></tr>
+      <tr><td>Your monthly cost with CTS BPO</td><td colspan="1">${fmtUSD(ourTotal)}/mo &nbsp;<span style="color:#15803d;font-size:12px">you save ${fmtUSD(saving)} every month</span></td></tr>
+    </table>
+
+    <p class="section-label">Terms of Engagement</p>
+    <div class="terms-box">
+      <p><strong>Contract:</strong> Month-to-month service agreement — no lock-in, cancel any time with 30 days notice.</p>
+      <p><strong>Delivery:</strong> Quality-checked output within 24–48 hours of receiving source files.</p>
+      <p><strong>Compliance:</strong> All data handled under POPIA and GDPR-compliant processes.</p>
+      <p><strong>Revisions:</strong> One free revision cycle within 48 hours of each delivery.</p>
+      <p><strong>Reporting:</strong> Monthly output summary and quality report included.</p>
     </div>
 
-    <div class="includes">
-      <h3>What's included at this price</h3>
-      <ul>
-        <li>✓ Quality-checked output before every delivery</li>
-        <li>✓ 24–48 hour turnaround on standard volumes</li>
-        <li>✓ POPIA &amp; GDPR-compliant data handling</li>
-        <li>✓ Free revision within 48 hours of delivery</li>
-        <li>✓ No long-term contracts — cancel any time</li>
-        <li>✓ Monthly progress report included</li>
-      </ul>
+    <div class="pilot-box">
+      <p><strong>No-obligation pilot included:</strong> Before any agreement is signed, we will complete one batch of your work at no charge so you can assess the output quality directly. If it meets your standard, we formalise the arrangement with a simple service agreement. If not, there is no cost and no obligation.</p>
     </div>
 
-    <div class="free-offer">
-      <strong>🎁 First batch is completely FREE</strong>
-      <p>No invoice, no commitment. Send us your files and see the quality before spending a cent.</p>
-    </div>
-
-    <div class="cta">
-      <a href="mailto:cts.bposolutions@gmail.com?subject=Pricing enquiry — ${encodeURIComponent(svc.label)}">Reply to Accept the Free Trial →</a>
+    <div class="cta-row">
+      <a href="mailto:cts.bposolutions@gmail.com?subject=Service Proposal — ${encodeURIComponent(svc.label)} — ${encodeURIComponent(co)}">Reply to Arrange the Pilot Engagement →</a>
     </div>
 
     <div class="sig">
-      Calvin Thomas<br>
-      <strong>CTS BPO Solutions</strong><br>
-      cts.bposolutions@gmail.com<br>
-      <a href="https://wa.me/27760679100" style="color:#25d366;font-weight:700;text-decoration:none">💬 WhatsApp: +27 76 067 9100</a><br>
-      <em>South Africa's most competitive BPO — priced 15–25% below market, always.</em>
+      <strong>Calvin Thomas</strong><br>
+      Director, CTS BPO Solutions<br>
+      <a href="mailto:cts.bposolutions@gmail.com" style="color:#1e4a8a;text-decoration:none">cts.bposolutions@gmail.com</a><br>
+      <a href="https://wa.me/27760679100" style="color:#15803d;text-decoration:none">WhatsApp: +27 76 067 9100</a>
     </div>
   </div>
 </div>
