@@ -207,6 +207,28 @@ function App() {
   }, []);
 
   useEffect(() => {
+    // ── Barcode / token login via URL fragment ────────────────────────────────
+    // The backend redirects to /operations#token=…&user=… after a successful
+    // barcode scan.  We intercept the fragment here before React Router renders.
+    const hash = window.location.hash;
+    if (hash && hash.includes('token=')) {
+      const params = new URLSearchParams(hash.slice(1));
+      const jwtToken = params.get('token');
+      const userJson = params.get('user');
+      if (jwtToken && userJson) {
+        try {
+          const parsedUser = JSON.parse(decodeURIComponent(userJson));
+          localStorage.setItem('cts_token', jwtToken);
+          localStorage.setItem('cts_user', JSON.stringify(parsedUser));
+          setToken(jwtToken);
+          setUser(parsedUser);
+          // Remove the fragment from the URL so it doesn't persist
+          window.history.replaceState(null, '', window.location.pathname);
+          return; // Skip reading stale localStorage below
+        } catch { /* fall through to localStorage */ }
+      }
+    }
+
     // Admin session
     const storedToken = localStorage.getItem('cts_token');
     const storedUser  = localStorage.getItem('cts_user');
