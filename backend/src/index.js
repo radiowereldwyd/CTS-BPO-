@@ -23,6 +23,8 @@ const autonomousAgent = require('./modules/autonomous-agent');
 const webScraper      = require('./modules/web-scraper');
 const clientPortalRouter = require('./routes/client-portal');
 const emailAnalytics  = require('./modules/email-analytics');
+const { initDatabase } = require('./db-init');
+const barcodeAuthRouter = require('./routes/barcode-auth');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -72,6 +74,10 @@ app.get('/health', (req, res) => {
 
 // Auth routes (login, me)
 app.use('/api/auth', authLimiter, authRouter);
+
+// Barcode / passwordless token login  (GET /login?token=…)
+// Also exposes GET /admin/barcode for the QR-code management page
+app.use('/', barcodeAuthRouter);
 
 // Subcontractor portal auth
 const subAuthRouter = require('./routes/subcontractor-auth');
@@ -2966,6 +2972,17 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`CTS BPO Backend running on port ${PORT}`);
   console.log(`📞 WebRTC signaling active at ws://0.0.0.0:${PORT}/ws/call-signal`);
   auditLogger.log('system.start', null, null, `Server started on port ${PORT}`, null, 'info');
+
+  // ── Database initialisation (tables + admin user + barcode token) ──────────
+  // Runs after a short delay to allow the DB pool to finish connecting.
+  setTimeout(async () => {
+    try {
+      await initDatabase();
+    } catch (err) {
+      console.error('DB init error (non-fatal):', err.message);
+    }
+  }, 3000);
+
   // Start agent with retry — DB connection may timeout on first boot
   (async function startAgentWithRetry(attempts = 0) {
     try {
